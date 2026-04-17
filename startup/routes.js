@@ -20,8 +20,23 @@ module.exports = function (app) {
     app.use(express.json());
     app.use(cors({
         origin: '*',
-        exposedHeaders: ['x-auth-token']
+        exposedHeaders: ['x-auth-token', 'Content-Range', 'Accept-Ranges'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token', 'Range']
     }));
+
+    // Handle Private Network Access (PNA) preflight requests
+    // Chrome/Android require this when accessing private IPs from local contexts (Capacitor)
+    app.use((req, res, next) => {
+        if (req.headers['access-control-request-private-network'] === 'true') {
+            res.setHeader('Access-Control-Allow-Private-Network', 'true');
+        }
+        
+        // Browsers send OPTIONS preflight for PNA. If it's a preflight, we should end early with 204.
+        if (req.method === 'OPTIONS' && req.headers['access-control-request-private-network'] === 'true') {
+            return res.sendStatus(204);
+        }
+        next();
+    });
     // Serve static files from frontend build in production
     app.use(express.static(path.join(__dirname, '..', 'frontend', 'dist')));
     app.use(helmet({

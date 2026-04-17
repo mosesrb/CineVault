@@ -196,7 +196,7 @@ export default function Player() {
       <div className="player-stage">
         {streamUrl ? (
           <CinemaPlayer
-            key={`${streamUrl}-${activeAudio}-${!!localUrl}`}
+            key={`player-${!!localUrl}`}
             src={localUrl ? { src: streamUrl, type: 'video/mp4' } : { src: streamUrl, type: mimeType }}
             title={title}
             poster={media.posterUrl || media.backdropUrl}

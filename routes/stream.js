@@ -180,6 +180,10 @@ router.get('/', auth, async (req, res) => {
             'Transfer-Encoding': 'chunked',
             'Accept-Ranges': 'none',
             'Cache-Control': 'no-cache',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Private-Network': 'true',
+            'Access-Control-Allow-Headers': 'Range, Authorization, x-auth-token',
+            'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Accept-Ranges, X-Content-Duration',
         };
         if (duration !== null) {
             headers['X-Content-Duration'] = String(duration);
@@ -219,6 +223,10 @@ router.get('/', auth, async (req, res) => {
             'Accept-Ranges': 'bytes',
             'Content-Length': end - start + 1,
             'Content-Type': mimeType,
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Private-Network': 'true',
+            'Access-Control-Allow-Headers': 'Range, Authorization, x-auth-token',
+            'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Accept-Ranges',
         });
         fs.createReadStream(resolvedFile, { start, end }).pipe(res);
     } else {
@@ -226,6 +234,10 @@ router.get('/', auth, async (req, res) => {
             'Accept-Ranges': 'bytes',
             'Content-Length': fileSize,
             'Content-Type': mimeType,
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Private-Network': 'true',
+            'Access-Control-Allow-Headers': 'Range, Authorization, x-auth-token',
+            'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Accept-Ranges',
         });
         fs.createReadStream(resolvedFile).pipe(res);
     }

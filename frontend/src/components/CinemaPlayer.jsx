@@ -91,6 +91,7 @@ export default function CinemaPlayer({
   const [hoverX, setHoverX] = useState(0)
   const [ended, setEnded] = useState(false)
   const [scratchedTime, setScratchedTime] = useState(null)
+  const [hasStarted, setHasStarted] = useState(false)
 
   const total = duration || browserDuration || 1
   const absTime = scratchedTime !== null ? scratchedTime : (seekOffset + currentTime)
@@ -114,7 +115,12 @@ export default function CinemaPlayer({
 
   useEffect(() => {
     const v = videoRef.current; if (!v) return
-    const onPlay = () => { setPlaying(true); setEnded(false); showControls() }
+    const onPlay = () => { 
+      setPlaying(true); 
+      setEnded(false); 
+      setHasStarted(true);
+      showControls();
+    }
     const onPause = () => { setPlaying(false); setShowCtrl(true) }
     const onEnd = () => { setPlaying(false); setEnded(true); setShowCtrl(true) }
     const onTime = () => {
@@ -389,7 +395,7 @@ export default function CinemaPlayer({
       <video
         ref={videoRef}
         src={src?.src}
-        poster={poster}
+        poster={hasStarted ? null : poster}
         className="cp-video"
         playsInline autoPlay
         onClick={e => { e.stopPropagation(); showControls(); }}
