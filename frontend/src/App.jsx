@@ -14,6 +14,7 @@ import Detail    from './pages/Detail'
 import Player    from './pages/Player'
 import Profile   from './pages/Profile'
 import Browse    from './pages/Browse'
+import SearchPage from './pages/Search'
 import MobileNav from './components/MobileNav'
 
 import AdminLayout    from './pages/admin/AdminLayout'
@@ -161,6 +162,7 @@ function AppRoutes() {
         <Route path="/tv" element={<PrivateRoute><TVShows /></PrivateRoute>} />
         <Route path="/browse/:genre" element={<PrivateRoute><Browse /></PrivateRoute>} />
         <Route path="/detail/:type/:id" element={<PrivateRoute><Detail /></PrivateRoute>} />
+        <Route path="/search" element={<PrivateRoute><SearchPage /></PrivateRoute>} />
         <Route path="/watch/:type/:id" element={<PrivateRoute><Player /></PrivateRoute>} />
         <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
 

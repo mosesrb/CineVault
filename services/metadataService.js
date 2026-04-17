@@ -14,7 +14,8 @@ const https = require('https');
 const config = require('config');
 
 const TMDB_BASE = 'api.themoviedb.org';
-const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
+const TMDB_POSTER_BASE = 'https://image.tmdb.org/t/p/w500';
+const TMDB_BACKDROP_BASE = 'https://image.tmdb.org/t/p/original';
 
 let TMDB_KEY = '';
 try {
@@ -78,12 +79,29 @@ async function _fetchMovieTMDB(title, year) {
     // Sort by score
     scoredResults.sort((a, b) => b._score - a._score);
 
-    if (scoredResults.length > 0) {
-        console.log(`    DEBUG: Best match for "${title}": "${scoredResults[0].title}" (Score: ${scoredResults[0]._score})`);
+    // --- Ambiguity Detection ---
+    const topScore = scoredResults[0]?._score || 0;
+    const secondScore = scoredResults[1]?._score || 0;
+    const isLowConfidence = topScore < 150;
+    const isAmbiguous = scoredResults.length > 1 && (topScore - secondScore) < 30;
+
+    if (isLowConfidence || isAmbiguous) {
+        console.log(`    [Conflict] Detected for "${title}". Top Score: ${topScore}, Second: ${secondScore}`);
+        const skeleton = _buildSkeleton(title, year, 'movie');
+        skeleton.isConflict = true;
+        skeleton.conflictOptions = scoredResults.slice(0, 5).map(res => ({
+            id: String(res.id),
+            title: res.title || res.name,
+            year: (res.release_date || res.first_air_date || '').split('-')[0],
+            posterUrl: res.poster_path ? `${TMDB_POSTER_BASE}${res.poster_path}` : '',
+            description: res.overview || '',
+            score: res._score
+        }));
+        return skeleton;
     }
 
-    if (scoredResults.length === 0) {
-        return _buildSkeleton(title, year, 'movie');
+    if (scoredResults.length > 0) {
+        console.log(`    DEBUG: Best match for "${title}": "${scoredResults[0].title}" (Score: ${scoredResults[0]._score})`);
     }
 
     const bestMatch = scoredResults[0];
@@ -102,7 +120,7 @@ function _mapDetailToMeta(detail, originalTitle, originalYear, type) {
     const keywords = (detail.keywords?.keywords || detail.keywords?.results || []).slice(0, 8).map(k => k.name);
     const production_companies = (detail.production_companies || []).map(p => p.name);
     // Safely extract up to 10 backdrops/stills (filter out main backdrop if present)
-    const images = (detail.images?.backdrops || []).slice(0, 10).map(img => `${TMDB_IMAGE_BASE}${img.file_path}`);
+    const images = (detail.images?.backdrops || []).slice(0, 10).map(img => `${TMDB_BACKDROP_BASE}${img.file_path}`);
 
     if (type === 'movie') {
         if (detail.budget) facts.budget = detail.budget;
@@ -119,8 +137,8 @@ function _mapDetailToMeta(detail, originalTitle, originalYear, type) {
             description: detail.overview || '',
             tagline: detail.tagline || '',
             rating: detail.vote_average || 0,
-            posterUrl: detail.poster_path ? `${TMDB_IMAGE_BASE}${detail.poster_path}` : '',
-            backdropUrl: detail.backdrop_path ? `${TMDB_IMAGE_BASE}${detail.backdrop_path}` : '',
+            posterUrl: detail.poster_path ? `${TMDB_POSTER_BASE}${detail.poster_path}` : '',
+            backdropUrl: detail.backdrop_path ? `${TMDB_BACKDROP_BASE}${detail.backdrop_path}` : '',
             images: images,
             facts: facts,
             trailerUrl: _extractTrailer(detail.videos),
@@ -145,8 +163,8 @@ function _mapDetailToMeta(detail, originalTitle, originalYear, type) {
             description: detail.overview || '',
             tagline: detail.tagline || '',
             rating: detail.vote_average || 0,
-            posterUrl: detail.poster_path ? `${TMDB_IMAGE_BASE}${detail.poster_path}` : '',
-            backdropUrl: detail.backdrop_path ? `${TMDB_IMAGE_BASE}${detail.backdrop_path}` : '',
+            posterUrl: detail.poster_path ? `${TMDB_POSTER_BASE}${detail.poster_path}` : '',
+            backdropUrl: detail.backdrop_path ? `${TMDB_BACKDROP_BASE}${detail.backdrop_path}` : '',
             images: images,
             facts: facts,
             trailerUrl: _extractTrailer(detail.videos),
@@ -348,16 +366,35 @@ async function _fetchShowTMDB(title, year) {
         return _buildSkeleton(title, year, 'tvshow');
     }
 
-    let bestMatch = allResults[0];
-    let bestScore = -1;
-    for (const res of allResults.slice(0, 10)) {
-        const rName = res.name || '';
-        const score = _calculateScore(title, year, { title: rName, release_date: res.first_air_date });
-        if (score > bestScore) {
-            bestScore = score;
-            bestMatch = res;
-        }
+    // Sort scored results
+    const scoredResults = allResults.map(res => {
+        const score = _calculateScore(title, year, { title: res.name || '', release_date: res.first_air_date });
+        return { ...res, _score: score };
+    });
+    scoredResults.sort((a, b) => b._score - a._score);
+
+    // --- Ambiguity Detection ---
+    const topScore = scoredResults[0]?._score || 0;
+    const secondScore = scoredResults[1]?._score || 0;
+    const isLowConfidence = topScore < 150;
+    const isAmbiguous = scoredResults.length > 1 && (topScore - secondScore) < 30;
+
+    if (isLowConfidence || isAmbiguous) {
+        console.log(`    [Conflict] Detected for TV "${title}". Top Score: ${topScore}, Second: ${secondScore}`);
+        const skeleton = _buildSkeleton(title, year, 'tvshow');
+        skeleton.isConflict = true;
+        skeleton.conflictOptions = scoredResults.slice(0, 5).map(res => ({
+            id: String(res.id),
+            title: res.name || res.title,
+            year: (res.first_air_date || res.release_date || '').split('-')[0],
+            posterUrl: res.poster_path ? `${TMDB_POSTER_BASE}${res.poster_path}` : '',
+            description: res.overview || '',
+            score: res._score
+        }));
+        return skeleton;
     }
+
+    const bestMatch = scoredResults[0];
 
     const detailUrl = `/3/tv/${bestMatch.id}?api_key=${TMDB_KEY}&append_to_response=credits,videos,images,keywords`;
     const detail = await _get(detailUrl);
@@ -408,7 +445,7 @@ function _extractCast(credits) {
     return credits.cast.slice(0, 15).map((c, i) => ({
         name: c.name || '',
         character: c.character || '',
-        profileUrl: c.profile_path ? `${TMDB_IMAGE_BASE}${c.profile_path}` : '',
+        profileUrl: c.profile_path ? `${TMDB_POSTER_BASE}${c.profile_path}` : '',
         order: i
     }));
 }
@@ -456,7 +493,7 @@ async function searchTMDB(query, type = 'movie') {
         id: String(res.id),
         title: res.title || res.name,
         year: (res.release_date || res.first_air_date || '').split('-')[0],
-        posterUrl: res.poster_path ? `${TMDB_IMAGE_BASE}${res.poster_path}` : '',
+        posterUrl: res.poster_path ? `${TMDB_POSTER_BASE}${res.poster_path}` : '',
         description: res.overview || ''
     }));
 }

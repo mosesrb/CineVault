@@ -23,6 +23,7 @@ export default function TVShows() {
   const isDesktop = useMediaQuery('(min-width: 769px)')
 
   const activeStatus = searchParams.get('status') || ''
+  const sortBy = searchParams.get('sort') || 'new'
 
   useEffect(() => { 
     getGenres().then(r => setGenres(r.data)) 
@@ -74,7 +75,7 @@ export default function TVShows() {
       }
       setShows(data)
     }).finally(() => setLoading(false))
-  }, [activeStatus, filters, searchParams])
+  }, [activeStatus, filters, sortBy])
 
   function setStatusFilter(val) {
     const next = new URLSearchParams(searchParams)
@@ -94,8 +95,7 @@ export default function TVShows() {
     setSearchParams(next)
   }
 
-  const sortBy = searchParams.get('sort') || 'new'
-  const isFiltered = activeStatus || sortBy !== 'new' || searchParams.get('genre') || Object.values(filters).some(v => v !== '' && v !== 0)
+  const isFiltered = activeStatus || searchParams.has('sort') || searchParams.get('genre') || Object.values(filters).some(v => v !== '' && v !== 0)
   const featuredItems = !loading && shows.length > 0 && !isFiltered
     ? [...shows]
         .filter(s => s.backdropUrl || s.posterUrl)

@@ -261,3 +261,47 @@
      display: none;
   }
 }
+
+/* Server Configuration & Cache Polish */
+.server-config-controls {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: center;
+}
+.server-config-controls .input { flex: 1; min-width: 0; }
+.server-config-buttons { display: flex; gap: var(--sp-2); }
+
+.server-url-display {
+  background: rgba(0,0,0,0.2);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius);
+  border: 1px border-style: solid; border-color: var(--border);
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  line-height: 1.5;
+}
+
+@media (max-width: 480px) {
+  .server-config-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .server-config-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--sp-2);
+  }
+  .server-config-buttons .btn { width: 100%; justify-content: center; }
+  
+  .profile-hero {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: var(--sp-4);
+  }
+  
+  .profile-form-card {
+    padding: var(--sp-5);
+  }
+}
+

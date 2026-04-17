@@ -1,14 +1,17 @@
 import { Link } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import { getTVShows, deleteTVShow, syncShowMeta, resolveUrl } from '../../api'
-import { Star, RefreshCw, Trash2, ChevronLeft } from 'lucide-react'
+import { Star, RefreshCw, Trash2, ChevronLeft, Settings } from 'lucide-react'
+import MetadataModal from './MetadataModal'
 
 export default function AdminTVShows() {
   const [shows, setShows]   = useState([])
   const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
   const [syncing, setSyncing] = useState(null)
   const [deleting, setDeleting] = useState(null)
+  const [search, setSearch] = useState('')
+  const [showMetadataModal, setShowMetadataModal] = useState(false)
+  const [modalTarget, setModalTarget] = useState(null)
 
   useEffect(() => {
     getTVShows().then(r => setShows(r.data)).finally(() => setLoading(false))
@@ -89,8 +92,11 @@ export default function AdminTVShows() {
                       <span className={`badge badge-${s.metaSource === 'tmdb' ? 'success' : 'muted'}`}>{s.metaSource}</span>
                     </td>
                     <td className="td-actions">
-                      <button className="btn btn-ghost btn-sm" onClick={() => handleSync(s._id)} disabled={syncing === s._id}>
-                        {syncing === s._id ? <RefreshCw className="animate-spin" size={14} /> : <RefreshCw size={14} />} Sync Meta
+                      <button className="btn btn-ghost btn-sm" onClick={() => {
+                        setModalTarget(s);
+                        setShowMetadataModal(true);
+                      }}>
+                        <Settings size={14} /> Manage Meta
                       </button>
                       <button className="btn btn-danger btn-sm" onClick={() => handleDelete(s._id, s.title)} disabled={deleting === s._id}>
                         {deleting === s._id ? <RefreshCw className="animate-spin" size={14} /> : <Trash2 size={14} />} Remove
@@ -103,6 +109,17 @@ export default function AdminTVShows() {
           </div>
         )
       }
+      {showMetadataModal && modalTarget && (
+        <MetadataModal 
+          item={modalTarget}
+          type="tvshow"
+          onClose={() => setShowMetadataModal(false)}
+          onSave={(updated) => {
+            setShows(ss => ss.map(s => s._id === updated._id ? updated : s))
+            setShowMetadataModal(false)
+          }}
+        />
+      )}
     </div>
   )
 }

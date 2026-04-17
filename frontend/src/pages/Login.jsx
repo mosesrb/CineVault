@@ -92,17 +92,18 @@ export default function Login() {
               Connect your app to the backend. If using a mobile or TV app, ensure your Cloudflare tunnel points to the <strong>backend port (3000)</strong>, not the frontend.
             </p>
             {serverMsg && <div className="alert alert-success" style={{ marginBottom: 'var(--sp-3)', fontSize: 'var(--fs-xs)' }}>{serverMsg}</div>}
-            <div className="login-server-input-group">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)' }}>
               <input
                 type="url"
                 className="input text-sm"
                 placeholder="https://xxx.trycloudflare.com"
                 value={serverUrl}
                 onChange={e => setServerUrl(e.target.value)}
+                style={{ width: '100%' }}
               />
-              <div style={{ display: 'flex' }}>
-                <button className="btn btn-primary" onClick={handleSaveServer}>Set</button>
-                <button className="btn btn-ghost" style={{ borderLeft: 'none', borderRadius: '0 var(--radius) var(--radius) 0', fontSize: 'var(--fs-xs)' }} onClick={handleClearServer}>Clear</button>
+              <div style={{ display: 'flex', gap: 'var(--sp-2)', justifyContent: 'flex-end' }}>
+                <button className="btn btn-primary btn-sm" onClick={handleSaveServer}>Set Server</button>
+                <button className="btn btn-ghost btn-sm" onClick={handleClearServer}>Clear</button>
               </div>
             </div>
             {localStorage.getItem('cv_server_url') && (

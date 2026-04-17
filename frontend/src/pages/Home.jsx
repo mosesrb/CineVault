@@ -236,7 +236,7 @@ export default function Home() {
           <section className="home-section">
             <div className="section-row-header">
               <h2 className="section-heading">Recently Added</h2>
-              <Link to="/movies" className="see-all">See all →</Link>
+              <Link to="/movies?sort=new" className="see-all">See all →</Link>
             </div>
             <div className="media-row">
               {recentMovies.map((m, i) => <MediaCard key={m._id} item={m} type="movie" index={i} />)}
@@ -262,7 +262,7 @@ export default function Home() {
           <section className="home-section">
             <div className="section-row-header">
               <h2 className="section-heading">TV Shows</h2>
-              <Link to="/tv" className="see-all">See all →</Link>
+              <Link to="/tv?sort=new" className="see-all">See all →</Link>
             </div>
             <div className="media-row">
               {recentShows.map((s, i) => <MediaCard key={s._id} item={s} type="tvshow" progress={s.progress} index={i} />)}
@@ -275,7 +275,7 @@ export default function Home() {
           <section className="home-section">
             <div className="section-row-header">
               <h2 className="section-heading">Hidden Gems</h2>
-              <Link to="/movies" className="see-all">See all →</Link>
+              <Link to="/movies?sort=rating" className="see-all">See all →</Link>
             </div>
             <div className="media-row">
               {hiddenGems.map((m, i) => <MediaCard key={m._id} item={m} type="movie" index={i} />)}

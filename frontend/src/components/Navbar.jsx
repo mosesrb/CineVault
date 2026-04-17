@@ -162,7 +162,7 @@ export default function Navbar() {
     e.preventDefault()
     if (!query.trim()) return
     setShowDropdown(false)
-    navigate(`/?q=${encodeURIComponent(query.trim())}`)
+    navigate(`/search?q=${encodeURIComponent(query.trim())}`)
     setQuery('')
   }
 

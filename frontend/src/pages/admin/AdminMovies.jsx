@@ -1,14 +1,17 @@
 import { Link } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import { getMovies, deleteMovie, syncMovieMeta, getGenres, resolveUrl } from '../../api'
-import { Star, RefreshCw, Trash2, ChevronLeft } from 'lucide-react'
+import { Star, RefreshCw, Trash2, ChevronLeft, Settings } from 'lucide-react'
+import MetadataModal from './MetadataModal'
 
 export default function AdminMovies() {
   const [movies, setMovies] = useState([])
   const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
   const [syncing, setSyncing] = useState(null)
   const [deleting, setDeleting] = useState(null)
+  const [search, setSearch] = useState('')
+  const [showMetadataModal, setShowMetadataModal] = useState(false)
+  const [modalTarget, setModalTarget] = useState(null)
 
   useEffect(() => {
     Promise.all([getMovies(), getGenres()])
@@ -104,10 +107,12 @@ export default function AdminMovies() {
                     <td className="td-actions">
                       <button
                         className="btn btn-ghost btn-sm"
-                        onClick={() => handleSync(m._id)}
-                        disabled={syncing === m._id}
+                        onClick={() => {
+                          setModalTarget(m);
+                          setShowMetadataModal(true);
+                        }}
                       >
-                        {syncing === m._id ? <RefreshCw className="animate-spin" size={14} /> : <RefreshCw size={14} />} Sync Meta
+                        <Settings size={14} /> Manage Meta
                       </button>
                       <button
                         className="btn btn-danger btn-sm"
@@ -124,6 +129,17 @@ export default function AdminMovies() {
           </div>
         )
       }
+      {showMetadataModal && modalTarget && (
+        <MetadataModal 
+          item={modalTarget}
+          type="movie"
+          onClose={() => setShowMetadataModal(false)}
+          onSave={(updated) => {
+            setMovies(ms => ms.map(m => m._id === updated._id ? updated : m))
+            setShowMetadataModal(false)
+          }}
+        />
+      )}
     </div>
   )
 }

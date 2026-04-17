@@ -86,6 +86,13 @@ router.get('/search-tmdb', [auth, admin], async (req, res) => {
     res.send(results);
 });
 
+// ─── GET /api/movies/conflicts ────────────────────────────────
+// Admin: fetch movies that require manual metadata confirmation
+router.get('/conflicts', [auth, admin], async (req, res) => {
+    const conflicts = await Movie.find({ isConflict: true }).sort({ addedAt: -1 });
+    res.send(conflicts);
+});
+
 // ─── GET /api/movies/:id ─────────────────────────────────────
 router.get('/:id', [auth, genreGuard, validateObjectId], async (req, res) => {
     const movie = await Movie.findById(req.params.id).populate('genres', 'name slug');
@@ -238,7 +245,14 @@ router.post('/:id/link', [auth, admin, validateObjectId], async (req, res) => {
     const genreIds = await ensureGenres(meta.genres);
     const updated = await Movie.findByIdAndUpdate(
         req.params.id,
-        { $set: { ...meta, genres: genreIds } },
+        { 
+            $set: { 
+                ...meta, 
+                genres: genreIds,
+                isConflict: false,
+                conflictOptions: []
+            } 
+        },
         { new: true }
     ).populate('genres', 'name slug');
 

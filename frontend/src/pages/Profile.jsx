@@ -232,20 +232,23 @@ export default function Profile() {
               Set a custom backend URL (e.g. your Cloudflare Tunnel). Leave blank to use the default.
             </p>
             {serverMsg && <div className="alert alert-success" style={{marginBottom:'var(--sp-3)'}}>{serverMsg}</div>}
-            <div className="field" style={{flexDirection:'row', gap:'var(--sp-3)', alignItems:'center'}}>
-              <input
-                type="url"
-                className="input"
-                placeholder="https://xxx.trycloudflare.com"
-                value={serverUrl}
-                onChange={e => setServerUrl(e.target.value)}
-                style={{flex: 1}}
-              />
-              <button className="btn btn-primary" onClick={handleSaveServer}>Save</button>
-              <button className="btn btn-ghost" onClick={() => { setServerUrl(''); handleSaveServer() }}>Clear</button>
+            <div className="server-config-section">
+              <div className="server-config-controls">
+                <input
+                  type="url"
+                  className="input"
+                  placeholder="https://xxx.trycloudflare.com"
+                  value={serverUrl}
+                  onChange={e => setServerUrl(e.target.value)}
+                />
+                <div className="server-config-buttons">
+                  <button className="btn btn-primary" onClick={handleSaveServer}>Save</button>
+                  <button className="btn btn-ghost" onClick={() => { setServerUrl(''); handleSaveServer() }}>Clear</button>
+                </div>
+              </div>
             </div>
             {localStorage.getItem('cv_server_url') && (
-              <p className="text-xs text-muted" style={{marginTop:'var(--sp-2)'}}>
+              <p className="text-xs text-muted server-url-display" style={{marginTop:'var(--sp-2)'}}>
                 Currently using: <strong>{localStorage.getItem('cv_server_url')}</strong>
               </p>
             )}

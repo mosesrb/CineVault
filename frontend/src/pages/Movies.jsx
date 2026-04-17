@@ -89,7 +89,7 @@ export default function Movies() {
     setSearchParams(next)
   }
 
-  const isFiltered = sortBy !== 'new' || searchParams.get('genre') || Object.values(filters).some(v => v !== '' && v !== 0)
+  const isFiltered = searchParams.has('sort') || searchParams.get('genre') || Object.values(filters).some(v => v !== '' && v !== 0)
   const featuredItems = !loading && movies.length > 0 && !isFiltered
     ? [...movies]
         .filter(m => m.backdropUrl || m.posterUrl)

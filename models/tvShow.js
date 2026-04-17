@@ -35,6 +35,8 @@ const tvShowSchema = new mongoose.Schema({
     totalEpisodes: { type: Number, default: 0 },
 
     // --- Metadata (TMDB / manual) ---
+    isConflict: { type: Boolean, default: false },
+    conflictOptions: { type: [mongoose.Schema.Types.Mixed], default: [] },
     tmdbId: { type: String, default: '' },
     imdbId: { type: String, default: '' },
     description: { type: String, default: '' },
@@ -86,6 +88,34 @@ function validateTVShow(show) {
         network: Joi.string().allow(''),
         firstAirDate: Joi.date().allow(null),
         lastAirDate: Joi.date().allow(null),
+        metaSource: Joi.string().valid('tmdb', 'omdb', 'manual', 'none'),
+        isConflict: Joi.boolean(),
+        conflictOptions: Joi.array().items(Joi.any())
+    };
+    return Joi.validate(show, schema);
+}
+
+function validateTVShowPatch(show) {
+    const schema = {
+        title: Joi.string().min(1).max(500),
+        year: Joi.number().min(1888).max(2100),
+        genreIds: Joi.array().items(Joi.objectId()),
+        status: Joi.string().valid('ongoing', 'ended', 'cancelled', 'unknown'),
+        totalSeasons: Joi.number().min(0),
+        tmdbId: Joi.string().allow(''),
+        imdbId: Joi.string().allow(''),
+        description: Joi.string().allow(''),
+        tagline: Joi.string().allow(''),
+        rating: Joi.number().min(0).max(10),
+        posterUrl: Joi.string().allow(''),
+        backdropUrl: Joi.string().allow(''),
+        trailerUrl: Joi.string().allow(''),
+        runtime: Joi.number().min(0),
+        network: Joi.string().allow(''),
+        firstAirDate: Joi.date().allow(null),
+        lastAirDate: Joi.date().allow(null),
+        isConflict: Joi.boolean(),
+        conflictOptions: Joi.array().items(Joi.any()),
         metaSource: Joi.string().valid('tmdb', 'omdb', 'manual', 'none')
     };
     return Joi.validate(show, schema);
@@ -93,3 +123,4 @@ function validateTVShow(show) {
 
 module.exports.TVShow = TVShow;
 module.exports.validateTVShow = validateTVShow;
+module.exports.validateTVShowPatch = validateTVShowPatch;

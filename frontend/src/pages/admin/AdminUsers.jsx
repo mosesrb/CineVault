@@ -114,18 +114,18 @@ export default function AdminUsers() {
                   </div>
 
                   {/* Actions */}
-                  <div style={{display:'flex', gap:'var(--sp-2)', flexWrap:'wrap', width:'100%', justifyContent:'flex-end'}}>
+                  <div style={{display:'flex', gap:'var(--sp-2)', alignItems: 'center', marginLeft: 'auto'}}>
+                    {!u.isApproved && (
                       <button
                         className="btn btn-primary btn-sm"
                         onClick={() => handleApprove(u._id)}
-                        style={{flex:'1 1 120px', justifyContent:'center'}}
                       >
                         <Check size={14} /> Approve
                       </button>
+                    )}
                     <button
                       className="btn btn-ghost btn-sm"
                       onClick={() => setExpanded(expanded === u._id ? null : u._id)}
-                      style={{flex:'1 1 100px', justifyContent:'center'}}
                     >
                       {expanded === u._id ? <><ChevronUp size={14} /> Close</> : <><Settings size={14} /> Manage</>}
                     </button>
@@ -133,7 +133,6 @@ export default function AdminUsers() {
                       <button
                         className="btn btn-danger btn-sm"
                         onClick={() => handleDelete(u._id, u.name)}
-                        style={{flex:'0 0 auto'}}
                       >
                         <Trash2 size={14} />
                       </button>

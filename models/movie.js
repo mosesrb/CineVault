@@ -51,6 +51,8 @@ const movieSchema = new mongoose.Schema({
     deepHash: { type: String, default: '' },         // full file hash (SHA-256)
 
     // --- Metadata (TMDB / manual) ---
+    isConflict: { type: Boolean, default: false },
+    conflictOptions: { type: [mongoose.Schema.Types.Mixed], default: [] },
     tmdbId: { type: String, default: '' },
     imdbId: { type: String, default: '' },
     description: { type: String, default: '' },
@@ -108,7 +110,9 @@ function validateMovie(movie) {
         trailerUrl: Joi.string().allow(''),
         director: Joi.string().allow(''),
         releaseDate: Joi.date().allow(null),
-        metaSource: Joi.string().valid('tmdb', 'omdb', 'manual', 'none')
+        metaSource: Joi.string().valid('tmdb', 'omdb', 'manual', 'none'),
+        isConflict: Joi.boolean(),
+        conflictOptions: Joi.array().items(Joi.any())
     };
     return Joi.validate(movie, schema);
 }
@@ -127,6 +131,9 @@ function validateMoviePatch(movie) {
         trailerUrl: Joi.string().allow(''),
         director: Joi.string().allow(''),
         releaseDate: Joi.date().allow(null),
+        isConflict: Joi.boolean(),
+        conflictOptions: Joi.array().items(Joi.any()),
+        metaSource: Joi.string().valid('tmdb', 'omdb', 'manual', 'none')
     };
     return Joi.validate(movie, schema);
 }

@@ -5,6 +5,7 @@ const genreGuard = require('../middleware/genreGuard');
 const { Movie } = require('../models/movie');
 const { TVShow } = require('../models/tvShow');
 const { Genre } = require('../models/genre');
+const mongoose = require('mongoose');
 
 /**
  * GET /api/search
@@ -28,13 +29,19 @@ router.get('/', [auth, genreGuard], async (req, res) => {
     }
 
     const buildFilter = () => {
-        const f = { $text: { $search: q } };
+        const regex = { $regex: q, $options: 'i' };
+        const f = {
+            $or: [
+                { title: regex },
+                { original_title: regex }
+            ]
+        };
         
         // Intersect Global Restriction with Local Genre Filter
         if (req.genreFilter) {
             if (genreId) {
                 const isAllowed = req.genreFilter.some(id => id.toString() === genreId.toString());
-                f.genres = isAllowed ? genreId : new mongoose.Types.ObjectId(); // force zero results if mismatch
+                f.genres = isAllowed ? genreId : new mongoose.Types.ObjectId(); 
             } else {
                 f.genres = { $in: req.genreFilter };
             }
@@ -50,17 +57,15 @@ router.get('/', [auth, genreGuard], async (req, res) => {
 
     if (type === 'all' || type === 'movie') {
         results.movies = await Movie.find(buildFilter())
-            .select('title year posterUrl genres rating resolution')
             .populate('genres', 'name slug')
-            .sort({ score: { $meta: 'textScore' } })
+            .sort({ title: 1 })
             .limit(30);
     }
 
     if (type === 'all' || type === 'tvshow') {
         results.shows = await TVShow.find(buildFilter())
-            .select('title year posterUrl genres rating status')
             .populate('genres', 'name slug')
-            .sort({ score: { $meta: 'textScore' } })
+            .sort({ title: 1 })
             .limit(30);
     }
 

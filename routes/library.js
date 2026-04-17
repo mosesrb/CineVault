@@ -66,6 +66,114 @@ router.put('/config', [auth, admin], async (req, res) => {
 router.post('/ingest', [auth, admin], async (req, res) => {
     if (!req.body.sourcePath) return res.status(400).send('sourcePath is required.');
 
+    const fs = require('fs');
+    if (!fs.existsSync(req.body.sourcePath)) {
+        return res.status(400).send('Source path does not exist.');
+    }
+    if (fs.statSync(req.body.sourcePath).isDirectory()) {
+        const files = scanDirectory(req.body.sourcePath);
+        if (!files || files.length === 0) {
+            return res.status(400).send('No valid media files found in directory.');
+        }
+
+        if (activeScan.isScanning) {
+            return res.status(400).send('A library operation is already in progress.');
+        }
+
+        activeScan.isScanning = true;
+        activeScan.total = files.length;
+        activeScan.processed = 0;
+        activeScan.report = { imported: 0, skipped: 0, errors: [] };
+
+        // Fire and forget batch ingestion
+        setTimeout(async () => {
+            for (const file of files) {
+                activeScan.currentFile = file.filePath;
+                try {
+                    const ingestResult = await ingestFile(file.filePath);
+                    const parsed = parseFilename(ingestResult.vaultPath || file.filePath);
+                    
+                    if (!parsed) {
+                        activeScan.report.errors.push(`Parse failed for ${file.filePath}`);
+                        activeScan.processed++;
+                        continue;
+                    }
+
+                    const meta = await fetchMetadata(parsed.title, parsed.year, parsed.type);
+                    const genreIds = await ensureGenres(meta.genres);
+
+                    if (parsed.type === 'movie') {
+                        const existing = await Movie.findOne({ title: parsed.title, year: parsed.year });
+                        if (existing) {
+                            if (!existing.vaultPath) {
+                                existing.vaultPath = ingestResult.vaultPath;
+                                await existing.save();
+                            }
+                            activeScan.report.skipped++;
+                        } else {
+                            const movie = new Movie({
+                                title: meta.title || parsed.title,
+                                year: meta.year || parsed.year,
+                                vaultPath: ingestResult.vaultPath,
+                                originalSourcePath: file.filePath,
+                                fileSize: 0,
+                                format: parsed.format,
+                                resolution: parsed.resolution,
+                                ...meta,
+                                genres: genreIds
+                            });
+                            await movie.save();
+                            activeScan.report.imported++;
+                        }
+                    } else if (parsed.type === 'tvshow') {
+                        let show = await TVShow.findOne({ title: parsed.title });
+                        if (!show) {
+                            const meta2 = await fetchMetadata(parsed.title, parsed.year, 'tvshow');
+                            const genreIds2 = await ensureGenres(meta2.genres);
+                            show = new TVShow({
+                                title: meta2.title || parsed.title,
+                                year: meta2.year || parsed.year,
+                                ...meta2,
+                                genres: genreIds2
+                            });
+                            await show.save();
+                        }
+
+                        const existingEp = await Episode.findOne({
+                            showId: show._id,
+                            season: parsed.season,
+                            episode: parsed.episode
+                        });
+                        if (existingEp) {
+                            activeScan.report.skipped++;
+                        } else {
+                            const ep = new Episode({
+                                showId: show._id,
+                                season: parsed.season,
+                                episode: parsed.episode,
+                                vaultPath: ingestResult.vaultPath,
+                                originalSourcePath: file.filePath,
+                                format: parsed.format,
+                                resolution: parsed.resolution
+                            });
+                            await ep.save();
+                            activeScan.report.imported++;
+                        }
+                    } else {
+                        activeScan.report.errors.push(`Unknown media type for ${file.filePath}`);
+                    }
+                } catch (e) {
+                    console.error("Batch ingest error for", file.filePath, e.message);
+                    activeScan.report.errors.push(file.filePath + ': ' + e.message);
+                }
+                activeScan.processed++;
+            }
+            activeScan.isScanning = false;
+        }, 0);
+
+        return res.status(202).json({ message: `Batch ingest started for ${files.length} files. They will process in the background.` });
+    }
+
     try {
         const ingestResult = await ingestFile(req.body.sourcePath);
         const parsed = parseFilename(ingestResult.vaultPath || req.body.sourcePath);
@@ -457,7 +565,7 @@ router.post('/refresh-metadata', [auth, admin], async (req, res) => {
     for (const movie of movies) {
         try {
             const meta = await fetchMetadata(movie.title, movie.year, 'movie');
-            if (meta.metaSource !== 'none') {
+            if (meta.metaSource !== 'none' || meta.isConflict) {
                 const genreIds = await ensureGenres(meta.genres);
                 Object.assign(movie, { ...meta, genres: genreIds });
                 await movie.save();
@@ -473,7 +581,7 @@ router.post('/refresh-metadata', [auth, admin], async (req, res) => {
     for (const show of shows) {
         try {
             const meta = await fetchMetadata(show.title, show.year, 'tvshow');
-            if (meta.metaSource !== 'none') {
+            if (meta.metaSource !== 'none' || meta.isConflict) {
                 const genreIds = await ensureGenres(meta.genres);
                 Object.assign(show, { ...meta, genres: genreIds });
                 await show.save();

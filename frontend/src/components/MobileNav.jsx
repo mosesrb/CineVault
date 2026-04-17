@@ -45,13 +45,20 @@ export default function MobileNav() {
   const hasResults = results && (results.movies?.length > 0 || results.shows?.length > 0)
   const noResults = results && !hasResults && !isSearching
 
+  function handleSearch(e) {
+    e.preventDefault()
+    if (!query.trim()) return
+    closeSearch()
+    navigate(`/search?q=${encodeURIComponent(query.trim())}`)
+  }
+
   return (
     <>
       {/* Search Overlay */}
       {searchOpen && (
         <div className="mobile-search-overlay" onClick={closeSearch}>
           <div className="mobile-search-panel glass" onClick={e => e.stopPropagation()}>
-            <div className="mobile-search-bar">
+            <form className="mobile-search-bar" onSubmit={handleSearch}>
               <Search size={18} className="mobile-search-icon" />
               <input
                 ref={inputRef}
@@ -63,11 +70,11 @@ export default function MobileNav() {
                 aria-label="Search CineVault"
               />
               {query && (
-                <button className="mobile-search-clear" onClick={() => setQuery('')} aria-label="Clear">
+                <button type="button" className="mobile-search-clear" onClick={() => setQuery('')} aria-label="Clear">
                   <X size={16} />
                 </button>
               )}
-            </div>
+            </form>
 
             <div className="mobile-search-results">
               {isSearching && <div className="mobile-search-status">Searching...</div>}

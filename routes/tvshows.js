@@ -7,7 +7,7 @@ const admin = require('../middleware/admin');
 const genreGuard = require('../middleware/genreGuard');
 const validateObjectId = require('../middleware/validateObjectId');
 
-const { TVShow, validateTVShow } = require('../models/tvShow');
+const { TVShow, validateTVShow, validateTVShowPatch } = require('../models/tvShow');
 const { Episode, validateEpisode } = require('../models/episode');
 const { Genre } = require('../models/genre');
 const { fetchMetadata } = require('../services/metadataService');
@@ -57,6 +57,12 @@ router.get('/', [auth, genreGuard], async (req, res) => {
         .sort({ addedAt: -1 });
 
     res.send(shows);
+});
+
+// GET /api/tvshows/conflicts
+router.get('/conflicts', [auth, admin], async (req, res) => {
+    const conflicts = await TVShow.find({ isConflict: true }).sort({ addedAt: -1 });
+    res.send(conflicts);
 });
 
 // GET /api/tvshows/:id
@@ -134,6 +140,9 @@ router.post('/', [auth, admin], async (req, res) => {
 
 // PUT /api/tvshows/:id — Admin
 router.put('/:id', [auth, admin, validateObjectId], async (req, res) => {
+    const { error } = validateTVShowPatch(req.body);
+    if (error) return res.status(400).send(error.details[0].message);
+
     const update = { ...req.body };
     if (req.body.genreIds) {
         const genres = await Genre.find({ _id: { $in: req.body.genreIds } });
@@ -177,6 +186,58 @@ router.post('/:id/sync', [auth, admin, validateObjectId], async (req, res) => {
 
     res.send(updated);
 });
+
+// POST /api/tvshows/:id/link — Admin: link a show to a specific TMDB ID
+router.post('/:id/link', [auth, admin, validateObjectId], async (req, res) => {
+    const show = await TVShow.findById(req.params.id);
+    if (!show) return res.status(404).send('TV Show not found.');
+
+    const tmdbId = req.body.tmdbId;
+    if (!tmdbId) return res.status(400).send('tmdbId is required.');
+
+    const { fetchMetadataById } = require('../services/metadataService');
+    const meta = await fetchMetadataById(tmdbId, 'tvshow');
+    if (!meta || meta.metaSource === 'none') {
+        return res.status(422).send('Could not fetch metadata for this TMDB ID.');
+    }
+
+    const { ensureGenres } = require('./movies'); // Reuse genre helper if possible, or define here
+    // Actually movies.js doesn't export ensureGenres. I'll use the one in this file if it exists.
+    // Wait, library.js has ensureGenres. I'll define a local one or just copy it.
+    
+    // I'll define it locally since it's already used in :id/sync
+    const genreIds = await ensureGenres(meta.genres);
+    const updated = await TVShow.findByIdAndUpdate(
+        req.params.id,
+        { 
+            $set: { 
+                ...meta, 
+                genres: genreIds,
+                isConflict: false,
+                conflictOptions: []
+            } 
+        },
+        { new: true }
+    ).populate('genres', 'name slug');
+
+    res.send(updated);
+});
+
+// Internal helper (already defined in movies.js but not exported, let's redefine or export)
+async function ensureGenres(genreNames) {
+    const { Genre } = require('../models/genre');
+    if (!genreNames || !genreNames.length) return [];
+    const genreIds = [];
+    for (const name of genreNames) {
+        let genre = await Genre.findOne({ name: new RegExp(`^${name}$`, 'i') });
+        if (!genre) {
+            genre = new Genre({ name });
+            await genre.save();
+        }
+        genreIds.push(genre._id);
+    }
+    return genreIds;
+}
 
 // ─── EPISODES ─────────────────────────────────────────────────
 

@@ -112,6 +112,7 @@ export const deleteMovie = (id, deleteFile = false) => api.delete(`/movies/${id}
 export const syncMovieMeta = id => api.post(`/movies/${id}/sync`)
 export const searchTMDB = (q, type = 'movie') => api.get('/movies/search-tmdb', { params: { q, type } })
 export const linkMovieToTMDB = (id, tmdbId) => api.post(`/movies/${id}/link`, { tmdbId })
+export const getMovieConflicts = () => api.get('/movies/conflicts')
 
 // ── TV Shows ──────────────────────────────────────────────────
 export const getTVShows   = (params = {}) => api.get('/tvshows', { params })
@@ -120,6 +121,8 @@ export const createTVShow = data => api.post('/tvshows', data)
 export const updateTVShow = (id, data) => api.put(`/tvshows/${id}`, data)
 export const deleteTVShow = (id, deleteFile = false) => api.delete(`/tvshows/${id}`, { params: { deleteFile } })
 export const syncShowMeta = id => api.post(`/tvshows/${id}/sync`)
+export const linkTVShowToTMDB = (id, tmdbId) => api.post(`/tvshows/${id}/link`, { tmdbId })
+export const getTVShowConflicts = () => api.get('/tvshows/conflicts')
 export const getEpisodes  = (showId, params = {}) => api.get(`/tvshows/${showId}/episodes`, { params })
 export const getSeasonEpisodes = (showId, season) =>
   api.get(`/tvshows/${showId}/seasons/${season}/episodes`)

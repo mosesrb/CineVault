@@ -355,7 +355,7 @@ export default function Detail() {
                   {media.facts.keywords?.length > 0 && (
                     <div className="fact-card glass" style={{ gridColumn: '1 / -1' }}>
                       <div className="fact-label">Keywords</div>
-                      <div className="fact-value" style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                      <div className="fact-value" style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
                         {media.facts.keywords.join(', ')}
                       </div>
                     </div>

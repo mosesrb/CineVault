@@ -325,32 +325,44 @@
 /* Facts */
 .facts-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: var(--sp-3);
   touch-action: pan-y;
 }
 
 .fact-card {
-  padding: var(--sp-3) var(--sp-4);
-  border-radius: var(--radius);
+  padding: var(--sp-4);
+  border-radius: var(--radius-lg);
   border: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--sp-1);
+  background: var(--bg-glass-low);
+  transition: all var(--t-fast);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.fact-card:hover {
+  background: var(--bg-glass-mid);
+  border-color: var(--border-mid);
 }
 
 .fact-label {
   font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.15em;
   color: var(--text-muted);
-  font-weight: 700;
+  font-weight: 800;
+  opacity: 0.8;
 }
 
 .fact-value {
-  font-size: var(--fs-base);
+  font-size: var(--fs-lg);
   font-weight: 700;
   color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
 }
 
 /* Episodes */
@@ -578,4 +590,22 @@
   background: rgba(255, 255, 255, 0.25);
   transform: translateY(-2px);
   outline: none;
+}
+
+@media (max-width: 480px) {
+  .facts-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: var(--sp-2);
+  }
+  
+  .fact-card {
+    padding: var(--sp-3);
+    text-align: center;
+  }
+  
+  .fact-value {
+    font-size: clamp(0.9rem, 4vw, 1.1rem) !important;
+    word-break: break-all;
+    overflow-wrap: anywhere;
+  }
 }

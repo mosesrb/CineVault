@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { getLibraryConfig, setLibraryConfig, ingestFile, scanLibrary, getScanStatus, getOrganizeMap, refreshMetadata, getDuplicates, cleanupDuplicates, deleteMovie, searchTMDB, linkMovieToTMDB, resolveUrl } from '../../api'
-import { Library, Save, Inbox, RefreshCw, Search, Wand2, CheckCircle2, FileText, AlertOctagon, LayoutGrid, Trash2, Database, X, AlertTriangle, AlertCircle, CloudDownload, FolderSearch, ChevronLeft } from 'lucide-react'
+import { getLibraryConfig, setLibraryConfig, ingestFile, scanLibrary, getScanStatus, getOrganizeMap, refreshMetadata, getDuplicates, cleanupDuplicates, deleteMovie, getMovieConflicts, getTVShowConflicts } from '../../api'
+import { Library, Save, Inbox, RefreshCw, Search, Wand2, CheckCircle2, LayoutGrid, Trash2, Database, X, CloudDownload, FolderSearch, ChevronLeft, Target, AlertOctagon } from 'lucide-react'
+import MetadataModal from './MetadataModal'
 
 export default function AdminLibrary() {
   const [config, setConfig]   = useState(null)
@@ -32,12 +33,13 @@ export default function AdminLibrary() {
   const [showDupeModal, setShowDupeModal] = useState(false)
   const [cleanupLoading, setCleanupLoading] = useState(false)
 
-  const [showRematchModal, setShowRematchModal] = useState(false)
-  const [rematchTarget, setRematchTarget] = useState(null)
-  const [rematchQuery, setRematchQuery] = useState('')
-  const [rematchResults, setRematchResults] = useState([])
-  const [rematchLoading, setRematchLoading] = useState(false)
-  const [linking, setLinking] = useState(false)
+  const [showMetadataModal, setShowMetadataModal] = useState(false)
+  const [modalTarget, setModalTarget] = useState(null)
+  const [modalType, setModalType] = useState('movie')
+  
+  const [movieConflicts, setMovieConflicts] = useState([])
+  const [tvConflicts, setTVConflicts] = useState([])
+  const [conflictsLoading, setConflictsLoading] = useState(false)
 
   useEffect(() => {
     getLibraryConfig()
@@ -46,7 +48,25 @@ export default function AdminLibrary() {
         setVault(r.data.vaultRootPath || '')
         setInbox(r.data.inboxPath || '')
       }).catch(() => {})
+
+    loadConflicts()
   }, [])
+
+  const loadConflicts = async () => {
+    setConflictsLoading(true)
+    try {
+      const [mRes, tRes] = await Promise.all([
+        getMovieConflicts(),
+        getTVShowConflicts()
+      ])
+      setMovieConflicts(mRes.data)
+      setTVConflicts(tRes.data)
+    } catch (err) {
+      console.error('Failed to load conflicts:', err)
+    } finally {
+      setConflictsLoading(false)
+    }
+  }
 
   async function handleSaveConfig(e) {
     e.preventDefault()
@@ -152,43 +172,6 @@ export default function AdminLibrary() {
     }
   }
 
-  async function handleOpenRematch(movie) {
-    setRematchTarget(movie)
-    setRematchQuery(movie.title)
-    setRematchResults([])
-    setShowRematchModal(true)
-    setRematchLoading(true)
-    try {
-      const r = await searchTMDB(movie.title)
-      setRematchResults(r.data)
-    } catch (err) {
-      console.error('Rematch search failed', err)
-    } finally { setRematchLoading(false) }
-  }
-
-  async function handleSearchRematch() {
-    if (!rematchQuery.trim()) return
-    setRematchLoading(true)
-    try {
-      const r = await searchTMDB(rematchQuery)
-      setRematchResults(r.data)
-    } finally { setRematchLoading(false) }
-  }
-
-  async function handleLinkIdentity(tmdbId) {
-    if (!rematchTarget) return
-    setLinking(true)
-    try {
-      await linkMovieToTMDB(rematchTarget._id, tmdbId)
-      setShowRematchModal(false)
-      const r = await getDuplicates()
-      setDuplicates(r.data)
-      alert('Identity updated! Record is now correctly identified.')
-    } catch (err) {
-      alert('Failed to link: ' + (err.response?.data || err.message))
-    } finally { setLinking(false) }
-  }
-
   /* ─────────────────────────────────────────── RENDER ─── */
   return (
     <div className="animate-fadeUp lib-page">
@@ -244,7 +227,7 @@ export default function AdminLibrary() {
             <Inbox size={20} /> Ingest &amp; Catalog
           </h2>
           <p className="text-muted text-sm" style={{ marginBottom: 'var(--sp-4)' }}>
-            Add an external file directly to your library.
+            Add an external file or an entire folder directly to your library.
           </p>
           <form onSubmit={handleIngest} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
             {ingestErr && <div className="alert alert-error">{ingestErr}</div>}
@@ -252,7 +235,7 @@ export default function AdminLibrary() {
               className="input"
               value={ingestPath}
               onChange={e => setIngestPath(e.target.value)}
-              placeholder="e.g. C:\Downloads\Interstellar.mkv"
+              placeholder="e.g. C:\Downloads\Interstellar.mkv or C:\Downloads\Video\Movies"
               required
             />
             <button type="submit" className="btn btn-primary" disabled={ingestLoading || !config}>
@@ -362,14 +345,69 @@ export default function AdminLibrary() {
         </div>
       </div>
 
+      {/* ── Conflict Review Queue ─────────────────────────── */}
+      {(movieConflicts.length > 0 || tvConflicts.length > 0) && (
+        <div className="card lib-section" style={{ border: '1px solid var(--warning)', background: 'rgba(255, 171, 0, 0.05)' }}>
+          <div className="lib-section-header">
+            <div>
+              <h2 className="lib-section-title" style={{ marginBottom: 'var(--sp-1)', display:'flex', alignItems:'center', gap:'8px', color: 'var(--warning)' }}>
+                <Target size={20} /> Metadata Identity Audit ({movieConflicts.length + tvConflicts.length})
+              </h2>
+              <p className="text-muted text-sm">Resolve ambiguous matches where multiple movies or TV shows share similar names.</p>
+            </div>
+            <button className="btn btn-ghost btn-sm" onClick={loadConflicts} disabled={conflictsLoading}>
+              <RefreshCw className={conflictsLoading ? 'animate-spin' : ''} size={16} />
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-4)', marginTop: 'var(--sp-4)' }}>
+            {[...movieConflicts.map(m => ({...m, type: 'movie'})), ...tvConflicts.map(t => ({...t, type: 'tvshow'}))].map((item) => (
+              <div key={item._id} className="card-raised" style={{ padding: 'var(--sp-4)', borderLeft: '4px solid var(--warning)' }}>
+                <div style={{ display: 'flex', gap: 'var(--sp-4)', alignItems: 'flex-start' }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 800, fontSize: 'var(--fs-md)', color: 'var(--text-main)' }}>
+                      {item.title} ({item.year})
+                    </div>
+                    <div className="text-muted text-xs" style={{ marginBottom: 'var(--sp-2)' }}>
+                      File: {item.vaultPath?.split('/').pop() || 'Unknown'}
+                    </div>
+                    
+                    <div style={{ display: 'flex', gap: 'var(--sp-3)', marginTop: 'var(--sp-3)' }}>
+                      <div className="card lib-action-btn" style={{flex:1, textAlign:'center', padding:'var(--sp-3)', cursor:'pointer', border:'1px solid var(--border-light)'}} onClick={() => {
+                        setModalTarget(item);
+                        setModalType(item.type);
+                        setShowMetadataModal(true);
+                      }}>Manage Metadata</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── UNIFIED METADATA MODAL ────────────────────────── */}
+      {showMetadataModal && modalTarget && (
+        <MetadataModal 
+          item={modalTarget}
+          type={modalType}
+          onClose={() => setShowMetadataModal(false)}
+          onSave={() => {
+            loadConflicts()
+            setShowMetadataModal(false)
+          }}
+        />
+      )}
+
       {/* ── Duplicate Management ────────────────────────── */}
       <div className="card lib-section" style={{ borderLeft: '4px solid var(--accent)' }}>
         <div className="lib-section-header">
           <div>
             <h2 className="lib-section-title" style={{ marginBottom: 'var(--sp-1)', display:'flex', alignItems:'center', gap:'8px' }}>
-              <AlertOctagon size={20} /> Duplicate Management
+              <AlertOctagon size={20} /> Structural Cleanup Audit
             </h2>
-            <p className="text-muted text-sm">Detect and eliminate redundant records in your library.</p>
+            <p className="text-muted text-sm">Find and remove identical files, broken paths, or duplicate database records.</p>
           </div>
           <button
             className="btn btn-ghost lib-action-btn"
@@ -423,7 +461,7 @@ export default function AdminLibrary() {
             {/* Modal header */}
             <div className="lib-modal-header">
               <h2 style={{ fontWeight: 900, fontSize: 'var(--fs-xl)', display:'flex', alignItems:'center', gap:'8px' }}>
-                <Search size={24} /> Library Audit
+                <Search size={24} /> Structural Cleanup Audit
               </h2>
               <button className="btn btn-ghost btn-sm" onClick={() => setShowDupeModal(false)}><X size={18} /> Close</button>
             </div>
@@ -485,7 +523,11 @@ export default function AdminLibrary() {
                                   </span>
                                 </div>
                                 <div className="lib-dupe-entry-actions">
-                                  <button className="btn btn-sm btn-ghost" onClick={() => handleOpenRematch(doc)}>
+                                  <button className="btn btn-sm btn-ghost" onClick={() => {
+                                    setModalTarget(doc);
+                                    setModalType('movie');
+                                    setShowMetadataModal(true);
+                                  }}>
                                     <Search size={14} /> Rematch
                                   </button>
                                   <button className="btn btn-sm btn-ghost" onClick={() => handleManualDelete(doc._id, false)}>
@@ -526,7 +568,11 @@ export default function AdminLibrary() {
                                   {doc.tmdbId && <span className="badge badge-success" style={{ fontSize: 10 }}>Synced</span>}
                                 </div>
                                 <div className="lib-dupe-entry-actions">
-                                  <button className="btn btn-sm btn-ghost" onClick={() => handleOpenRematch(doc)}>
+                                  <button className="btn btn-sm btn-ghost" onClick={() => {
+                                    setModalTarget(doc);
+                                    setModalType('movie');
+                                    setShowMetadataModal(true);
+                                  }}>
                                     <Search size={14} /> Rematch
                                   </button>
                                   <button className="btn btn-sm btn-ghost" onClick={() => handleManualDelete(doc._id, false)}>
@@ -562,76 +608,7 @@ export default function AdminLibrary() {
         </div>
       )}
 
-      {/* ══════════ REMATCH MODAL ══════════ */}
-      {showRematchModal && (
-        <div className="lib-modal-overlay" style={{ zIndex: 2000 }}>
-          <div className="lib-modal-box">
 
-            <div className="lib-modal-header">
-              <div>
-                <h2 style={{ fontSize: 'var(--fs-lg)', fontWeight: 700 }}>Manual Rematch</h2>
-                <p className="text-muted text-xs" style={{ marginTop: 'var(--sp-1)', wordBreak: 'break-all' }}>
-                  File: <span style={{ color: 'var(--accent)' }}>
-                    {rematchTarget?.vaultPath?.split(/[\\/]/).pop() || rematchTarget?.title}
-                  </span>
-                </p>
-              </div>
-              <button className="btn btn-ghost btn-sm" onClick={() => setShowRematchModal(false)}><X size={18} /></button>
-            </div>
-
-            <div className="lib-modal-body">
-              {/* Search row */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)', marginBottom: 'var(--sp-4)' }}>
-                <input
-                  className="input"
-                  placeholder="Search TMDB for correct title…"
-                  value={rematchQuery}
-                  onChange={e => setRematchQuery(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleSearchRematch()}
-                />
-                <button
-                  className="btn btn-ghost"
-                  onClick={handleSearchRematch}
-                  disabled={rematchLoading}
-                >
-                  {rematchLoading ? <><RefreshCw className="animate-spin" size={16} /> Searching…</> : <><Search size={16} /> Search TMDB</>}
-                </button>
-              </div>
-
-              {/* Results */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
-                {rematchResults.map(res => (
-                  <div key={res.id} className="lib-rematch-result">
-                    {res.posterUrl
-                      ? <img src={resolveUrl(res.posterUrl)} alt="" className="lib-rematch-poster" />
-                      : <div className="lib-rematch-poster lib-rematch-poster-empty" />
-                    }
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 700, fontSize: 'var(--fs-sm)' }}>{res.title} ({res.year})</div>
-                      <div className="text-muted" style={{ fontSize: 'var(--fs-xs)', marginTop: 2, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                        {res.description}
-                      </div>
-                    </div>
-                    <button
-                      className="btn btn-sm btn-primary"
-                      onClick={() => handleLinkIdentity(res.id)}
-                      disabled={linking}
-                      style={{ flexShrink: 0 }}
-                    >
-                      {linking ? '…' : 'Use'}
-                    </button>
-                  </div>
-                ))}
-                {!rematchLoading && rematchResults.length === 0 && rematchQuery && (
-                  <div className="text-muted text-sm" style={{ textAlign: 'center', padding: 'var(--sp-8)' }}>
-                    No results for "{rematchQuery}"
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
