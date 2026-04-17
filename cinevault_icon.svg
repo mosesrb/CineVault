@@ -1,0 +1,58 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background Layer (Obsidian Dark) -->
+  <rect width="1024" height="1024" fill="#0f1115"/>
+  
+  <!-- Centered Branding Unit (Scaled from 100x100 to fit 1024x1024 with 10% padding) -->
+  <g transform="translate(102, 102) scale(8.2)">
+    <defs>
+      {/* Metallic Shimmer Gradient (Standalone compatible) */}
+      <linearGradient id="cv_metallic" x1="10" y1="10" x2="90" y2="90" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stop-color="#ffffff" stop-opacity="0.9" />
+        <stop offset="0.45" stop-color="#f11d5c" />
+        <stop offset="0.55" stop-color="#f11d5c" />
+        <stop offset="1" stop-color="#ffffff" stop-opacity="0.9" />
+      </linearGradient>
+
+      {/* Deep Depth Radial */}
+      <radialGradient id="cv_depth" cx="50" cy="50" r="45" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stop-color="#f11d5c" stop-opacity="0.4" />
+        <stop offset="1" stop-color="#f11d5c" stop-opacity="0" />
+      </radialGradient>
+
+      {/* Internal Glow Filter */}
+      <filter id="cv_glow" x="-20%" y="-20%" width="140%" height="140%">
+        <feGaussianBlur stdDeviation="2" result="blur" />
+        <feComposite in="SourceGraphic" in2="blur" operator="over" />
+      </filter>
+    </defs>
+
+    <!-- Background Depth Aura -->
+    <circle cx="50" cy="50" r="45" fill="url(#cv_depth)" opacity="0.6" />
+
+    <!-- The "C" Frame (Outer Body) -->
+    <path 
+      d="M50 10 C 27.9 10 10 27.9 10 50 C 10 72.1 27.9 90 50 90 L 50 78 C 34.5 78 22 65.5 22 50 C 22 34.5 34.5 22 50 22 L 50 10 Z" 
+      fill="url(#cv_metallic)" 
+      filter="url(#cv_glow)"
+    />
+
+    <!-- The "V" Iris (Inner Signature) -->
+    <path 
+      d="M50 35 L 75 75 L 50 70 L 25 75 L 50 35 Z" 
+      fill="#f11d5c" 
+      opacity="0.95"
+    />
+    
+    <!-- Central "Iris" Core -->
+    <circle cx="50" cy="54" r="5" fill="#fff" opacity="0.8" filter="url(#cv_glow)" />
+
+    <!-- Lens Shimmer Line -->
+    <path 
+      d="M30 25 L 70 25" 
+      stroke="#fff" 
+      stroke-width="0.5" 
+      stroke-linecap="round" 
+      opacity="0.3" 
+    />
+  </g>
+</svg>

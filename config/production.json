@@ -1,0 +1,10 @@
+{
+    "name": "Delatron Courses Library - Production",
+    "jwtPrivateKey": "delatron_jwtPrivateKey",
+    "host": {
+        "domain": "mongodb://localhost/delatron",
+        "dbuser": "mongodb",
+        "dbpassword": "dbpassword",
+        "mail": "prod-delatron@mail.com"
+    }
+}

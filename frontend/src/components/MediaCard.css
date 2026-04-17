@@ -1,0 +1,326 @@
+.media-row .media-card {
+  flex: 0 0 160px;
+  width: 160px; /* Explicit width to prevent flex-shrink issues */
+  scroll-snap-align: start;
+}
+
+.media-card {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  transition: transform var(--t-mid) var(--ease), opacity var(--t-slow) ease;
+  position: relative;
+  
+  /* Staggered entrance animation */
+  opacity: 0;
+  animation: cardEntrance var(--t-slow) var(--ease) forwards;
+  animation-delay: calc(var(--index) * 40ms);
+}
+
+.card-poster-link {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+}
+
+.card-title-link {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+}
+
+@keyframes cardEntrance {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@media (hover: hover) {
+  .media-card:hover { transform: translateY(-8px) scale(1.02); }
+  .media-card:hover .card-poster { 
+    box-shadow: 0 20px 40px rgba(0,0,0,0.8), 0 0 20px var(--accent-glow);
+  }
+  .media-card:hover .card-poster img { transform: scale(1.1); }
+  .media-card:hover .card-quick-actions { opacity: 1; transform: translateY(0); }
+}
+
+.media-card:focus,
+.media-card:focus-visible {
+  outline: none;
+  transform: scale(1.06) translateY(-4px);
+  z-index: 50;
+}
+.media-card:focus .card-poster,
+.media-card:focus-visible .card-poster {
+  border: 2px solid var(--accent);
+  box-shadow: 
+    0 20px 40px rgba(0,0,0,0.6),
+    0 0 20px var(--accent-glow),
+    0 0 40px var(--accent-glow);
+}
+.media-card:focus .card-overlay,
+.media-card:focus-visible .card-overlay {
+  opacity: 1;
+}
+
+/* Poster Container */
+.card-poster {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--bg-card);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+  transition: all var(--t-mid) var(--ease);
+  isolation: isolate; /* Create new stacking context */
+}
+
+.media-card:hover .card-poster { 
+}
+
+.card-poster img { 
+  width: 100%; 
+  height: 100%; 
+  object-fit: cover; 
+  transition: transform var(--t-slow) var(--ease);
+}
+.media-card:hover .card-poster img { }
+
+/* Placeholder */
+.card-poster-placeholder {
+  width: 100%; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, var(--bg-overlay), var(--bg-card));
+  font-size: 3rem;
+  font-weight: 800;
+  color: var(--text-muted);
+}
+
+/* Overlay gradient — always visible at bottom for readability */
+.card-overlay-gradient {
+  position: absolute; inset: 0;
+  background: linear-gradient(to top, hsla(220,20%,6%,0.85) 0%, transparent 45%);
+  pointer-events: none;
+}
+
+/* Quick Action Bar — slides up from bottom on hover */
+.card-quick-actions {
+  display: flex;
+  gap: var(--sp-2);
+  justify-content: center;
+  padding: var(--sp-2) var(--sp-2) var(--sp-1);
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
+}
+
+/* Always visible on touch devices (no hover) */
+@media (hover: none) {
+  .card-quick-actions { opacity: 1; transform: translateY(0); }
+}
+
+.card-quick-play,
+.card-quick-info {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  text-decoration: none;
+  transition: all var(--t-fast);
+  min-height: 36px;
+  padding: 0 var(--sp-3);
+}
+
+.card-quick-play {
+  flex: 1;
+  background: var(--accent);
+  color: #fff;
+  gap: var(--sp-2);
+  box-shadow: 0 4px 12px var(--accent-glow);
+}
+.card-quick-play:hover { background: hsl(338, 85%, 65%); transform: translateY(-1px); }
+
+.card-quick-info {
+  background: var(--bg-glass-mid);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  width: 36px;
+  padding: 0;
+}
+.card-quick-info:hover { background: var(--bg-overlay); color: var(--text-primary); border-color: var(--border-mid); }
+
+/* Rating */
+.card-rating {
+  position: absolute;
+  top: var(--sp-2); right: var(--sp-2);
+  background: hsla(0,0%,0%,0.7);
+  backdrop-filter: blur(6px);
+  padding: 2px var(--sp-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--gold);
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+/* Type badge */
+.card-type-badge {
+  position: absolute;
+  top: var(--sp-2); left: var(--sp-2);
+  background: var(--accent);
+  color: #fff;
+  padding: 2px var(--sp-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+/* ── List Variant Styles ─────────────────────────────────────── */
+.media-card--list {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  margin-bottom: var(--sp-2);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  display: flex !important;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2);
+  animation-delay: calc(var(--index) * 20ms); /* Faster entrance for lists */
+}
+
+.card-list-content {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+
+.card-list-poster {
+  flex: 0 0 60px;
+  width: 60px;
+  aspect-ratio: 2 / 3;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  position: relative;
+  background: var(--bg-overlay);
+}
+.card-list-poster img { width: 100%; height: 100%; object-fit: cover; }
+
+.card-list-info { min-width: 0; flex: 1; }
+.card-list-title {
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.card-list-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.card-list-play {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-dim);
+  color: var(--accent);
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: all var(--t-fast);
+}
+.card-list-play:active { transform: scale(0.9); background: var(--accent); color: #fff; }
+
+.card-list-rating {
+  position: absolute;
+  bottom: 0px;
+  left: 0px;
+  width: 100%;
+  background: hsla(0,0%,0%,0.7);
+  font-size: 8px;
+  font-weight: 800;
+  color: var(--gold);
+  text-align: center;
+  padding: 1px 0;
+}
+
+.card-type-badge--sm {
+  padding: 1px 3px;
+  font-size: 7px;
+  top: 2px;
+  left: 2px;
+}
+
+/* Info Section */
+.card-info { 
+  padding: var(--sp-3) var(--sp-1) 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.card-title {
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 0px;
+  line-height: 1.2;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  height: 2.4em;
+}
+@media (max-width: 600px) {
+  .card-title { font-size: 0.72rem; height: 2.4em; }
+}
+
+.card-year {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+/* Progress Bar */
+.card-progress-container {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 4px;
+  background: hsla(220, 20%, 6%, 0.5);
+  overflow: hidden;
+  z-index: 10;
+}
+
+.card-progress-bar {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s ease;
+  box-shadow: 0 0 10px var(--accent);
+}
+
+.card-progress-bar--series {
+  background: linear-gradient(90deg, #3b82f6, #60a5fa);
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+}

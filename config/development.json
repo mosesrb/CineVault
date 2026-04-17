@@ -1,0 +1,6 @@
+{
+    "name": "CineVault - Development",
+    "jwtPrivateKey": "cinevault_dev_secret_change_me",
+    "tmdbApiKey": "359973f1cdd852ebabd04b7c4883ea4c",
+    "mongoURI": "mongodb://localhost/cinevault_dev"
+}

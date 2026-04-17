@@ -1,0 +1,118 @@
+.player-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #000;
+}
+
+.player-loading {
+  min-height: 100vh;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.player-header {
+  position: absolute; /* Changed from fixed to absolute to avoid overlap in theater mode if desired */
+  top: 0; left: 0; right: 0;
+  height: var(--navbar-h);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--sp-6);
+  z-index: 100;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent);
+  transition: opacity 0.3s;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  flex: 1;
+  min-width: 0;
+}
+
+.player-title {
+  font-size: var(--fs-base);
+  font-weight: 600;
+  color: #fff;
+}
+
+.player-stage {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  padding-top: var(--navbar-h);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ── CinemaPlayer Overrides ── */
+.player-stage .cp {
+  width: 100%;
+  border-radius: 0; /* Removing radius as well to ensure it feels truly edge-to-edge */
+  box-shadow: none;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ── Theater Mode ─────────────────────────────────────────── */
+.player-page.is-theater .player-stage {
+  padding-top: 0;
+}
+
+.player-page.is-theater .player-stage .cp {
+  max-width: none;
+  width: 100vw;
+  height: calc(100vw * 9 / 16);
+  max-height: 85vh;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.player-page.is-theater .player-header {
+  /* Hide header in theater mode unless hovered? Or just make it floating */
+  opacity: 0;
+}
+.player-page.is-theater .player-header:hover {
+  opacity: 1;
+}
+
+.player-meta {
+  background: var(--bg-base);
+  padding: var(--sp-12) 0;
+  border-top: 1px solid var(--border);
+}
+
+.player-meta-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--sp-6);
+}
+
+.player-meta-title {
+  font-size: var(--fs-3xl);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.player-desc {
+  font-size: var(--fs-lg);
+  line-height: 1.8;
+  color: var(--tx-dim);
+  max-width: 800px;
+}
+
+.player-no-file {
+  text-align: center;
+  padding: var(--sp-20);
+}
+
+.no-file-icon {
+  font-size: 5rem;
+  margin-bottom: var(--sp-6);
+  opacity: 0.5;
+}
