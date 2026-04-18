@@ -1,0 +1,11 @@
+{
+    "name": "",
+    "jwtPrivateKey": "delatron_jwtPrivateKey",
+    "host": {
+        "domain": "",
+        "dbuser": "",
+        "dbpassword": "",
+        "mail": ""
+    },
+    "debug": ""
+}

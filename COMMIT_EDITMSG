@@ -1,0 +1,11 @@
+Release v1.2.8: Mobile Hardening & Native Thread Isolation
+
+Fixed:
+- Eliminated download progress flickering and overlap by isolating native Capacitor threads. Forged uniquely identifying url signatures into active downloads so the JS listener can precisely filter incoming events and blind itself to ghost tasks.
+- Prevented native file corruption on Android by assigning hashed identifiers to downloaded media, stopping concurrent file-write conflicts.
+- Refined `.download-btn--detail` css to enforce 100% full-width sizing in alignment with primary action buttons on the movie detail page.
+- Implemented global click-outside detection for the User Account dropdown menu in `Navbar.jsx` to close it robustly on both Web and Mobile.
+
+Technical:
+- Bumped versions in root and frontend package.json to 1.2.8.
+- Appended v1.2.8 notes to CHANGELOG.md.

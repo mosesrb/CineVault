@@ -1,0 +1,196 @@
+.meta-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(12px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+    padding: var(--sp-4);
+}
+
+.meta-modal {
+    background: var(--bg-card);
+    width: 100%;
+    max-width: 800px;
+    max-height: 90vh;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-light);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 40px 100px rgba(0,0,0,0.6);
+}
+
+.meta-modal-header {
+    padding: var(--sp-4) var(--sp-6);
+    border-bottom: 1px solid var(--border-light);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.meta-modal-tabs {
+    display: flex;
+    background: var(--bg-body);
+    padding: 6px;
+    gap: 6px;
+    border-bottom: 1px solid var(--border-light);
+}
+
+.meta-tab {
+    flex: 1;
+    padding: var(--sp-2) var(--sp-4);
+    text-align: center;
+    cursor: pointer;
+    border-radius: var(--radius-md);
+    font-size: 0.85rem;
+    font-weight: 700;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.meta-tab.active {
+    background: var(--bg-card);
+    color: var(--accent-primary);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+
+.meta-modal-body {
+    padding: var(--sp-6);
+    overflow-y: auto;
+    flex: 1;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* ── Search Tab ────────────────────────── */
+.meta-search-input-row {
+    display: flex;
+    gap: var(--sp-3);
+    margin-bottom: var(--sp-6);
+}
+
+.meta-search-input-row .input {
+    flex: 1;
+    font-size: 1rem;
+}
+
+.meta-results-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: var(--sp-4);
+    padding-bottom: var(--sp-4);
+}
+
+.meta-result-card {
+    cursor: pointer;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    border: 2px solid transparent;
+    transition: all 0.25s ease;
+    background: var(--bg-body);
+    position: relative;
+    aspect-ratio: 2/3;
+    height: auto;
+}
+
+.meta-result-card:hover { 
+    border-color: var(--accent-primary); 
+    transform: translateY(-4px) scale(1.02);
+    box-shadow: 0 10px 20px rgba(0,0,0,0.4);
+}
+
+.meta-result-card img { width: 100%; height: 100%; object-fit: cover; }
+
+.meta-result-info {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(transparent, rgba(0,0,0,0.95) 80%);
+    padding: var(--sp-3) var(--sp-2);
+    font-size: 0.75rem;
+}
+
+/* ── Manual Tab ────────────────────────── */
+.meta-edit-form {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--sp-5);
+}
+
+.meta-field-full { grid-column: span 2; }
+
+.meta-field label {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--accent-primary);
+    margin-bottom: 6px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.meta-field .input {
+    width: 100%;
+}
+
+.meta-modal-footer {
+    padding: var(--sp-4) var(--sp-6);
+    border-top: 1px solid var(--border-light);
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--sp-3);
+    background: var(--bg-body);
+}
+
+/* ── Mobile / Tablet Optimizations ────────── */
+@media (max-width: 600px) {
+    .meta-modal-overlay { padding: 0; }
+    .meta-modal { 
+        height: 100vh; 
+        max-height: 100vh; 
+        border-radius: 0;
+        border: none;
+    }
+    
+    .meta-modal-body { padding: var(--sp-4); }
+
+    .meta-search-input-row {
+        flex-direction: column;
+        gap: var(--sp-2);
+    }
+    
+    .meta-search-input-row .btn {
+        width: 100%;
+        justify-content: center;
+        padding: var(--sp-3);
+    }
+
+    .meta-edit-form { grid-template-columns: 1fr; gap: var(--sp-4); }
+    .meta-field-full { grid-column: span 1; }
+    
+    .meta-results-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: var(--sp-3);
+    }
+
+    .meta-modal-footer {
+        padding: var(--sp-4);
+        flex-direction: column-reverse;
+    }
+    
+    .meta-modal-footer .btn { width: 100%; }
+}
+
+@media (max-width: 380px) {
+    .meta-results-grid {
+        grid-template-columns: 1fr;
+    }
+}

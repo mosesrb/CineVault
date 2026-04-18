@@ -1,0 +1,5 @@
+{
+    "jwtPrivateKey": "delatron_jwtPrivateKey",
+    "tmdbApiKey": "delatron_TMDB_API_KEY",
+    "mongoURI": "delatron_MONGODB_URI"
+}

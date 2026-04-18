@@ -1,0 +1,17 @@
+node_modules/
+.env
+.idea/
+.vscode/
+*.log
+hls-cache/
+movies/
+tvshows/
+tv/
+public/
+dist/
+.DS_Store
+
+# Secure config files
+config/*.json
+!config/default.json
+!config/custom-environment-variables.json
