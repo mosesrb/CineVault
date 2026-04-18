@@ -1,0 +1,11 @@
+{
+  "appId": "com.cinevault.app",
+  "appName": "CineVault",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "http"
+  },
+  "android": {
+    "allowMixedContent": true
+  }
+}

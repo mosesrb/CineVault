@@ -1,0 +1,105 @@
+.browse-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--sp-4);
+  margin-top: var(--sp-4); /* Added top margin for luxury gap when scrolling to top */
+  margin-bottom: var(--sp-10); /* Increased bottom margin for better separation */
+}
+@media (max-width: 768px) {
+  .browse-header { 
+    margin-top: 0; 
+    margin-bottom: var(--sp-4); 
+    gap: var(--sp-2);
+  }
+}
+.browse-filters {
+  display: flex;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+@media (max-width: 640px) {
+  .browse-header { flex-direction: column; align-items: flex-start; gap: var(--sp-3); }
+  .browse-filters { width: 100%; gap: var(--sp-2); }
+  .filter-select { flex: 1; min-width: 120px; font-size: var(--fs-xs); }
+}
+.filter-select {
+  padding: var(--sp-2) var(--sp-4);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  font-family: var(--font);
+  cursor: pointer;
+  transition: border-color var(--t-fast);
+  appearance: none;
+  padding-right: var(--sp-8);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23666'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--sp-3) center;
+}
+.filter-select:focus { border-color: var(--accent); outline: none; }
+.filter-select option { background: var(--bg-card); }
+
+/* Android Stable Result List */
+.media-list-column {
+  display: flex !important;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-1);
+}
+
+@media (max-width: 768px) {
+  .media-list-column {
+    padding-bottom: var(--sp-20); /* Ensure bottom content is scrollable above footer */
+  }
+}
+
+/* Genre Bar */
+.genre-bar {
+  display: flex;
+  gap: var(--sp-2);
+  overflow-x: auto;
+  padding: var(--sp-2) 0 var(--sp-4);
+  margin-bottom: var(--sp-4);
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  /* Mask edges for luxury feel */
+  mask-image: linear-gradient(to right, transparent, black 15px, black calc(100% - 15px), transparent);
+}
+.genre-bar::-webkit-scrollbar { display: none; }
+
+.genre-pill {
+  padding: var(--sp-2) var(--sp-5);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  white-space: nowrap;
+  transition: all var(--t-fast);
+  cursor: pointer;
+}
+.genre-pill:hover {
+  background: var(--bg-overlay);
+  border-color: var(--border-mid);
+  color: var(--text-primary);
+}
+.genre-pill.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  box-shadow: 0 4px 12px var(--accent-glow);
+}
+
+@media (max-width: 768px) {
+  .genre-bar {
+     margin-left: calc(var(--sp-4) * -1);
+     margin-right: calc(var(--sp-4) * -1);
+     padding-left: var(--sp-4);
+     padding-right: var(--sp-4);
+  }
+}

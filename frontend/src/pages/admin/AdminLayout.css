@@ -1,0 +1,526 @@
+/* ═══════════════════════════════════════════════════════════
+   ADMIN LAYOUT — Desktop sidebar + Mobile bottom tab bar
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Library Page Helpers ────────────────────────────────── */
+.lib-page { display: flex; flex-direction: column; gap: var(--sp-8); padding-bottom: var(--sp-12); }
+.lib-section { }
+.lib-section-title { font-size: var(--fs-lg); font-weight: 800; margin-bottom: var(--sp-4); color: var(--text-primary); }
+.lib-form { display: flex; flex-direction: column; gap: var(--sp-4); max-width: 640px; }
+.lib-save-btn { width: 100%; max-width: 240px; }
+.lib-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: var(--sp-6); }
+
+/* Sync buttons row */
+.lib-sync-btns { display: flex; gap: var(--sp-3); margin-bottom: var(--sp-4); }
+.lib-sync-btns .btn { flex: 1; justify-content: center; }
+
+/* Scan progress filename */
+.lib-scan-file { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
+
+/* Scan report stats */
+.lib-scan-report {
+  display: flex; justify-content: space-around; align-items: center;
+  background: var(--bg-raised); padding: var(--sp-4); border-radius: var(--radius-lg);
+  border: 1px solid var(--border-light); margin-top: var(--sp-4); gap: var(--sp-4);
+}
+.lib-scan-stat { text-align: center; flex: 1; }
+.lib-scan-num { font-size: var(--fs-xl); font-weight: 800; }
+.lib-scan-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 2px; }
+
+/* Section header with action button */
+.lib-section-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: var(--sp-4); flex-wrap: wrap;
+}
+.lib-action-btn { flex-shrink: 0; }
+
+/* ── Modals ──────────────────────────────────────────────── */
+.lib-modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.88); backdrop-filter: blur(10px);
+  z-index: 1000; display: flex; align-items: center; justify-content: center;
+  padding: var(--sp-3);
+}
+.lib-modal-box {
+  background: var(--bg-card); border: 1px solid var(--border-light);
+  border-radius: var(--radius-xl); width: 100%; max-width: 860px;
+  max-height: 90vh; display: flex; flex-direction: column;
+  overflow: hidden; box-shadow: 0 32px 80px rgba(0,0,0,0.6);
+}
+.lib-modal-header {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  padding: var(--sp-5) var(--sp-5) 0; gap: var(--sp-3); flex-shrink: 0;
+  border-bottom: 1px solid var(--border); padding-bottom: var(--sp-4);
+}
+.lib-modal-body {
+  flex: 1; overflow-y: auto; padding: var(--sp-5);
+  -webkit-overflow-scrolling: touch;
+}
+.lib-modal-footer {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: var(--sp-4) var(--sp-5); border-top: 1px solid var(--border);
+  gap: var(--sp-3); flex-wrap: wrap; flex-shrink: 0;
+}
+.lib-modal-footer .btn { flex-shrink: 0; }
+
+/* ── Duplicate Cards ─────────────────────────────────────── */
+.lib-dupe-section-title {
+  font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.1em;
+  font-weight: 700; margin-bottom: var(--sp-4);
+}
+.lib-dupe-card {
+  background: var(--bg-glass); padding: var(--sp-4);
+  border-radius: var(--radius-lg); border: 1px solid var(--border);
+}
+.lib-dupe-path {
+  font-family: monospace; font-size: 11px; color: var(--text-muted);
+  word-break: break-all; overflow-wrap: anywhere;
+}
+.lib-dupe-entry {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: var(--sp-3); padding: var(--sp-3); margin-top: var(--sp-2);
+  background: rgba(255,255,255,0.03); border-radius: var(--radius-md);
+  border: 1px solid rgba(255,255,255,0.06); flex-wrap: wrap;
+}
+.lib-dupe-entry-info {
+  display: flex; flex-direction: column; gap: 4px; flex: 1 1 160px; min-width: 0;
+}
+.lib-dupe-entry-actions {
+  display: flex; gap: var(--sp-2); flex-shrink: 0;
+}
+.lib-dupe-btn { width: 100%; justify-content: center; margin-top: var(--sp-2); }
+
+/* ── Rematch Results ─────────────────────────────────────── */
+.lib-rematch-result {
+  display: flex; align-items: center; gap: var(--sp-3);
+  background: rgba(255,255,255,0.03); padding: var(--sp-3);
+  border-radius: var(--radius-md); border: 1px solid rgba(255,255,255,0.08);
+}
+.lib-rematch-poster {
+  width: 44px; height: 66px; border-radius: var(--radius-sm);
+  object-fit: cover; flex-shrink: 0;
+}
+.lib-rematch-poster-empty {
+  background: var(--bg-raised);
+}
+
+/* ── MOBILE overrides ────────────────────────────────────── */
+@media (max-width: 600px) {
+  .lib-save-btn { max-width: 100%; }
+  .lib-sync-btns { flex-direction: column; }
+  .lib-sync-btns .btn { width: 100%; }
+  .lib-scan-file { max-width: 55%; }
+
+  .lib-modal-box { max-height: 95vh; border-radius: var(--radius-lg); }
+  .lib-modal-footer { flex-direction: column; }
+  .lib-modal-footer .btn { width: 100%; justify-content: center; }
+
+  .lib-dupe-entry { flex-direction: column; }
+  .lib-dupe-entry-actions { width: 100%; }
+  .lib-dupe-entry-actions .btn { flex: 1; justify-content: center; }
+}
+
+.admin-layout {
+  display: flex;
+  min-height: 100vh;
+  padding-top: var(--navbar-h);
+}
+
+/* ── Desktop Sidebar ─────────────────────────────────────── */
+.admin-sidebar {
+  width: var(--sidebar-w, 220px);
+  flex-shrink: 0;
+  position: sticky;
+  top: var(--navbar-h);
+  height: calc(100vh - var(--navbar-h));
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  background: var(--bg-raised);
+  padding: var(--sp-4) var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  z-index: 200;
+}
+
+.admin-sidebar-header {
+  padding: var(--sp-3) var(--sp-2);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: var(--sp-2);
+}
+
+.admin-badge {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+}
+
+.admin-nav { display: flex; flex-direction: column; gap: 2px; }
+
+.admin-nav-link {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--text-secondary);
+  transition: all var(--t-fast);
+  text-decoration: none;
+}
+.admin-nav-icon { font-size: 1rem; flex-shrink: 0; }
+.admin-nav-link:hover { background: var(--bg-glass); color: var(--text-primary); }
+.admin-nav-link.active {
+  background: var(--bg-glass-mid);
+  color: var(--text-primary);
+  border-left: 3px solid var(--accent);
+  padding-left: calc(var(--sp-3) - 3px);
+}
+
+/* ── Main Content Area ───────────────────────────────────── */
+.admin-main {
+  flex: 1;
+  min-width: 0;
+  padding: var(--sp-6) var(--sp-8);
+}
+
+/* ── Mobile Header ───────────────────────────────────────── */
+.admin-mobile-header {
+  display: none;
+  position: fixed;
+  top: var(--navbar-h);
+  left: 0;
+  right: 0;
+  height: 48px;
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border);
+  z-index: 100;
+  padding: 0 var(--sp-4);
+  align-items: center;
+  justify-content: space-between;
+  backdrop-filter: blur(10px);
+}
+
+.admin-mobile-title {
+  font-size: var(--fs-base);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+/* ── Mobile Bottom Tab Bar ───────────────────────────────── */
+.admin-bottom-nav {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 64px;
+  background: var(--bg-raised);
+  border-top: 1px solid var(--border);
+  z-index: 300;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  /* Horizontal scroll if too many items */
+  flex-direction: row;
+  align-items: stretch;
+  /* safe area for home bar */
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.admin-bottom-nav::-webkit-scrollbar { display: none; }
+
+.admin-bottom-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  min-width: 62px;
+  padding: var(--sp-1) var(--sp-1);
+  text-decoration: none;
+  color: var(--text-muted);
+  transition: all var(--t-fast);
+  border-top: 2px solid transparent;
+}
+.admin-bottom-tab.active {
+  color: var(--accent);
+  border-top-color: var(--accent);
+  background: rgba(var(--accent-rgb, 229,54,42), 0.06);
+}
+.admin-bottom-icon { font-size: 1.3rem; line-height: 1; }
+.admin-bottom-label {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+/* ── Table Components ────────────────────────────────────── */
+.admin-table-container {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  width: 100%;
+  border-radius: var(--radius-lg);
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: var(--fs-sm);
+}
+
+.admin-table th {
+  background: hsla(220, 20%, 10%, 0.5);
+  color: var(--text-muted);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 11px;
+  padding: var(--sp-4) var(--sp-4);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.admin-table td {
+  padding: var(--sp-4) var(--sp-4);
+  border-bottom: 1px solid var(--border-mid);
+  vertical-align: middle;
+}
+
+/* ── Status Dot (Sessions) ───────────────────────────────── */
+.status-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  display: inline-block;
+  margin-right: 6px;
+  box-shadow: 0 0 8px var(--accent);
+  animation: pulse-glow 2s infinite;
+}
+
+.text-accent-glow {
+  color: var(--accent);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+@keyframes pulse-glow {
+  0%   { box-shadow: 0 0 0 0 rgba(229,54,42,0.7); transform: scale(0.95); }
+  70%  { box-shadow: 0 0 0 10px rgba(229,54,42,0); transform: scale(1); }
+  100% { box-shadow: 0 0 0 0 rgba(229,54,42,0); transform: scale(0.95); }
+}
+
+/* ── Admin Card Variants ─────────────────────────────────── */
+.admin-page { display: flex; flex-direction: column; gap: var(--sp-6); }
+.admin-header { margin-bottom: var(--sp-6); }
+.admin-title {
+  font-size: var(--fs-2xl);
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  margin-bottom: var(--sp-1);
+}
+.admin-desc { color: var(--text-muted); font-size: var(--fs-sm); }
+.admin-card { background: var(--bg-card); border-radius: var(--radius-lg); border: 1px solid var(--border); overflow: hidden; }
+.text-code {
+  font-family: monospace;
+  font-size: var(--fs-xs);
+  background: var(--bg-raised);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+}
+
+/* Sessions page: desktop shows table, mobile shows cards */
+.sessions-mobile { display: none; }
+.sessions-desktop { display: block; }
+
+/* ══════════════════════════════════════════════════════════
+   MOBILE BREAKPOINT — 900px and below
+   ══════════════════════════════════════════════════════════ */
+@media (max-width: 900px) {
+
+  /* Layout switches to single column */
+  .admin-layout {
+    flex-direction: column;
+    padding-top: calc(var(--navbar-h) + 48px); /* header bar */
+    padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px)); /* bottom nav */
+  }
+
+  /* Show mobile header */
+  .admin-mobile-header { display: flex; }
+
+  /* Hide desktop sidebar */
+  .admin-sidebar { display: none; }
+
+  /* Show bottom tab bar */
+  .admin-bottom-nav { display: flex; }
+
+  /* Tighten main content padding */
+  .admin-main {
+    padding: var(--sp-4);
+  }
+
+  /* ── Responsive Tables → Card Stack ──────────────────── */
+
+  /* Each table row becomes a card */
+  .admin-table,
+  .admin-table thead,
+  .admin-table tbody,
+  .admin-table tr {
+    display: block;
+    width: 100%;
+  }
+
+  /* Hide header row visually */
+  .admin-table thead tr {
+    position: absolute;
+    top: -9999px;
+    left: -9999px;
+  }
+
+  /* Each row as a card */
+  .admin-table tbody tr {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    margin-bottom: var(--sp-3);
+    background: var(--bg-card);
+    padding: var(--sp-3) var(--sp-4);
+    overflow: hidden;
+  }
+
+  /* Each cell as a labelled row */
+  .admin-table td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--sp-3) 0;
+    border-bottom: 1px solid var(--border-mid);
+    font-size: var(--fs-sm);
+    gap: var(--sp-4);
+    min-height: 44px;
+  }
+  .admin-table td:last-child { border-bottom: none; }
+
+  /* Label from data-label attribute */
+  .admin-table td::before {
+    content: attr(data-label);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+    flex-shrink: 0;
+    width: 100px; /* Fixed width for alignment */
+    text-align: left;
+  }
+
+  /* Cell content right-aligned */
+  .admin-table td > * {
+    text-align: right;
+    flex: 1;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+
+  /* Action cell — buttons full width */
+  .admin-table td.td-actions {
+    flex-direction: column;
+    align-items: stretch;
+    padding-top: var(--sp-3);
+    gap: var(--sp-2);
+  }
+  .admin-table td.td-actions::before { display: none; }
+  .admin-table td.td-actions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* Search bar full width */
+  .admin-search-row {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+  .admin-search-row .input {
+    width: 100% !important;
+  }
+
+  /* Dashboard vault config path wrapping */
+  .vault-config-row {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: var(--sp-2) !important;
+  }
+  .vault-config-row code {
+    width: 100%;
+    word-break: break-all;
+  }
+
+  /* Dashboard action buttons */
+  .dashboard-actions {
+    flex-direction: column !important;
+    width: 100%;
+  }
+  .dashboard-actions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* Sessions card view */
+  .session-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--sp-4);
+    margin-bottom: var(--sp-3);
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+  }
+  .session-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+  /* Sessions: swap table → cards */
+  .sessions-desktop { display: none; }
+  .sessions-mobile  { display: block; }
+
+  .admin-session-header {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: var(--sp-4);
+  }
+}
+
+.session-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-4);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+.session-card-meta span {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  opacity: 0.9;
+}
+
+.session-card-meta span svg {
+  color: var(--accent);
+  opacity: 0.8;
+}
