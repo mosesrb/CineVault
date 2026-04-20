@@ -1,6 +1,6 @@
 ## 🎬 CineVault
 
-![License: GPL v3](cinevault_icon.svg)
+![License: GPL v3]
 
 🚀 Self-hosted media server. Automatic ingestion, metadata fetching, and fluid streaming.
 
