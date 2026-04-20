@@ -1,6 +1,6 @@
 ## 🎬 CineVault
 
-(![License: GPL v3])
+![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)
 
 🚀 Self-hosted media server. Automatic ingestion, metadata fetching, and fluid streaming.
 
