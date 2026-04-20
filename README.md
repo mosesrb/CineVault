@@ -1,4 +1,4 @@
-# (https://img.shields.io/badge/License-GPLv3-blue.svg) CineVault
+## 🎬 CineVault
 
 ![License: GPL v3](cinevault_icon.svg)
 
