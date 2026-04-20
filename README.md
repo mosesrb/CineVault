@@ -5,8 +5,7 @@
 🚀 Self-hosted media server. Automatic ingestion, metadata fetching, and fluid streaming.
 
 ## 🎬 Demo
-![CineVault Interface](docs/assets/demo.gif)
-*(Replace with UI screenshot/GIF)*
+![CineVault Interface](docs/assets/demo.png)
 
 ## ⚡ Quick Start
 
