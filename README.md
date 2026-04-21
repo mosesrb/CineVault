@@ -1,4 +1,7 @@
-<h1><img src="cinevault_icon.svg" alt="CineVault Logo" width="45" align="left">CineVault</h1>
+<h1>
+  <img src="docs/assets/cinevault_icon.svg" alt="CineVault Logo" width="48" height="48" style="vertical-align: middle; margin-right: 10px;">
+  <span style="vertical-align: middle;">CineVault</span>
+</h1>
 
 ![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)
 
@@ -7,7 +10,7 @@ CineVault is a personal media sanctuary. I built it because I wanted a self-host
 
 ## 🎬 How it Looks
 
-![CineVault Interface](cinevault.png)
+![CineVault Interface](docs/assets/cinevault.png)
 
 ## ✨ What makes it cool?
 
