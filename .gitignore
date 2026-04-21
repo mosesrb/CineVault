@@ -15,3 +15,8 @@ dist/
 config/*.json
 !config/default.json
 !config/custom-environment-variables.json
+
+# Agent Protocol Files
+CLAUDE.md
+MEMORIES.md
+KNOWLEDGE.md
