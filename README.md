@@ -3,7 +3,7 @@
 ![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)
 
 
-CineVault is a personal media sanctuary. I built it because I wanted a self-hosted alternative that handles the complex parts of media management—like metadata fetching and adaptive streaming—without feeling like a bloated enterprise app.
+CineVault is a personal media sanctuary. I built it because I wanted a self-hosted alternative that handles the complex parts of media management like metadata fetching and adaptive streaming without feeling like a bloated enterprise app.
 
 ## 🎬 How it Looks
 
