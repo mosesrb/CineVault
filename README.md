@@ -1,5 +1,5 @@
 <h1>
-  <img src="docs/assets/cinevault_icon.svg" alt="CineVault Logo" width="48" height="48" align="left">
+  <img src="docs/assets/cinevault_icon.svg" alt="CineVault Logo" width="45" height="45" align="left">
   <span style="vertical-align: middle;">CineVault</span>
 </h1>
 
