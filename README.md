@@ -1,9 +1,5 @@
 <h1>
-  <img src="cinevault_icon.svg" alt="CineVault Logo" width="48" height="48" style="vertical-align: middle; margin-right: 10px;">
-  <span style="vertical-align: middle;">CineVault</span>
-</h1>
-<h1>
-  <img src="cinevault_icon.svg" alt="CineVault Logo" width="48" height="48" align="center">
+  <img src="cinevault_icon.svg" alt="CineVault Logo" width="40" style="vertical-align: -6px; margin-right: 8px;">
   CineVault
 </h1>
 
