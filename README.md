@@ -2,17 +2,10 @@
   <img src="cinevault_icon.svg" alt="CineVault Logo" width="48" height="48" style="vertical-align: middle; margin-right: 10px;">
   <span style="vertical-align: middle;">CineVault</span>
 </h1>
-
-<table>
-  <tr>
-    <td>
-      <img src="cinevault_icon.svg" width="40" />
-    </td>
-    <td>
-      <h1>CineVault</h1>
-    </td>
-  </tr>
-</table>
+<h1 style="display: flex; align-items: center; gap: 10px;">
+  <img src="cinevault_icon.svg" alt="CineVault Logo" width="48" height="48">
+  <span>CineVault</span>
+</h1>
 
 ![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)
 
