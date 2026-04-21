@@ -1,4 +1,7 @@
-# <img src="cinevault_icon.svg" width="48" valign="middle"> CineVault
+<h1>
+  <img src="cinevault.png" alt="CineVault Logo" width="48" height="48" style="vertical-align: middle; margin-right: 10px;">
+  <span style="vertical-align: middle;">CineVault</span>
+</h1>
 
 ![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)
 
