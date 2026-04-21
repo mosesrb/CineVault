@@ -1,9 +1,13 @@
 <h1>
-  <img src="cinevault.png" alt="CineVault Logo" width="48" height="48" style="vertical-align: middle; margin-right: 10px;">
+  <img src="cinevault_icon.svg" alt="CineVault Logo" width="48" height="48" style="vertical-align: middle; margin-right: 10px;">
   <span style="vertical-align: middle;">CineVault</span>
 </h1>
 
 ![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)
+
+## 🎬 How it Looks
+
+![CineVault Interface](cinevault.png)
 
 CineVault is a personal media sanctuary. I built it because I wanted a self-hosted alternative that handles the complex parts of media management—like metadata fetching and adaptive streaming—without feeling like a bloated enterprise app.
 
