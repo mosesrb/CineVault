@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useParams, useSearchParams, Link } from 'react-router-dom'
+import { useParams, useSearchParams, useNavigate, Link } from 'react-router-dom'
 import { getMovie, getTVShow, getEpisodes, saveProgress, getStreamInfo } from '../api'
 import { ArrowLeft, Film, PlayCircle, RefreshCw, AlertTriangle } from 'lucide-react'
 import CinemaPlayer from '../components/CinemaPlayer'
@@ -27,6 +27,7 @@ function buildStreamUrl(vaultPath, token, seekSeconds = 0, audioIndex = 0) {
 
 export default function Player() {
   const { type, id } = useParams()
+  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const epId = searchParams.get('ep')
 
