@@ -9,4 +9,7 @@ docs/project_status.md
 docs/architecture.md
 
 # Sensitive Configuration
-config/*.json
+config/development.json
+config/production.json
+config/test.json
+config/local.json
