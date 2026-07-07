@@ -46,22 +46,72 @@ export default function Login() {
     if (trimmed) {
       localStorage.setItem('cv_server_url', trimmed)
       setServerMsg('Server saved! Reloading...')
-      setTimeout(() => window.location.reload(), 1000)
+      setTimeout(() => window.location.href = '/', 1000)
     }
   }
 
-  async function fetchLocalNetwork() {
-    const isAndroid = typeof window !== 'undefined' && !!(window.Capacitor?.isNativePlatform?.())
-    // If on Android with no server URL, the fetch will go to capacitor://localhost (wrong)
-    if (isAndroid && !localStorage.getItem('cv_server_url')) {
-      setServerMsg(`📱 Android: enter manually — http://[your PC IP]:3000`)
-      return
+  useEffect(() => {
+    // Auto-detect when the modal opens if no URL is set yet
+    if (showServerConfig && !serverUrl) {
+      fetchLocalNetwork()
     }
+  }, [showServerConfig])
+
+  async function fetchLocalNetwork() {
+    setServerMsg('Detecting local server...')
+    
+    // First try the backend if we are on PC (proxied) or if a working URL is already set
     const info = await getNetworkInfo()
     if (info?.localIps?.length) {
+      const url = `http://${info.localIps[0].ip}:${info.port}`
       setLocalIps(info.localIps.map(n => `http://${n.ip}:${info.port}`))
+      setServerUrl(url)
+      setServerMsg('Detected local server! Click Set Server to save.')
+      return
+    }
+
+    // If that fails (e.g. on Android with no URL), perform a quick subnet scan
+    const isAndroid = typeof window !== 'undefined' && !!(window.Capacitor?.isNativePlatform?.())
+    if (isAndroid) {
+      setServerMsg('Scanning local network... this may take a moment.')
+      let found = null
+      
+      const tryPing = async (ip) => {
+        if (found) return
+        try {
+          const controller = new AbortController()
+          const timeout = setTimeout(() => controller.abort(), 1500)
+          const res = await fetch(`http://${ip}:3000/api/v1/network-info`, { signal: controller.signal })
+          clearTimeout(timeout)
+          if (res.ok && !found) {
+            found = `http://${ip}:3000`
+            setServerUrl(found)
+            setServerMsg(`Found server at ${found}! Click Set Server to save.`)
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      const subnets = ['192.168.0', '192.168.1', '10.0.0']
+      for (const subnet of subnets) {
+        if (found) break
+        // Batch requests to prevent exhausting Android WebView sockets
+        for (let i = 2; i <= 254; i += 20) {
+          if (found) break
+          const batch = []
+          for (let j = 0; j < 20 && (i + j) <= 254; j++) {
+            batch.push(tryPing(`${subnet}.${i + j}`))
+          }
+          await Promise.all(batch)
+        }
+      }
+
+      if (!found) {
+        setServerMsg('Could not detect automatically. Try LocalTunnel URL or manual IP.')
+      }
     } else {
-      setServerMsg('Could not detect. Try: http://192.168.0.x:3000')
+      setServerMsg('Could not detect. Check if backend is running.')
     }
   }
 
@@ -69,7 +119,7 @@ export default function Login() {
     localStorage.removeItem('cv_server_url')
     setServerUrl('')
     setServerMsg('Server configuration cleared. Reloading...')
-    setTimeout(() => window.location.reload(), 1000)
+    setTimeout(() => window.location.href = '/', 1000)
   }
 
   return (
@@ -106,14 +156,14 @@ export default function Login() {
               <GearIcon size={14} /> Server Configuration
             </h3>
             <p className="text-xs text-muted" style={{ marginBottom: 'var(--sp-3)', lineHeight: '1.4' }}>
-              Connect your app to the backend. If using a mobile or TV app, ensure your Cloudflare tunnel points to the <strong>backend port (3000)</strong>, not the frontend.
+              Connect your app to the backend. If using a mobile or TV app, ensure your LocalTunnel points to the <strong>backend port (3000)</strong>, not the frontend.
             </p>
             {serverMsg && <div className="alert alert-success" style={{ marginBottom: 'var(--sp-3)', fontSize: 'var(--fs-xs)' }}>{serverMsg}</div>}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)' }}>
               <input
                 type="url"
                 className="input text-sm"
-                placeholder="https://xxx.trycloudflare.com"
+                placeholder="https://your-url.loca.lt"
                 value={serverUrl}
                 onChange={e => setServerUrl(e.target.value)}
                 style={{ width: '100%' }}
