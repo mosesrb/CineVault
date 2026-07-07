@@ -1,35 +1,41 @@
 version: '3.8'
 
 services:
-  backend:
+  cinevault:
     build: .
+    container_name: cinevault-app
+    restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
       - NODE_ENV=production
-      - mongoURI=mongodb://mongo:27017/cinevault
-      - jwtPrivateKey=your_secure_private_key_here
-      - REDIS_URL=redis://redis:6379
+      - PORT=3000
+      - delatron_MONGODB_URI=mongodb://mongo:27017/cinevault
+      # Pass API keys through environment variables if set in .env
+      - delatron_TMDB_API_KEY=${TMDB_API_KEY:-}
+      - delatron_jwtPrivateKey=${JWT_PRIVATE_KEY:-cinevault_super_secret_key_123!}
     volumes:
-      - ./vault:/usr/src/app/vault
+      # Map the user's host media directory to /media inside the container.
+      # The user will configure the path inside the app's Admin Settings to be '/media'
+      - ${HOST_MEDIA_PATH:-./media}:/media
     depends_on:
       - mongo
-      - redis
-    restart: unless-stopped
+    networks:
+      - cinevault_net
 
   mongo:
     image: mongo:6.0
+    container_name: cinevault-db
+    restart: unless-stopped
     ports:
       - "27017:27017"
     volumes:
-      - cinevault-db:/data/db
-    restart: unless-stopped
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    restart: unless-stopped
+      - mongo_data:/data/db
+    networks:
+      - cinevault_net
 
 volumes:
-  cinevault-db:
+  mongo_data:
+
+networks:
+  cinevault_net:

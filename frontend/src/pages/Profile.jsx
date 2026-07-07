@@ -122,12 +122,12 @@ export default function Profile() {
     const trimmed = serverUrl.trim().replace(/\/$/, '') // strip trailing slash
     if (trimmed) {
       localStorage.setItem('cv_server_url', trimmed)
-      setServerMsg('Server URL saved! Reloading...')
-      setTimeout(() => window.location.reload(), 1000)
+      setServerMsg('Server saved! Reloading...')
+      setTimeout(() => window.location.href = '/', 1000)
     } else {
       localStorage.removeItem('cv_server_url')
       setServerMsg('Server URL cleared. Using default.')
-      setTimeout(() => window.location.reload(), 1000)
+      setTimeout(() => window.location.href = '/', 1000)
     }
   }
 

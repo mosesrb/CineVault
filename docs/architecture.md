@@ -40,3 +40,7 @@ A background scanner watches the library folder. When a file is dropped in, it a
 ## Testing & Quality Assurance
 - **Backend**: Uses Jest with sequential execution (`--runInBand`) to avoid MongoDB conflicts.
 - **Frontend**: Uses Vitest and React Testing Library, fully integrated with Vite for near-instant test execution, alongside `fake-indexeddb` for simulating offline browser capabilities.
+
+## Deployment & DevOps
+- **Docker & Orchestration**: The application is fully containerized using a multi-stage `Dockerfile`. `docker-compose.yml` orchestrates the Node.js backend (including FFmpeg via `bullseye-slim`) alongside the MongoDB database container.
+- **Media Binding**: External host media directories are dynamically injected into the container via volume mounts and mapped to `/media` internally, allowing the application to scale across different environments without hardcoded paths.

@@ -45,7 +45,7 @@ module.exports = function (app) {
         }
 
         res.setHeader('Access-Control-Allow-Credentials', 'true');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-auth-token, Range, If-Range, Origin, X-Requested-With');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-auth-token, Range, If-Range, Origin, X-Requested-With, Bypass-Tunnel-Reminder');
         res.setHeader('Access-Control-Expose-Headers', 'x-auth-token, Content-Range, Accept-Ranges, Content-Length, X-Content-Duration');
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
 
@@ -82,20 +82,20 @@ module.exports = function (app) {
         }
     }));
 
-    // API routes
-    app.use('/api/v1/auth', authLimiter, auth);
-    app.use('/api/v1/users', apiLimiter, users);
-    app.use('/api/v1/genres', apiLimiter, genres);
-    app.use('/api/v1/movies', apiLimiter, movies);
-    app.use('/api/v1/tvshows', apiLimiter, tvshows);
-    app.use('/api/v1/library', apiLimiter, library);
-    app.use('/api/v1/search', apiLimiter, search);
-    app.use('/api/v1/discover', apiLimiter, discover);
-    app.use('/api/v1/stream', stream); // Streaming might need custom limits
-    app.use('/api/v1/admin/sessions', apiLimiter, adminSessions);
+    // API routes (Supporting both /api/v1 and legacy /api for older Android APKs)
+    app.use(['/api/v1/auth', '/api/auth'], authLimiter, auth);
+    app.use(['/api/v1/users', '/api/users'], apiLimiter, users);
+    app.use(['/api/v1/genres', '/api/genres'], apiLimiter, genres);
+    app.use(['/api/v1/movies', '/api/movies'], apiLimiter, movies);
+    app.use(['/api/v1/tvshows', '/api/tvshows'], apiLimiter, tvshows);
+    app.use(['/api/v1/library', '/api/library'], apiLimiter, library);
+    app.use(['/api/v1/search', '/api/search'], apiLimiter, search);
+    app.use(['/api/v1/discover', '/api/discover'], apiLimiter, discover);
+    app.use(['/api/v1/stream', '/api/stream'], stream); // Streaming might need custom limits
+    app.use(['/api/v1/admin/sessions', '/api/admin/sessions'], apiLimiter, adminSessions);
 
     // Network info — returns local LAN IP so Android/TV clients can auto-configure
-    app.get('/api/v1/network-info', (req, res) => {
+    app.get(['/api/v1/network-info', '/api/network-info'], (req, res) => {
         const os = require('os');
         const nets = os.networkInterfaces();
         const localIps = [];

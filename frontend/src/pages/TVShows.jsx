@@ -175,7 +175,7 @@ export default function TVShows() {
                  <h3>Nothing to Play Offline</h3>
                  <p>Browse content while the server is online to download and watch your favorite media without an internet connection.</p>
                  <div className="offline-empty-actions">
-                    <button className="btn btn-primary" onClick={() => window.location.reload()}>Try Reconnecting</button>
+                    <button className="btn btn-primary" onClick={() => window.location.href = '/'}>Try Reconnecting</button>
                  </div>
                </div>
              )

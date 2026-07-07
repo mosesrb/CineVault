@@ -7,13 +7,26 @@ echo       CINEVAULT ONE-CLICK LAUNCH
 echo ========================================
 echo.
 
-set /p tunnel="Start Cloudflare Tunnel for external access? (y/n): "
+set /p tunnel="Start LocalTunnel for external access? (y/n): "
 
 if /i "%tunnel%"=="y" (
     echo.
-    echo [INFO] Starting Cloudflare Tunnel...
+    echo [INFO] Starting LocalTunnel...
     echo [INFO] Your external URL will appear in the new window.
-    start "Cloudflare Tunnel" cmd /k "C:\cloudflared\cloudflared.exe tunnel --url http://localhost:3000"
+    start "LocalTunnel" cmd /k "npx -y localtunnel --port 3000"
+)
+
+echo.
+set /p buildapk="Build and sync Android App? (y/n): "
+if /i "%buildapk%"=="y" (
+    echo.
+    echo [INFO] Building Frontend and syncing with Capacitor...
+    cd /d "e:\MachineApps\delatron\frontend"
+    call npm run build
+    call npx cap sync
+    echo [INFO] Opening Android Studio...
+    start cmd /c "npx cap open android"
+    cd /d "e:\MachineApps\delatron"
 )
 
 :: Auto-detect Local IP for easier setup on Android

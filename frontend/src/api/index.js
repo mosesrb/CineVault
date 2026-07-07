@@ -26,11 +26,15 @@ export const resolveUrl = (path) => {
 
 const api = axios.create({
   baseURL: getBaseURL(),
-  headers: { 'Content-Type': 'application/json' }
+  headers: {
+    'Content-Type': 'application/json',
+    'Bypass-Tunnel-Reminder': 'true'
+  }
 })
 
 // Attach JWT token to every request
 api.interceptors.request.use(config => {
+  config.baseURL = getBaseURL()
   const token = localStorage.getItem('cv_token')
   if (token) {
     config.headers['x-auth-token'] = token
@@ -88,7 +92,7 @@ api.interceptors.response.use(
     if (err.response?.status === 401) {
       localStorage.removeItem('cv_token')
       localStorage.removeItem('cv_user')
-      window.location.href = '/login'
+      window.location.href = '/'
     }
     return Promise.reject(err)
   }
@@ -183,5 +187,7 @@ export const clearSessions     = () => api.get('/admin/sessions/clear')
 export const getNetworkInfo = () => {
   // Must be an absolute URL — relative paths break on Android Capacitor
   const base = localStorage.getItem('cv_server_url') || window.location.origin
-  return fetch(`${base}/api/v1/network-info`).then(r => r.json()).catch(() => null)
+  return fetch(`${base}/api/network-info`, {
+    headers: { 'Bypass-Tunnel-Reminder': 'true' }
+  }).then(r => r.json()).catch(() => null)
 }

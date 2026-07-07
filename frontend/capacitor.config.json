@@ -3,7 +3,8 @@
   "appName": "CineVault",
   "webDir": "dist",
   "server": {
-    "androidScheme": "http"
+    "androidScheme": "http",
+    "cleartext": true
   },
   "android": {
     "allowMixedContent": true

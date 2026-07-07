@@ -11,6 +11,8 @@ CineVault is currently undergoing structural improvements to enhance stability, 
 - **UI/UX Fixes**: Mobile discovery grids switched to stable list layouts. Download progress bars fixed (Task-ID protocol) to prevent UI ghosting.
 - **FFmpeg Concurrency Queue (Phase 8)**: Replaced hard errors with an asynchronous semaphore (`async-mutex`). Incoming stream requests wait for an open slot and gracefully timeout with 503 instead of crashing the client.
 - **Frontend Testing Suite (Phase 9)**: Integrated `Vitest` and `React Testing Library` natively with the existing Vite build system. Added `fake-indexeddb` to mock offline storage features in Node.
+- **Android Networking & Backwards Compatibility**: Configured dynamic subnet scanning for Android devices to auto-discover the host LAN IP. Added fallback `/api/*` Express routes to support older Android APKs natively.
+- **Dockerization (Phase 10)**: Created complete `Dockerfile` and `docker-compose.yml` to package Node, MongoDB, and FFmpeg together. Added volume mounts for dynamic host media mapping.
 
 ## Next Steps
 1. Investigate horizontal scalability (e.g., externalizing storage to S3) and formal database migrations.
