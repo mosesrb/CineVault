@@ -16,7 +16,7 @@ CineVault is a personal media sanctuary. I built it because I wanted a self-host
 
 
 ## Homepage
-![CineVault Interface](docs/assets/cinevault_home.png)
+![CineVault Interface](docs/assets/cinevault_home_a.png)
 
 
 ## Admin
