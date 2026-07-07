@@ -3,7 +3,7 @@ const helmet = require('helmet');
 const cors = require('cors');
 const path = require('path');
 const error = require('../middleware/error');
-
+const { authLimiter, apiLimiter } = require('../middleware/rateLimiter');
 // Routes
 const auth = require('../routes/auth');
 const users = require('../routes/users');
@@ -20,7 +20,7 @@ module.exports = function (app) {
     app.use(express.json());
     // 1. Simple Request Logger — MOVE TO TOP to see all preflight (OPTIONS) traffic
     app.use((req, res, next) => {
-        if (req.path.startsWith('/api/stream')) {
+        if (req.path.startsWith('/api/v1/stream')) {
             console.log(`[STREAM_DEBUG] ${req.method} ${req.path} | Origin: ${req.headers.origin || 'none'} | IP: ${req.ip}`);
         }
         next();
@@ -28,8 +28,22 @@ module.exports = function (app) {
 
     app.use((req, res, next) => {
         const origin = req.headers.origin;
-        // Chrome/Android strictness: PNA requests MUST have an explicit origin, not '*'
-        res.setHeader('Access-Control-Allow-Origin', origin || 'http://localhost');
+        
+        // Define allowed origin patterns (localhost and local network IPs)
+        const isAllowedOrigin = origin && (
+            origin.startsWith('http://localhost') ||
+            origin.startsWith('http://127.0.0.1') ||
+            origin.startsWith('http://192.168.') ||
+            origin.startsWith('http://10.') ||
+            origin === 'capacitor://localhost'
+        );
+
+        if (isAllowedOrigin) {
+            res.setHeader('Access-Control-Allow-Origin', origin);
+        } else {
+            res.setHeader('Access-Control-Allow-Origin', 'http://localhost');
+        }
+
         res.setHeader('Access-Control-Allow-Credentials', 'true');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-auth-token, Range, If-Range, Origin, X-Requested-With');
         res.setHeader('Access-Control-Expose-Headers', 'x-auth-token, Content-Range, Accept-Ranges, Content-Length, X-Content-Duration');
@@ -69,19 +83,19 @@ module.exports = function (app) {
     }));
 
     // API routes
-    app.use('/api/auth', auth);
-    app.use('/api/users', users);
-    app.use('/api/genres', genres);
-    app.use('/api/movies', movies);
-    app.use('/api/tvshows', tvshows);
-    app.use('/api/library', library);
-    app.use('/api/search', search);
-    app.use('/api/discover', discover);
-    app.use('/api/stream', stream);
-    app.use('/api/admin/sessions', adminSessions);
+    app.use('/api/v1/auth', authLimiter, auth);
+    app.use('/api/v1/users', apiLimiter, users);
+    app.use('/api/v1/genres', apiLimiter, genres);
+    app.use('/api/v1/movies', apiLimiter, movies);
+    app.use('/api/v1/tvshows', apiLimiter, tvshows);
+    app.use('/api/v1/library', apiLimiter, library);
+    app.use('/api/v1/search', apiLimiter, search);
+    app.use('/api/v1/discover', apiLimiter, discover);
+    app.use('/api/v1/stream', stream); // Streaming might need custom limits
+    app.use('/api/v1/admin/sessions', apiLimiter, adminSessions);
 
     // Network info — returns local LAN IP so Android/TV clients can auto-configure
-    app.get('/api/network-info', (req, res) => {
+    app.get('/api/v1/network-info', (req, res) => {
         const os = require('os');
         const nets = os.networkInterfaces();
         const localIps = [];
@@ -98,7 +112,7 @@ module.exports = function (app) {
     });
 
     // SPA fallback — send index.html for all non-API and non-file routes
-    app.get(/^(?!\/api|\/assets|.*\..*).*/, (req, res) => {
+    app.get(/^(?!\/api\/v1|\/assets|.*\..*).*/, (req, res) => {
         res.sendFile(path.join(__dirname, '..', 'frontend', 'dist', 'index.html'));
     });
 

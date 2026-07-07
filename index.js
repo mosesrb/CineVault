@@ -21,23 +21,27 @@ require('./startup/validation')();
     set NODE_ENV=production 
 */
 
-const port = process.env.PORT || 3000; // get env variable or set it default 3000
-const server = app.listen(port, () => {
-    const os = require('os');
-    const interfaces = os.networkInterfaces();
-    let networkIp = 'localhost';
-    
-    for (const devName in interfaces) {
-        for (const iface of interfaces[devName]) {
-            if (iface.family === 'IPv4' && !iface.internal) {
-                networkIp = iface.address;
+const port = process.env.PORT || 3000;
+let server;
+
+if (process.env.NODE_ENV !== 'test') {
+    server = app.listen(port, () => {
+        const os = require('os');
+        const interfaces = os.networkInterfaces();
+        let networkIp = 'localhost';
+        
+        for (const devName in interfaces) {
+            for (const iface of interfaces[devName]) {
+                if (iface.family === 'IPv4' && !iface.internal) {
+                    networkIp = iface.address;
+                }
             }
         }
-    }
 
-    winston.info(`CineVault Server is running!`);
-    winston.info(`  > Local:   http://localhost:${port}`);
-    winston.info(`  > Network: http://${networkIp}:${port}`);
-});
+        winston.info(`CineVault Server is running!`);
+        winston.info(`  > Local:   http://localhost:${port}`);
+        winston.info(`  > Network: http://${networkIp}:${port}`);
+    });
+}
 
-module.exports = server;
+module.exports = server || app;

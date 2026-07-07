@@ -7,6 +7,27 @@
 const ffmpeg = require('fluent-ffmpeg');
 const path = require('path');
 const fs = require('fs');
+const { Semaphore, withTimeout } = require('async-mutex');
+
+const MAX_CONCURRENT_TRANSCODES = 5;
+const transcodeSemaphore = withTimeout(new Semaphore(MAX_CONCURRENT_TRANSCODES), 30000, new Error('Server is currently at maximum transcoding capacity. Please try again later.'));
+
+async function withConcurrencyLimit(command) {
+    const [, release] = await transcodeSemaphore.acquire();
+    let finished = false;
+    
+    const safeRelease = () => {
+        if (!finished) {
+            finished = true;
+            release();
+        }
+    };
+
+    command.on('end', safeRelease);
+    command.on('error', safeRelease);
+
+    return command;
+}
 
 /**
  * Probes a file to extract stream information (audio tracks, etc).
@@ -23,7 +44,7 @@ function getMediaMetadata(filePath) {
 /**
  * Creates a transcoded stream for the given file starting at a specific time.
  */
-function createTranscodeStream(filePath, startTime = 0, audioIndex = 0) {
+async function createTranscodeStream(filePath, startTime = 0, audioIndex = 0) {
     const command = ffmpeg(filePath);
 
     if (startTime > 0) {
@@ -66,14 +87,14 @@ function createTranscodeStream(filePath, startTime = 0, audioIndex = 0) {
             console.error('--------------------------');
         });
 
-    return command;
+    return withConcurrencyLimit(command);
 }
 
 /**
  * Fast remuxing attempt (copying codecs if compatible).
  */
-function createRemuxStream(filePath) {
-    return ffmpeg(filePath)
+async function createRemuxStream(filePath) {
+    const command = ffmpeg(filePath)
         .videoCodec('copy')
         .audioCodec('copy')
         .format('mp4')
@@ -87,6 +108,7 @@ function createRemuxStream(filePath) {
             if (err.message && err.message.includes('SIGKILL')) return;
             console.error('FFmpeg Remux Error:', err.message);
         });
+    return withConcurrencyLimit(command);
 }
 
 /**
@@ -95,7 +117,7 @@ function createRemuxStream(filePath) {
  * On Windows, path.join() produces backslashes but FFmpeg requires forward
  * slashes for all paths. We normalize every path passed to FFmpeg.
  */
-function createHlsStream(filePath, outputDir) {
+async function createHlsStream(filePath, outputDir) {
     const toFFmpegPath = (p) => p.replace(/\\/g, '/');
 
     const manifestPath = path.join(outputDir, 'master.m3u8');
@@ -103,7 +125,7 @@ function createHlsStream(filePath, outputDir) {
     const segmentPatternFF = toFFmpegPath(path.join(outputDir, 'seg_%03d.ts'));
     const inputPathFF = toFFmpegPath(filePath);
 
-    return ffmpeg(inputPathFF)
+    const command = ffmpeg(inputPathFF)
         .videoCodec('libx264')
         .audioCodec('aac')
         .outputOptions([
@@ -134,16 +156,35 @@ function createHlsStream(filePath, outputDir) {
             if (err.message && (err.message.includes('SIGKILL') || err.message.includes('Output stream closed'))) {
                 return;
             }
-            console.error('❌ FFmpeg HLS Error:', err.message);
-            const debugLog = path.join(outputDir, 'ffmpeg_debug.log');
             fs.appendFileSync(debugLog, `\n\n❌ ERROR: ${err.message}\n`);
-        })
-        .save(manifestPathFF);
+        });
+        
+    const limitedCommand = await withConcurrencyLimit(command);
+    limitedCommand.save(manifestPathFF);
+    return limitedCommand;
+}
+
+async function createSubtitleStream(filePath, subIndex, seekTime = 0) {
+    const command = ffmpeg(filePath)
+        .inputOptions(seekTime > 0 ? [`-ss ${seekTime}`] : [])
+        .outputOptions([
+            '-vn', '-an',
+            `-map 0:s:${subIndex}`,
+            '-f webvtt'
+        ])
+        .on('start', cmd => console.log('[SubExtra] cmd:', cmd))
+        .on('error', (err) => {
+            if (err.message && (err.message.includes('SIGKILL') || err.message.includes('Output stream closed'))) return;
+            console.error('[SubtitleExtraction] FFmpeg error:', err.message);
+        });
+
+    return withConcurrencyLimit(command);
 }
 
 module.exports = {
     getMediaMetadata,
     createTranscodeStream,
     createRemuxStream,
-    createHlsStream
+    createHlsStream,
+    createSubtitleStream
 };

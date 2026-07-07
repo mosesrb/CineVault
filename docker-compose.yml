@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  backend:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - mongoURI=mongodb://mongo:27017/cinevault
+      - jwtPrivateKey=your_secure_private_key_here
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - ./vault:/usr/src/app/vault
+    depends_on:
+      - mongo
+      - redis
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:6.0
+    ports:
+      - "27017:27017"
+    volumes:
+      - cinevault-db:/data/db
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+volumes:
+  cinevault-db:

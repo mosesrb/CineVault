@@ -1,0 +1,48 @@
+name: CineVault CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    services:
+      mongodb:
+        image: mongo:6
+        ports:
+          - 27017:27017
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+
+    strategy:
+      matrix:
+        node-version: [18.x]
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+        
+    - name: Install Dependencies
+      run: npm ci
+      
+    - name: Run JSHint (Static Analysis)
+      run: npx jshint .
+      
+    - name: Run Integration Tests
+      env:
+        NODE_ENV: test
+        JWT_PRIVATE_KEY: test_key_for_ci_cd_pipeline
+        MONGO_URI: mongodb://localhost:27017/cinevault_test
+        REDIS_URL: redis://localhost:6379
+      run: npx jest --runInBand --detectOpenHandles

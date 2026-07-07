@@ -8,9 +8,9 @@ import { OfflineCacheService } from '../services/OfflineCacheService'
 // 3. Fall back to relative /api (for local dev with Vite proxy)
 const getBaseURL = () => {
   const saved = localStorage.getItem('cv_server_url')
-  if (saved) return `${saved}/api`
-  if (import.meta.env.VITE_API_URL) return `${import.meta.env.VITE_API_URL}/api`
-  return '/api'
+  if (saved) return `${saved}/api/v1`
+  if (import.meta.env.VITE_API_URL) return `${import.meta.env.VITE_API_URL}/api/v1`
+  return '/api/v1'
 }
 
 export const resolveUrl = (path) => {
@@ -183,5 +183,5 @@ export const clearSessions     = () => api.get('/admin/sessions/clear')
 export const getNetworkInfo = () => {
   // Must be an absolute URL — relative paths break on Android Capacitor
   const base = localStorage.getItem('cv_server_url') || window.location.origin
-  return fetch(`${base}/api/network-info`).then(r => r.json()).catch(() => null)
+  return fetch(`${base}/api/v1/network-info`).then(r => r.json()).catch(() => null)
 }

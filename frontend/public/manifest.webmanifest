@@ -1,0 +1,24 @@
+{
+  "name": "CineVault",
+  "short_name": "CineVault",
+  "description": "Your personal local-first streaming platform.",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0d0e12",
+  "theme_color": "#fb1d5e",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "favicon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

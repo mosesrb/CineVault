@@ -11,6 +11,7 @@ const { Movie, validateMovie, validateMoviePatch } = require('../models/movie');
 const { Genre } = require('../models/genre');
 const { fetchMetadata, searchTMDB, fetchMetadataById } = require('../services/metadataService');
 const { deleteVaultFile } = require('../services/vaultService');
+const { cache, clearCache } = require('../middleware/cache');
 
 // ─── HELPERS ────────────────────────────────────────────────
 async function ensureGenres(genreNames) {
@@ -27,10 +28,16 @@ async function ensureGenres(genreNames) {
     return genreIds;
 }
 
-// ─── GET /api/movies ─────────────────────────────────────────
-// Browse all movies with optional filters (genre, search, year, rating, duration, watched)
-// genreGuard automatically filters by user's allowedGenres
-router.get('/', [auth, genreGuard], async (req, res) => {
+/**
+ * @route   GET /api/v1/movies
+ * @desc    Browse all movies with optional filters (genre, search, year, rating, duration, watched)
+ * @access  Private
+ * @param   {string} [req.query.genre] - Filter by genre slug
+ * @param   {string} [req.query.q] - Text search query
+ * @param   {string} [req.query.watched] - 'watched' or 'unwatched'
+ * @returns {Array} List of movie objects
+ */
+router.get('/', [auth, genreGuard, cache(3600)], async (req, res) => {
     const filter = {};
 
     if (req.query.genre) {
@@ -93,8 +100,14 @@ router.get('/conflicts', [auth, admin], async (req, res) => {
     res.send(conflicts);
 });
 
-// ─── GET /api/movies/:id ─────────────────────────────────────
-router.get('/:id', [auth, genreGuard, validateObjectId], async (req, res) => {
+/**
+ * @route   GET /api/v1/movies/:id
+ * @desc    Get a single movie by ID with user progress
+ * @access  Private
+ * @param   {string} req.params.id - The movie ID
+ * @returns {Object} Movie object
+ */
+router.get('/:id', [auth, genreGuard, validateObjectId, cache(3600)], async (req, res) => {
     const movie = await Movie.findById(req.params.id).populate('genres', 'name slug');
     if (!movie) return res.status(404).send('Movie not found.');
 
@@ -158,6 +171,7 @@ router.post('/', [auth, admin], async (req, res) => {
     });
 
     await movie.save();
+    clearCache('movies'); // Clear cache on new insert
     res.status(201).send(movie);
 });
 
@@ -181,6 +195,7 @@ router.put('/:id', [auth, admin, validateObjectId], async (req, res) => {
     ).populate('genres', 'name slug');
 
     if (!movie) return res.status(404).send('Movie not found.');
+    clearCache('movies'); // Clear cache on update
     res.send(movie);
 });
 
@@ -203,6 +218,7 @@ router.delete('/:id', [auth, admin, validateObjectId], async (req, res) => {
     }
 
     await Movie.findByIdAndDelete(req.params.id);
+    clearCache('movies'); // Clear cache on delete
     res.send({ message: 'Movie removed.', fileDeleted });
 });
 

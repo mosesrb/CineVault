@@ -12,11 +12,16 @@ const { Episode, validateEpisode } = require('../models/episode');
 const { Genre } = require('../models/genre');
 const { fetchMetadata } = require('../services/metadataService');
 const { deleteVaultFile } = require('../services/vaultService');
+const { cache, clearCache } = require('../middleware/cache');
 
 // ─── TV SHOWS ─────────────────────────────────────────────────
 
-// GET /api/tvshows
-router.get('/', [auth, genreGuard], async (req, res) => {
+/**
+ * @route   GET /api/v1/tvshows
+ * @desc    Browse all TV shows with optional filters
+ * @access  Private
+ */
+router.get('/', [auth, genreGuard, cache(3600)], async (req, res) => {
     const filter = {};
     if (req.query.genre) {
         const g = await Genre.findOne({ slug: req.query.genre });
@@ -65,8 +70,12 @@ router.get('/conflicts', [auth, admin], async (req, res) => {
     res.send(conflicts);
 });
 
-// GET /api/tvshows/:id
-router.get('/:id', [auth, genreGuard, validateObjectId], async (req, res) => {
+/**
+ * @route   GET /api/v1/tvshows/:id
+ * @desc    Get a single TV show with resume point
+ * @access  Private
+ */
+router.get('/:id', [auth, genreGuard, validateObjectId, cache(3600)], async (req, res) => {
     const show = await TVShow.findById(req.params.id).populate('genres', 'name slug');
     if (!show) return res.status(404).send('TV Show not found.');
 
@@ -135,6 +144,7 @@ router.post('/', [auth, admin], async (req, res) => {
     });
 
     await show.save();
+    clearCache('tvshows');
     res.status(201).send(show);
 });
 
@@ -156,6 +166,7 @@ router.put('/:id', [auth, admin, validateObjectId], async (req, res) => {
         { new: true }
     ).populate('genres', 'name slug');
     if (!show) return res.status(404).send('TV Show not found.');
+    clearCache('tvshows');
     res.send(show);
 });
 
@@ -165,6 +176,7 @@ router.delete('/:id', [auth, admin, validateObjectId], async (req, res) => {
     if (!show) return res.status(404).send('TV Show not found.');
     // Also delete all episodes
     await Episode.deleteMany({ showId: req.params.id });
+    clearCache('tvshows');
     res.send(show);
 });
 
@@ -241,8 +253,12 @@ async function ensureGenres(genreNames) {
 
 // ─── EPISODES ─────────────────────────────────────────────────
 
-// GET /api/tvshows/:id/episodes — All episodes across all seasons
-router.get('/:id/episodes', [auth, validateObjectId], async (req, res) => {
+/**
+ * @route   GET /api/v1/tvshows/:id/episodes
+ * @desc    Get all episodes for a show
+ * @access  Private
+ */
+router.get('/:id/episodes', [auth, validateObjectId, cache(3600)], async (req, res) => {
     const show = await TVShow.findById(req.params.id);
     if (!show) return res.status(404).send('TV Show not found.');
 
@@ -277,8 +293,12 @@ router.get('/:id/episodes', [auth, validateObjectId], async (req, res) => {
     res.send(episodesWithProgress);
 });
 
-// GET /api/tvshows/:id/seasons/:season/episodes
-router.get('/:id/seasons/:season/episodes', [auth, validateObjectId], async (req, res) => {
+/**
+ * @route   GET /api/v1/tvshows/:id/seasons/:season/episodes
+ * @desc    Get all episodes for a specific season
+ * @access  Private
+ */
+router.get('/:id/seasons/:season/episodes', [auth, validateObjectId, cache(3600)], async (req, res) => {
     const episodes = await Episode.find({
         showId: req.params.id,
         season: parseInt(req.params.season, 10)
@@ -297,6 +317,7 @@ router.post('/:id/episodes', [auth, admin, validateObjectId], async (req, res) =
 
     const ep = new Episode(body);
     await ep.save();
+    clearCache('tvshows');
     res.status(201).send(ep);
 });
 
@@ -311,6 +332,7 @@ router.put('/:id/episodes/:epId', [auth, admin], async (req, res) => {
         { new: true }
     );
     if (!ep) return res.status(404).send('Episode not found.');
+    clearCache('tvshows');
     res.send(ep);
 });
 
@@ -334,6 +356,7 @@ router.delete('/:id/episodes/:epId', [auth, admin], async (req, res) => {
     }
 
     await Episode.findByIdAndDelete(req.params.epId);
+    clearCache('tvshows');
     res.send({ message: 'Episode removed.', fileDeleted });
 });
 

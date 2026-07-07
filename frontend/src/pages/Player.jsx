@@ -22,7 +22,7 @@ function buildStreamUrl(vaultPath, token, seekSeconds = 0, audioIndex = 0) {
   // ANDROID FIX: In Capacitor, relative URLs resolve to capacitor://localhost which
   // can't reach the backend. Use the saved server URL (tunnel) if available.
   const serverBase = localStorage.getItem('cv_server_url') || ''
-  return `${serverBase}/api/stream?${params.toString()}`
+  return `${serverBase}/api/v1/stream?${params.toString()}`
 }
 
 export default function Player() {
@@ -174,9 +174,9 @@ export default function Player() {
   const serverBase = localStorage.getItem('cv_server_url') || ''
 
   if (activeSubtitle === 'sidecar' && hasSidecar) {
-    subtitlesUrl = `${serverBase}/api/stream/subtitles?path=${encodeURIComponent(vaultPath)}&token=${token}`
+    subtitlesUrl = `${serverBase}/api/v1/stream/subtitles?path=${encodeURIComponent(vaultPath)}&token=${token}`
   } else if (typeof activeSubtitle === 'number') {
-    subtitlesUrl = `${serverBase}/api/stream/subtitles/vtt?path=${encodeURIComponent(vaultPath)}&index=${activeSubtitle}&seek=${seekOffset}&token=${token}`
+    subtitlesUrl = `${serverBase}/api/v1/stream/subtitles/vtt?path=${encodeURIComponent(vaultPath)}&index=${activeSubtitle}&seek=${seekOffset}&token=${token}`
   }
 
   const mimeType = needsTranscode ? 'video/mp4' : (ext === '.webm' ? 'video/webm' : 'video/mp4')

@@ -12,7 +12,7 @@ const isCapacitor = typeof window !== 'undefined' && !!(window.Capacitor?.isNati
 function buildBrowserDownloadUrl(vaultPath, token) {
   if (!vaultPath || !token) return null
   const serverBase = localStorage.getItem('cv_server_url') || ''
-  return `${serverBase}/api/stream?path=${encodeURIComponent(vaultPath)}&token=${token}&download=true`
+  return `${serverBase}/api/v1/stream?path=${encodeURIComponent(vaultPath)}&token=${token}&download=true`
 }
 
 export default function Detail() {
@@ -215,7 +215,7 @@ export default function Detail() {
               {isCapacitor && type === 'movie' && (
                 <DownloadButton 
                   mediaId={media._id}
-                  url={media.vaultPath ? resolveUrl(`/api/stream?path=${encodeURIComponent(media.vaultPath)}&download=true`) : null}
+                  url={media.vaultPath ? resolveUrl(`/api/v1/stream?path=${encodeURIComponent(media.vaultPath)}&download=true`) : null}
                   type="movie"
                   metadata={{ title: media.title, posterUrl: media.posterUrl }}
                   variant="detail"
@@ -434,7 +434,7 @@ export default function Detail() {
                     {isCapacitor && (
                       <DownloadButton 
                         mediaId={ep._id}
-                        url={ep.vaultPath ? resolveUrl(`/api/stream?path=${encodeURIComponent(ep.vaultPath)}&download=true`) : null}
+                        url={ep.vaultPath ? resolveUrl(`/api/v1/stream?path=${encodeURIComponent(ep.vaultPath)}&download=true`) : null}
                         type="episode"
                         metadata={{ title: ep.title || `Episode ${ep.episode}`, posterUrl: media.posterUrl }}
                       />

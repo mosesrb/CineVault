@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const auth = require('../middleware/auth');
 const { getVaultConfig } = require('../services/vaultService');
-const { createTranscodeStream, getMediaMetadata } = require('../services/transcoderService');
+const { createTranscodeStream, createSubtitleStream, getMediaMetadata } = require('../services/transcoderService');
 const { Episode } = require('../models/episode');
 const { Movie } = require('../models/movie');
 
@@ -65,26 +65,21 @@ router.get('/subtitles/vtt', auth, async (req, res) => {
 
     const subIndex = parseInt(index, 10);
     const seekTime = parseFloat(seek) || 0;
-    const ffmpeg = require('fluent-ffmpeg');
 
     res.setHeader('Content-Type', 'text/vtt');
     res.setHeader('Access-Control-Allow-Origin', '*'); // Ensure CORS is allowed for track tag
     
     // Extract specific subtitle stream and convert to vtt
     console.log(`[SubExtra] Extracting track ${subIndex} from ${vaultPath} at seek=${seekTime}`);
-    ffmpeg(fullPath)
-        .inputOptions(seekTime > 0 ? [`-ss ${seekTime}`] : []) // Fastest seek for subtitles
-        .outputOptions([
-            '-vn', '-an', // Skip video/audio for much faster subtitle extraction
-            `-map 0:s:${subIndex}`,
-            '-f webvtt'
-        ])
-        .on('start', cmd => console.log('[SubExtra] cmd:', cmd))
-        .on('error', (err) => {
-            console.error('[SubtitleExtraction] FFmpeg error:', err.message);
+    try {
+        const command = await createSubtitleStream(fullPath, subIndex, seekTime);
+        command.on('error', (err) => {
             if (!res.headersSent) res.status(500).send('Subtitle extraction failed.');
-        })
-        .pipe(res, { end: true });
+        });
+        command.pipe(res, { end: true });
+    } catch (err) {
+        if (!res.headersSent) res.status(503).send(err.message);
+    }
 });
 
 /**
@@ -187,13 +182,18 @@ router.get('/', auth, async (req, res) => {
 
         res.writeHead(200, headers);
 
-        const ffmpegCommand = createTranscodeStream(resolvedFile, seekTime, audioIndex);
-        ffmpegCommand.pipe(res, { end: true });
+        try {
+            const ffmpegCommand = await createTranscodeStream(resolvedFile, seekTime, audioIndex);
+            ffmpegCommand.pipe(res, { end: true });
 
-        req.on('close', () => {
-            console.log('[Transcode] Client disconnected — killing FFmpeg.');
-            try { ffmpegCommand.kill('SIGKILL'); } catch (_) { }
-        });
+            req.on('close', () => {
+                console.log('[Transcode] Client disconnected — killing FFmpeg.');
+                try { ffmpegCommand.kill('SIGKILL'); } catch (_) { }
+            });
+        } catch (err) {
+            console.error('[Transcode] Limit reached:', err.message);
+            if (!res.headersSent) res.status(503).send(err.message);
+        }
 
         return;
     }
