@@ -20,12 +20,11 @@
 ### 🍿 Hero Discovery & Media Carousel
 > *Dynamic carousel discovery, high-fidelity backdrops, interactive watchlists, and instant metadata preview.*
 
-![CineVault Interface](docs/assets/cinevault_home_a.png)
+
 
 ### 🛠️ Vault Administration & Dynamic Settings
 > *Vault storage root management, real-time ingestion status, interactive file cleanup, active streaming session monitors, and dynamic TMDB API key configuration.*
 
-![CineVault Interface](docs/assets/cinevault_admin.png)
 
 ---
 
