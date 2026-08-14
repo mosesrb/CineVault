@@ -12,13 +12,15 @@ module.exports = function () {
     }
 
     mongoose.set('strictQuery', false);
-    mongoose.connect(mongoURI)
-        .then(function () {
-            winston.info(`Build: ${config.get('name')}`);
-            winston.info(`MongoDB connected → ${mongoURI}`);
-        })
-        .catch(function (err) {
-            winston.error('MongoDB connection error:', err.message);
-            process.exit(1);
-        });
+    if (mongoose.connection.readyState === 0) {
+        mongoose.connect(mongoURI)
+            .then(function () {
+                winston.info(`Build: ${config.get('name')}`);
+                winston.info(`MongoDB connected → ${mongoURI}`);
+            })
+            .catch(function (err) {
+                winston.error('MongoDB connection error:', err.message);
+                process.exit(1);
+            });
+    }
 };

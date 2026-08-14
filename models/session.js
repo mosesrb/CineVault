@@ -29,6 +29,9 @@ const sessionSchema = new mongoose.Schema({
     }
 });
 
+// 30-day automatic session TTL index
+sessionSchema.index({ lastActiveAt: 1 }, { expireAfterSeconds: 30 * 24 * 60 * 60 });
+
 const Session = mongoose.model('Session', sessionSchema);
 
 exports.Session = Session;

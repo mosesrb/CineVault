@@ -51,51 +51,63 @@ router.get('/me', auth, async (req, res) => {
     
     if (!user) return res.status(404).send('User not found.');
 
-    // Manually populate watchHistory to include media details and episodes
-    const populatedHistory = [];
     const { Episode } = require('../models/episode');
 
-    // To calculate overall series progress accurately
+    // Collect distinct media and episode IDs for batch queries (eliminates N+1 DB roundtrips)
+    const movieIds = [];
+    const showIds = [];
+    const episodeIds = [];
+
+    for (const item of (user.watchHistory || [])) {
+        if (item.mediaType === 'movie' && item.mediaId) movieIds.push(item.mediaId);
+        if (item.mediaType === 'tvshow' && item.mediaId) {
+            showIds.push(item.mediaId);
+            if (item.episodeId) episodeIds.push(item.episodeId);
+        }
+    }
+
+    // Execute batch queries in parallel
+    const [movies, shows, episodes] = await Promise.all([
+        movieIds.length ? Movie.find({ _id: { $in: movieIds } }).select('title posterUrl backdropUrl year duration genres') : [],
+        showIds.length ? TVShow.find({ _id: { $in: showIds } }).select('title posterUrl backdropUrl year totalEpisodes genres') : [],
+        episodeIds.length ? Episode.find({ _id: { $in: episodeIds } }).select('title season episode runtime') : []
+    ]);
+
+    // Build lookup maps for O(1) matching
+    const movieMap = new Map(movies.map(m => [m._id.toString(), m]));
+    const showMap = new Map(shows.map(s => [s._id.toString(), s]));
+    const episodeMap = new Map(episodes.map(e => [e._id.toString(), e]));
+
+    const populatedHistory = [];
     const seriesStats = {}; // { showId: { finished: 0 } }
 
-    for (let item of user.watchHistory) {
-         let mediaDoc = null;
-         let episodeDoc = null;
-         try {
-             if (item.mediaType === 'movie') {
-                 mediaDoc = await Movie.findById(item.mediaId).select('title posterUrl backdropUrl year duration genres');
-             } else if (item.mediaType === 'tvshow') {
-                 mediaDoc = await TVShow.findById(item.mediaId).select('title posterUrl backdropUrl year totalEpisodes genres');
-                 if (item.episodeId) {
-                     episodeDoc = await Episode.findById(item.episodeId).select('title season episode runtime');
-                 }
-             }
+    const hasAllowedGenres = user.allowedGenres && user.allowedGenres.length > 0;
+    const allowedGenreSet = hasAllowedGenres ? new Set(user.allowedGenres.map(g => g._id.toString())) : null;
 
-             // Apply Genre Filter
-             if (mediaDoc && user.allowedGenres.length > 0) {
-                 const isAllowed = mediaDoc.genres.some(gId => 
-                     user.allowedGenres.some(allowed => allowed._id.toString() === gId.toString())
-                 );
-                 if (!isAllowed) mediaDoc = null; // Filter out restricted content
-             }
+    for (const item of (user.watchHistory || [])) {
+        const mid = item.mediaId ? item.mediaId.toString() : '';
+        let mediaDoc = item.mediaType === 'movie' ? movieMap.get(mid) : showMap.get(mid);
+        let episodeDoc = item.episodeId ? episodeMap.get(item.episodeId.toString()) : null;
 
-             // Track finished episodes for series progress (only for allowed content)
-             if (mediaDoc && item.mediaType === 'tvshow' && item.completed) {
-                const sid = item.mediaId.toString();
-                if (!seriesStats[sid]) seriesStats[sid] = { finished: 0 };
-                seriesStats[sid].finished++;
-             }
-         } catch (e) {
-             console.error(`Error populating history item ${item.mediaId}:`, e.message);
-         }
-         
-         if (mediaDoc) {
-             populatedHistory.push({
-                 ...item.toObject(),
-                 media: mediaDoc,
-                 episode: episodeDoc
-             });
-         }
+        // Apply Genre Filter
+        if (mediaDoc && allowedGenreSet) {
+            const isAllowed = mediaDoc.genres && mediaDoc.genres.some(gId => allowedGenreSet.has(gId.toString()));
+            if (!isAllowed) mediaDoc = null; // Filter out restricted content
+        }
+
+        // Track finished episodes for series progress
+        if (mediaDoc && item.mediaType === 'tvshow' && item.completed) {
+            if (!seriesStats[mid]) seriesStats[mid] = { finished: 0 };
+            seriesStats[mid].finished++;
+        }
+
+        if (mediaDoc) {
+            populatedHistory.push({
+                ...item.toObject(),
+                media: mediaDoc,
+                episode: episodeDoc
+            });
+        }
     }
 
     // Sort history by watchedAt descending (newest first)
@@ -107,7 +119,7 @@ router.get('/me', auth, async (req, res) => {
     // Inject calculated series metrics
     userObj.seriesProgress = Object.keys(seriesStats).map(sid => ({
         showId: sid,
-        completionPercentage: 0, // calculated below if we have totalEpisodes
+        completionPercentage: 0,
         finishedEpisodes: seriesStats[sid].finished
     }));
 
@@ -136,27 +148,35 @@ router.put('/me/profile', auth, async (req, res) => {
 // ─── GET /api/users/me/watchlist ──────────────────────────────
 router.get('/me/watchlist', auth, async (req, res) => {
     const user = await User.findById(req.user._id).select('watchlist allowedGenres');
-    
-    // Manually populate watchlist to include media details
-    const populatedWatchlist = [];
-    for (let item of user.watchlist) {
-        let mediaDoc = null;
-        try {
-            if (item.mediaType === 'movie') {
-                mediaDoc = await Movie.findById(item.mediaId).select('title posterUrl backdropUrl year duration genres');
-            } else if (item.mediaType === 'tvshow') {
-                mediaDoc = await TVShow.findById(item.mediaId).select('title posterUrl backdropUrl year totalEpisodes genres');
-            }
+    if (!user) return res.status(404).send('User not found.');
 
-            // Apply Genre Filter
-            if (mediaDoc && user.allowedGenres.length > 0) {
-                const isAllowed = mediaDoc.genres.some(gId => 
-                    user.allowedGenres.some(allowed => allowed._id.toString() === gId.toString())
-                );
-                if (!isAllowed) mediaDoc = null; // Filter out restricted content
-            }
-        } catch (e) {
-            console.error(`Error populating watchlist item ${item.mediaId}:`, e.message);
+    const movieIds = [];
+    const showIds = [];
+
+    for (const item of (user.watchlist || [])) {
+        if (item.mediaType === 'movie' && item.mediaId) movieIds.push(item.mediaId);
+        if (item.mediaType === 'tvshow' && item.mediaId) showIds.push(item.mediaId);
+    }
+
+    const [movies, shows] = await Promise.all([
+        movieIds.length ? Movie.find({ _id: { $in: movieIds } }).select('title posterUrl backdropUrl year duration genres') : [],
+        showIds.length ? TVShow.find({ _id: { $in: showIds } }).select('title posterUrl backdropUrl year totalEpisodes genres') : []
+    ]);
+
+    const movieMap = new Map(movies.map(m => [m._id.toString(), m]));
+    const showMap = new Map(shows.map(s => [s._id.toString(), s]));
+
+    const populatedWatchlist = [];
+    const hasAllowedGenres = user.allowedGenres && user.allowedGenres.length > 0;
+    const allowedGenreSet = hasAllowedGenres ? new Set(user.allowedGenres.map(g => g.toString())) : null;
+
+    for (const item of (user.watchlist || [])) {
+        const mid = item.mediaId ? item.mediaId.toString() : '';
+        let mediaDoc = item.mediaType === 'movie' ? movieMap.get(mid) : showMap.get(mid);
+
+        if (mediaDoc && allowedGenreSet) {
+            const isAllowed = mediaDoc.genres && mediaDoc.genres.some(gId => allowedGenreSet.has(gId.toString()));
+            if (!isAllowed) mediaDoc = null;
         }
 
         if (mediaDoc) {

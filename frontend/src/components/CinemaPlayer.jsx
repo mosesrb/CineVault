@@ -10,10 +10,6 @@ const fmt = (s) => {
     : `${m}:${String(sec).padStart(2, '0')}`
 }
 
-// How far back (seconds) the user must seek before we restart the server stream.
-// Forward seeks always just move video.currentTime — the pipe catches up.
-const RESTART_THRESHOLD = 8
-
 // ─── tiny SVG icon ────────────────────────────────────────────────────────────
 const Icon = ({ d, size = 20 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
@@ -35,8 +31,9 @@ const IC = {
   pip: 'M19 11h-8v6h8v-6zm4 8V4.98C23 3.88 22.1 3 21 3H3c-1.1 0-2 .88-2 1.98V19c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2zm-2 .02H3V4.97h18v14.05z',
   check: 'M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z',
   close: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
-  fwd: 'M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z',
-  bwd: 'M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z',
+  fwd5: 'M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z',
+  fwd10: 'M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z',
+  bwd10: 'M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z',
 }
 
 // ─── popup menu ───────────────────────────────────────────────────────────────
@@ -76,12 +73,17 @@ export default function CinemaPlayer({
   const hideTimer = useRef(null)
   const dragging = useRef(false)
 
+  // Gestures & Speed Refs
+  const longPressTimerRef = useRef(null)
+  const rewindIntervalRef = useRef(null)
+  const isLongPressActiveRef = useRef(false)
+  const lastTapRef = useRef({ time: 0, x: 0 })
+
   const [playing, setPlaying] = useState(false)
   const [muted, setMuted] = useState(() => localStorage.getItem('cv_mute') === 'true')
   const [volume, setVolume] = useState(() => parseFloat(localStorage.getItem('cv_vol') || '1'))
   const [currentTime, setCurrentTime] = useState(0)
   const [browserDuration, setBrowserDuration] = useState(0)
-  const [isWaiting, setIsWaiting] = useState(false)
   const [buffered, setBuffered] = useState(0)
   const [fullscreen, setFullscreen] = useState(false)
   const [showCtrl, setShowCtrl] = useState(true)
@@ -93,6 +95,10 @@ export default function CinemaPlayer({
   const [scratchedTime, setScratchedTime] = useState(null)
   const [hasStarted, setHasStarted] = useState(false)
 
+  // Speed and Gesture HUD states
+  const [speedBoost, setSpeedBoost] = useState(null) // '2x' | 'rewind' | null
+  const [gestureRipple, setGestureRipple] = useState(null) // { side: 'left'|'right', text: string }
+
   const total = duration || browserDuration || 1
   const absTime = scratchedTime !== null ? scratchedTime : (seekOffset + currentTime)
   const playPct = Math.min(100, (absTime / total) * 100)
@@ -102,9 +108,27 @@ export default function CinemaPlayer({
   const showControls = useCallback(() => {
     setShowCtrl(true)
     clearTimeout(hideTimer.current)
-    hideTimer.current = setTimeout(() => { if (!dragging.current) setShowCtrl(false) }, 3000)
+    hideTimer.current = setTimeout(() => {
+      if (!dragging.current && !isLongPressActiveRef.current) setShowCtrl(false)
+    }, 3000)
   }, [])
   useEffect(() => () => clearTimeout(hideTimer.current), [])
+
+  // ── seek logic ────────────────────────────────────────────────────────
+  const doSeek = useCallback((targetAbsolute) => {
+    const v = videoRef.current; if (!v) return
+    const clipped = Math.max(0, Math.min(targetAbsolute, total))
+    const delta = clipped - absTime
+
+    const isSignificantSeek = Math.abs(delta) > 2
+
+    if (isTranscoding && onUserSeek && isSignificantSeek) {
+      onUserSeek(clipped)
+    } else {
+      const localTarget = clipped - seekOffset
+      v.currentTime = Math.max(0, localTarget)
+    }
+  }, [absTime, total, isTranscoding, onUserSeek, seekOffset])
 
   // ── video events ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -131,7 +155,6 @@ export default function CinemaPlayer({
       const isFs = !!document.fullscreenElement;
       setFullscreen(isFs);
       
-      // Auto-landscape for mobile using Capacitor Native Plugin if available
       const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
       
       if (isFs && isMobile) {
@@ -139,7 +162,6 @@ export default function CinemaPlayer({
           const { ScreenOrientation } = await import('@capacitor/screen-orientation');
           await ScreenOrientation.lock({ orientation: 'landscape' });
         } catch (err) {
-          // Fallback to web API if plugin fails or not in Capacitor environment
           if (screen.orientation && screen.orientation.lock) {
              screen.orientation.lock('landscape').catch(() => {});
           }
@@ -159,17 +181,12 @@ export default function CinemaPlayer({
     v.addEventListener('ended', onEnd); v.addEventListener('timeupdate', onTime)
     v.addEventListener('progress', onTime)
     
-    // Initial seek for native files (non-transcoding segments)
     const onLoaded = () => {
       if (!isTranscoding && seekOffset > 0 && v.currentTime === 0) {
-        console.log(`[CinemaPlayer] Native file metadata loaded. ReadyState: ${v.readyState}`);
-        // If already ready, seek. Otherwise wait for 'canplay'
         if (v.readyState >= 2) {
-           console.log(`[CinemaPlayer] Applying initial seek: ${seekOffset}s`);
            v.currentTime = seekOffset;
         } else {
            v.addEventListener('canplay', () => {
-             console.log(`[CinemaPlayer] CanPlay fired. Applying seek: ${seekOffset}s`);
              v.currentTime = seekOffset;
            }, { once: true });
         }
@@ -207,12 +224,11 @@ export default function CinemaPlayer({
       })
     }
     sync()
-    // Small delay helps browser register the new <track> src if it changed
     const t = setTimeout(sync, 100)
     return () => clearTimeout(t)
   }, [subsOn, subtitlesUrl, src?.src])
 
-  // ── keyboard ──────────────────────────────────────────────────────────
+  // ── keyboard shortcuts (5s jumps, 10s shifts, playback) ─────────────
   useEffect(() => {
     const onKey = (e) => {
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return
@@ -222,10 +238,18 @@ export default function CinemaPlayer({
       switch (e.key) {
         case ' ': case 'k': case 'Enter':
           v.paused ? v.play() : v.pause(); break
-        case 'ArrowRight': case 'l':
+        case 'ArrowRight':
+          // 5s standard jump, 10s with Shift
+          doSeek(Math.min(total, absTime + (e.shiftKey ? 10 : 5)))
+          break
+        case 'ArrowLeft':
+          // 5s standard jump, 10s with Shift
+          doSeek(Math.max(0, absTime - (e.shiftKey ? 10 : 5)))
+          break
+        case 'l': case 'L':
           doSeek(Math.min(total, absTime + 10))
           break
-        case 'ArrowLeft': case 'j':
+        case 'j': case 'J':
           doSeek(Math.max(0, absTime - 10))
           break
         case 'ArrowUp':
@@ -247,44 +271,100 @@ export default function CinemaPlayer({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [absTime, subtitlesUrl, showControls, onTheaterToggle])
+  }, [absTime, subtitlesUrl, showControls, onTheaterToggle, doSeek, total])
 
-  // ── seek logic ────────────────────────────────────────────────────────
-  // The ONE function that handles all seeks. Rules:
-  //  - Forward seek (or tiny backward): just set video.currentTime, pipe buffers ahead
-  //  - Large backward seek on transcoded stream: restart server pipe from new position
-  //  - Native files: always just set video.currentTime
-  const doSeek = useCallback((targetAbsolute) => {
-    const v = videoRef.current; if (!v) return
-    const clipped = Math.max(0, Math.min(targetAbsolute, total))
-    const delta = clipped - absTime   // positive = forward, negative = backward
+  // ── Long Press Gestures & Double-Tap Seeking ─────────────────────────
+  const startLongPress = useCallback((clientX) => {
+    const wrapper = wrapperRef.current; if (!wrapper) return
+    const rect = wrapper.getBoundingClientRect()
+    const isRightSide = clientX >= rect.left + rect.width / 2
 
-    const isSignificantSeek = Math.abs(delta) > 2
+    clearTimeout(longPressTimerRef.current)
+    clearInterval(rewindIntervalRef.current)
+    isLongPressActiveRef.current = false
 
-    if (isTranscoding && onUserSeek && isSignificantSeek) {
-      // For transcoded pipes, we MUST restart the server stream for both
-      // forward and backward seeks, because the pipe doesn't contain future data.
-      onUserSeek(clipped)
-    } else {
-      // Native files (MP4/WebM) or tiny adjustments: seek within local buffer.
-      // video.currentTime is relative to the start of the current stream segment.
-      const localTarget = clipped - seekOffset
-      v.currentTime = Math.max(0, localTarget)
+    longPressTimerRef.current = setTimeout(() => {
+      isLongPressActiveRef.current = true
+      setShowCtrl(false)
+
+      if (isRightSide) {
+        // Accelerate to 2.0x
+        setSpeedBoost('2x')
+        if (videoRef.current) {
+          videoRef.current.playbackRate = 2.0
+          if (videoRef.current.paused) videoRef.current.play()
+        }
+      } else {
+        // Rapid 2x Rewind
+        setSpeedBoost('rewind')
+        if (videoRef.current && !videoRef.current.paused) videoRef.current.pause()
+        
+        rewindIntervalRef.current = setInterval(() => {
+          if (videoRef.current) {
+            const current = videoRef.current.currentTime
+            const next = Math.max(0, current - 2.5)
+            videoRef.current.currentTime = next
+            setCurrentTime(next)
+          }
+        }, 200)
+      }
+    }, 300)
+  }, [])
+
+  const stopLongPress = useCallback(() => {
+    clearTimeout(longPressTimerRef.current)
+    clearInterval(rewindIntervalRef.current)
+
+    if (isLongPressActiveRef.current) {
+      isLongPressActiveRef.current = false
+      setSpeedBoost(null)
+      if (videoRef.current) {
+        videoRef.current.playbackRate = 1.0
+        if (videoRef.current.paused && !ended) videoRef.current.play()
+      }
+      showControls()
     }
-  }, [absTime, total, isTranscoding, onUserSeek, seekOffset])
+  }, [ended, showControls])
 
-  // ── progress bar: shared pointer/touch position → seek ───────────────
+  const handleScreenTap = (e) => {
+    if (isLongPressActiveRef.current) {
+      e.stopPropagation()
+      return
+    }
+
+    const now = Date.now()
+    const clientX = e.clientX || (e.changedTouches && e.changedTouches[0]?.clientX) || 0
+    const wrapper = wrapperRef.current; if (!wrapper) return
+    const rect = wrapper.getBoundingClientRect()
+    const relX = clientX - rect.left
+
+    // Double tap detection (<300ms between taps)
+    if (now - lastTapRef.current.time < 300 && Math.abs(relX - lastTapRef.current.x) < 60) {
+      if (relX < rect.width * 0.35) {
+        // Double tap left: seek -5s
+        doSeek(absTime - 5)
+        setGestureRipple({ side: 'left', text: '⏪ 5s' })
+        setTimeout(() => setGestureRipple(null), 600)
+      } else if (relX > rect.width * 0.65) {
+        // Double tap right: seek +5s
+        doSeek(absTime + 5)
+        setGestureRipple({ side: 'right', text: '5s ⏩' })
+        setTimeout(() => setGestureRipple(null), 600)
+      }
+      lastTapRef.current = { time: 0, x: 0 }
+    } else {
+      lastTapRef.current = { time: now, x: relX }
+      showControls()
+    }
+  }
+
+  // ── progress bar dragging ─────────────────────────────────────────────
   const pctFromClientX = useCallback((clientX) => {
     const bar = barRef.current; if (!bar) return 0
     const { left, width } = bar.getBoundingClientRect()
     return Math.max(0, Math.min(1, (clientX - left) / width))
   }, [])
 
-  const seekFromClientX = useCallback((clientX) => {
-    doSeek(pctFromClientX(clientX) * total)
-  }, [pctFromClientX, doSeek, total])
-
-  // Mouse events
   const onBarMouseDown = (e) => {
     e.preventDefault()
     dragging.current = true
@@ -308,13 +388,13 @@ export default function CinemaPlayer({
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
   }
+
   const onBarMouseMove = (e) => {
     const pct = pctFromClientX(e.clientX)
     setHoverPct(pct * 100)
     setHoverX(pct * (barRef.current?.getBoundingClientRect().width || 0))
   }
 
-  // Touch events for mobile scrubbing
   const onBarTouchStart = (e) => {
     e.preventDefault()
     dragging.current = true
@@ -335,7 +415,7 @@ export default function CinemaPlayer({
     dragging.current = false
   }
 
-  // ── other controls ────────────────────────────────────────────────────
+  // ── player actions ────────────────────────────────────────────────────
   const togglePlay = () => { const v = videoRef.current; v?.paused ? v.play() : v?.pause() }
   const toggleMute = () => {
     const v = videoRef.current; if (!v) return
@@ -386,11 +466,45 @@ export default function CinemaPlayer({
       className={`cp${fullscreen ? ' cp--fs' : ''}${isTheater ? ' cp--theater' : ''}`}
       onMouseMove={showControls}
       onMouseEnter={showControls}
-      onMouseLeave={() => { if (playing && !menu) setShowCtrl(false) }}
-      onTouchStart={showControls}
+      onMouseLeave={() => {
+        stopLongPress()
+        if (playing && !menu) setShowCtrl(false)
+      }}
+      onMouseDown={e => {
+        if (e.target.closest('.cp-controls') || e.target.closest('.cp-menu')) return
+        startLongPress(e.clientX)
+      }}
+      onMouseUp={e => {
+        stopLongPress()
+      }}
+      onTouchStart={e => {
+        if (e.target.closest('.cp-controls') || e.target.closest('.cp-menu')) return
+        if (e.touches[0]) startLongPress(e.touches[0].clientX)
+      }}
+      onTouchEnd={() => {
+        stopLongPress()
+      }}
       onClick={() => setMenu(null)}
     >
-      {/* video */}
+      {/* ── Gesture HUD Speed Pill ── */}
+      {speedBoost === '2x' && (
+        <div className="cp-speed-hud cp-speed-hud--boost">
+          ⚡ 2.0X SPEED
+        </div>
+      )}
+      {speedBoost === 'rewind' && (
+        <div className="cp-speed-hud cp-speed-hud--boost">
+          ⏪ REWINDING (2X)
+        </div>
+      )}
+
+      {/* ── Double Tap Ripple ── */}
+      {gestureRipple && (
+        <div className={`cp-gesture-ripple cp-gesture-ripple--${gestureRipple.side}`}>
+          {gestureRipple.text}
+        </div>
+      )}
+
       {/* ── Main Video ── */}
       <video
         ref={videoRef}
@@ -398,13 +512,10 @@ export default function CinemaPlayer({
         poster={hasStarted ? null : poster}
         className="cp-video"
         playsInline autoPlay
-        onClick={e => { e.stopPropagation(); showControls(); }}
+        onClick={handleScreenTap}
         crossOrigin="anonymous"
         onLoadedMetadata={(e) => {
-          // Fallback: If the server-provided duration is 0,
-          // use the native video duration from the browser.
           if (duration <= 0 && e.target.duration > 0 && e.target.duration !== Infinity) {
-            console.log(`[CinemaPlayer] Runtime fallback used: ${e.target.duration}s`);
             setBrowserDuration(e.target.duration);
           }
         }}
@@ -430,7 +541,7 @@ export default function CinemaPlayer({
           <span className="cp-title">{title}</span>
         </div>
 
-        {/* progress bar — enlarged touch target via padding */}
+        {/* progress bar */}
         <div
           ref={barRef}
           className="cp-bar"
@@ -462,12 +573,32 @@ export default function CinemaPlayer({
               <Icon d={playing ? IC.pause : IC.play} />
             </button>
 
-            {/* skip buttons — visible on mobile, handy everywhere */}
-            <button className="cp-btn" title="-10s" onClick={e => { e.stopPropagation(); doSeek(absTime - 10) }}>
-              <Icon d={IC.bwd} size={18} />
+            {/* 5s Seek Backward */}
+            <button
+              className="cp-btn"
+              title="Jump Back 5s (←)"
+              onClick={e => { e.stopPropagation(); doSeek(absTime - 5) }}
+              style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '-0.5px' }}
+            >
+              -5s
             </button>
-            <button className="cp-btn" title="+10s" onClick={e => { e.stopPropagation(); doSeek(absTime + 10) }}>
-              <Icon d={IC.fwd} size={18} />
+
+            {/* 5s Seek Forward */}
+            <button
+              className="cp-btn"
+              title="Jump Forward 5s (→)"
+              onClick={e => { e.stopPropagation(); doSeek(absTime + 5) }}
+              style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '-0.5px' }}
+            >
+              +5s
+            </button>
+
+            {/* 10s Skip Buttons */}
+            <button className="cp-btn" title="Skip -10s (J)" onClick={e => { e.stopPropagation(); doSeek(absTime - 10) }}>
+              <Icon d={IC.bwd10} size={16} />
+            </button>
+            <button className="cp-btn" title="Skip +10s (L)" onClick={e => { e.stopPropagation(); doSeek(absTime + 10) }}>
+              <Icon d={IC.fwd10} size={16} />
             </button>
 
             {/* volume — hidden on mobile (native handles it) */}

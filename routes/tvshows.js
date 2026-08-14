@@ -10,6 +10,7 @@ const validateObjectId = require('../middleware/validateObjectId');
 const { TVShow, validateTVShow, validateTVShowPatch } = require('../models/tvShow');
 const { Episode, validateEpisode } = require('../models/episode');
 const { Genre } = require('../models/genre');
+const { ensureGenres } = require('../services/genreService');
 const { fetchMetadata } = require('../services/metadataService');
 const { deleteVaultFile } = require('../services/vaultService');
 const { cache, clearCache } = require('../middleware/cache');
@@ -56,11 +57,20 @@ router.get('/', [auth, genreGuard, cache(3600)], async (req, res) => {
         }
     }
 
-    const shows = await TVShow.find(filter)
+    let query = TVShow.find(filter)
         .select('-cast -originalSourcePath')
         .populate('genres', 'name slug')
         .sort({ addedAt: -1 });
 
+    if (req.query.limit) {
+        const limit = parseInt(req.query.limit, 10);
+        const page = parseInt(req.query.page, 10) || 1;
+        if (limit > 0) {
+            query = query.skip((page - 1) * limit).limit(limit);
+        }
+    }
+
+    const shows = await query;
     res.send(shows);
 });
 
@@ -213,11 +223,6 @@ router.post('/:id/link', [auth, admin, validateObjectId], async (req, res) => {
         return res.status(422).send('Could not fetch metadata for this TMDB ID.');
     }
 
-    const { ensureGenres } = require('./movies'); // Reuse genre helper if possible, or define here
-    // Actually movies.js doesn't export ensureGenres. I'll use the one in this file if it exists.
-    // Wait, library.js has ensureGenres. I'll define a local one or just copy it.
-    
-    // I'll define it locally since it's already used in :id/sync
     const genreIds = await ensureGenres(meta.genres);
     const updated = await TVShow.findByIdAndUpdate(
         req.params.id,
@@ -234,22 +239,6 @@ router.post('/:id/link', [auth, admin, validateObjectId], async (req, res) => {
 
     res.send(updated);
 });
-
-// Internal helper (already defined in movies.js but not exported, let's redefine or export)
-async function ensureGenres(genreNames) {
-    const { Genre } = require('../models/genre');
-    if (!genreNames || !genreNames.length) return [];
-    const genreIds = [];
-    for (const name of genreNames) {
-        let genre = await Genre.findOne({ name: new RegExp(`^${name}$`, 'i') });
-        if (!genre) {
-            genre = new Genre({ name });
-            await genre.save();
-        }
-        genreIds.push(genre._id);
-    }
-    return genreIds;
-}
 
 // ─── EPISODES ─────────────────────────────────────────────────
 

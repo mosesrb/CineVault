@@ -13,6 +13,11 @@ const librarySchema = new mongoose.Schema({
         trim: true,
         default: ''     // If empty, defaults to vaultRootPath + '/Inbox'
     },
+    tmdbApiKey: {
+        type: String,
+        trim: true,
+        default: ''
+    },
     // Stats (updated on scan)
     totalMovies: { type: Number, default: 0 },
     totalShows: { type: Number, default: 0 },
@@ -29,7 +34,8 @@ const Library = mongoose.model('Library', librarySchema);
 function validateLibraryConfig(config) {
     const schema = {
         vaultRootPath: Joi.string().min(1).required(),
-        inboxPath: Joi.string().allow('')
+        inboxPath: Joi.string().allow(''),
+        tmdbApiKey: Joi.string().allow('')
     };
     return Joi.validate(config, schema);
 }

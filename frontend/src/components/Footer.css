@@ -1,0 +1,135 @@
+.site-footer {
+  margin-top: auto;
+  border-top: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(12, 16, 24, 0.7) 0%, rgba(8, 10, 15, 0.98) 100%);
+  padding: var(--sp-8) 0 calc(var(--sp-6) + var(--safe-bottom));
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  position: relative;
+  z-index: 10;
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
+  touch-action: pan-y;
+}
+
+.site-footer-inner {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: var(--sp-8);
+  padding-bottom: var(--sp-6);
+}
+
+.site-footer-brand {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.footer-logo-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.footer-brand-name {
+  font-size: var(--fs-lg);
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: -0.5px;
+}
+
+.footer-tagline {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+  max-width: 320px;
+}
+
+.footer-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.footer-col-title {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-primary);
+  margin-bottom: var(--sp-1);
+}
+
+.footer-col a,
+.footer-col .footer-legal-btn {
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: var(--fs-xs);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all var(--t-fast) var(--ease);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+}
+
+.footer-col a:hover,
+.footer-col .footer-legal-btn:hover {
+  color: var(--accent);
+  transform: translateX(2px);
+}
+
+.site-footer-bottom {
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.footer-copy {
+  margin: 0;
+}
+
+.footer-legal-note {
+  margin: 0;
+  opacity: 0.8;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   MOBILE & ANDROID RESPONSIVE BREAKPOINT (< 768px)
+──────────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .site-footer {
+    padding: var(--sp-6) 0 calc(84px + var(--safe-bottom)); /* Android navigation bar clearance */
+  }
+
+  .site-footer-inner {
+    grid-template-columns: 1fr 1fr;
+    gap: var(--sp-6) var(--sp-4);
+  }
+
+  .site-footer-brand {
+    grid-column: 1 / -1;
+    margin-bottom: var(--sp-2);
+  }
+
+  .footer-tagline {
+    max-width: 100%;
+  }
+
+  .site-footer-bottom {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--sp-2);
+    font-size: 11px;
+  }
+}

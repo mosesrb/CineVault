@@ -92,7 +92,11 @@ api.interceptors.response.use(
     if (err.response?.status === 401) {
       localStorage.removeItem('cv_token')
       localStorage.removeItem('cv_user')
-      window.location.href = '/'
+      const publicPaths = ['/login', '/register', '/privacy', '/terms']
+      const currentPath = window.location.pathname
+      if (!publicPaths.includes(currentPath) && currentPath !== '/') {
+        window.location.href = '/login'
+      }
     }
     return Promise.reject(err)
   }
@@ -150,6 +154,7 @@ export const getRecommendations = () => api.get('/discover/recommended')
 // ── Library ───────────────────────────────────────────────────
 export const getLibraryConfig   = () => api.get('/library/config')
 export const setLibraryConfig   = data => api.put('/library/config', data)
+export const testTmdbKey        = (tmdbApiKey) => api.post('/library/tmdb-key/test', { tmdbApiKey })
 export const ingestFile         = sourcePath => api.post('/library/ingest', { sourcePath })
 export const scanLibrary        = (path = '', hashMode = 'sparse') => api.post('/library/scan', { path, hashMode })
 export const getOrganizeMap     = () => api.get('/library/organize')
@@ -180,8 +185,8 @@ export const approveUser      = (id, approve = true) => api.put(`/users/${id}/ap
 
 // ── Admin Sessions ─────────────────────────────────────────────
 export const getSessions      = () => api.get('/admin/sessions')
-export const revokeSession    = id => api.get(`/admin/sessions/revoke/${id}`)
-export const clearSessions     = () => api.get('/admin/sessions/clear')
+export const revokeSession    = id => api.delete(`/admin/sessions/${id}`)
+export const clearSessions    = () => api.post('/admin/sessions/clear')
 
 // ── Network Info (for auto-fill in server config) ──────────────
 export const getNetworkInfo = () => {

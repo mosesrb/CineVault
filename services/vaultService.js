@@ -24,7 +24,7 @@ async function getVaultConfig() {
  * Set or update the vault root path.
  * Creates the vault and inbox directories if they don't exist.
  */
-async function setVaultRoot(vaultRootPath, inboxPath = '') {
+async function setVaultRoot(vaultRootPath, inboxPath = '', tmdbApiKey = undefined) {
     const resolvedVault = path.resolve(vaultRootPath);
     const resolvedInbox = inboxPath
         ? path.resolve(inboxPath)
@@ -39,11 +39,13 @@ async function setVaultRoot(vaultRootPath, inboxPath = '') {
     if (library) {
         library.vaultRootPath = resolvedVault;
         library.inboxPath = resolvedInbox;
+        if (tmdbApiKey !== undefined) library.tmdbApiKey = tmdbApiKey;
         library.updatedAt = new Date();
     } else {
         library = new Library({
             vaultRootPath: resolvedVault,
-            inboxPath: resolvedInbox
+            inboxPath: resolvedInbox,
+            tmdbApiKey: tmdbApiKey || ''
         });
     }
     await library.save();
@@ -168,11 +170,21 @@ async function deleteVaultFile(relativePath) {
  * Finds a sidecar file (e.g., .srt) next to the specified media file.
  */
 async function findSidecarFile(mediaRelativePath, extensions = ['.srt', '.vtt']) {
+    if (!mediaRelativePath) return null;
     const config = await getVaultConfig();
     if (!config) return null;
 
-    const baseFullPath = path.join(config.vaultRootPath, mediaRelativePath);
+    const resolvedVault = path.resolve(config.vaultRootPath);
+    const baseFullPath = path.resolve(path.join(resolvedVault, mediaRelativePath));
+
+    // Safety check: Ensure baseFullPath is inside resolvedVault
+    if (!baseFullPath.startsWith(resolvedVault)) {
+        return null;
+    }
+
     const dir = path.dirname(baseFullPath);
+    if (!fs.existsSync(dir)) return null;
+
     const ext = path.extname(baseFullPath);
     const baseName = path.basename(baseFullPath, ext);
 

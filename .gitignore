@@ -1,15 +1,73 @@
+# Dependencies
 node_modules/
-*.log
+.pnp
+.pnp.js
+
+# Environment variables & secrets
 .env
+.env.*
+!.env.sample
+*.key
+*.pem
+*.cer
+*.crt
+*.p12
+*.pfx
+
+# Keystores & Android Local Secrets
 *.keystore
 *.jks
+local.properties
+.gradle/
+**/build/
+*.apk
+*.aab
 
-# Internal Docs
-docs/project_status.md
-docs/architecture.md
+# Transcoding & Media Files
+transcode/
+*.mp4
+*.mkv
+*.avi
+*.mov
+*.webm
+*.ts
+*.m3u8
+
+# Logs & Runtime
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Test Coverage & Caches
+coverage/
+.nyc_output/
+.cache/
+.eslintcache
+
+# Build outputs
+dist/
+dist-ssr/
+
+# Internal Docs & Temp Media
+docs/*.mp4
 
 # Sensitive Configuration
 config/development.json
 config/production.json
 config/test.json
 config/local.json
+
+# IDE / OS metadata
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

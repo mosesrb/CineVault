@@ -4,6 +4,7 @@ import { register, getMe } from '../api'
 import { CheckCircle2 } from 'lucide-react'
 import BrandIcon from '../components/BrandIcon'
 import { useAuth } from '../context/AuthContext'
+import { openLegalModal } from '../components/LegalViewerModal'
 import './Register.css'
 
 export default function Register() {
@@ -135,9 +136,35 @@ export default function Register() {
           </form>
         )}
 
-        <p className="register-footer">
+        <p className="register-footer" style={{ marginBottom: 'var(--sp-2)' }}>
           Already have an account? <Link to="/login">Sign In</Link>
         </p>
+
+        <div style={{ textAlign: 'center', fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
+          <button 
+            type="button" 
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              openLegalModal('privacy');
+            }} 
+            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', textDecoration: 'underline', marginRight: 'var(--sp-3)', cursor: 'pointer', fontSize: 'inherit' }}
+          >
+            Privacy Policy
+          </button>
+          <span>•</span>
+          <button 
+            type="button" 
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              openLegalModal('terms');
+            }} 
+            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', textDecoration: 'underline', marginLeft: 'var(--sp-3)', cursor: 'pointer', fontSize: 'inherit' }}
+          >
+            Terms &amp; Conditions
+          </button>
+        </div>
       </div>
     </div>
   )

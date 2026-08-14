@@ -1,0 +1,202 @@
+.legal-viewer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  background: rgba(0, 0, 0, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-4);
+  touch-action: pan-y;
+}
+
+.legal-viewer-card {
+  width: 100%;
+  max-width: 680px;
+  height: 85vh;
+  max-height: 850px;
+  background: rgba(18, 22, 30, 0.98);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 25px 65px rgba(0, 0, 0, 0.75);
+  overflow: hidden;
+  color: var(--text-primary);
+}
+
+.legal-viewer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-5);
+  border-bottom: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+  flex-shrink: 0;
+}
+
+.legal-viewer-brand-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.legal-viewer-icon {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.legal-viewer-heading {
+  font-size: var(--fs-lg);
+  font-weight: 800;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.legal-viewer-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.legal-viewer-pill-tabs {
+  display: flex;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 3px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+}
+
+.legal-pill-tab {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 99px;
+  cursor: pointer;
+  transition: all var(--t-fast) var(--ease);
+}
+
+.legal-pill-tab.active {
+  background: var(--accent);
+  color: white;
+  box-shadow: 0 2px 8px var(--accent-glow);
+}
+
+.legal-viewer-close-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--t-fast) var(--ease);
+}
+
+.legal-viewer-close-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: var(--text-primary);
+}
+
+.legal-viewer-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--sp-5);
+  -webkit-overflow-scrolling: touch;
+}
+
+.legal-viewer-meta {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  margin-bottom: var(--sp-4);
+  padding-bottom: var(--sp-2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.legal-doc-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.legal-section-block {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius);
+  padding: var(--sp-4);
+}
+
+.legal-section-block h3 {
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: var(--sp-2);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.legal-section-block h3 svg {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.legal-section-block p {
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.legal-section-block ul {
+  padding-left: 20px;
+  margin-top: 8px;
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+}
+
+.legal-section-block li {
+  margin-bottom: 4px;
+}
+
+.legal-viewer-footer {
+  padding: var(--sp-3) var(--sp-5);
+  border-top: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+  display: flex;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+
+.legal-viewer-done-btn {
+  padding: var(--sp-2) var(--sp-6);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  border-radius: var(--radius-sm);
+}
+
+@media (max-width: 600px) {
+  .legal-viewer-card {
+    height: 92vh;
+    border-radius: var(--radius);
+  }
+
+  .legal-viewer-header {
+    padding: var(--sp-3) var(--sp-4);
+  }
+
+  .legal-viewer-content {
+    padding: var(--sp-4);
+  }
+}

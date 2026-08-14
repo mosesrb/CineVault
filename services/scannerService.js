@@ -164,13 +164,11 @@ function _cleanTitle(raw) {
         .trim()
         .split(' ')
         .map(w => {
+            if (!w) return '';
             // Keep Roman Numerals uppercase
-            if (ROMAN_REGEX.test(w)) return w.toUpperCase();
+            if (ROMAN_REGEX.test(w) && w.length <= 4) return w.toUpperCase();
             
-            // Handle "To" vs "Too" vs "Two" (sequel indicators)
-            const low = w.toLowerCase();
-            if (low === 'too' || low === 'two') return 'To'; // Normalize to most likely TMDB spelling for sequels
-            
+            // Standard title casing without corrupting real English words (e.g. Two, Too)
             return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
         })
         .join(' ');

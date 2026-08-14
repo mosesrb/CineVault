@@ -9,24 +9,10 @@ const validateObjectId = require('../middleware/validateObjectId');
 
 const { Movie, validateMovie, validateMoviePatch } = require('../models/movie');
 const { Genre } = require('../models/genre');
+const { ensureGenres } = require('../services/genreService');
 const { fetchMetadata, searchTMDB, fetchMetadataById } = require('../services/metadataService');
 const { deleteVaultFile } = require('../services/vaultService');
 const { cache, clearCache } = require('../middleware/cache');
-
-// ─── HELPERS ────────────────────────────────────────────────
-async function ensureGenres(genreNames) {
-    if (!genreNames || !genreNames.length) return [];
-    const genreIds = [];
-    for (const name of genreNames) {
-        let genre = await Genre.findOne({ name: new RegExp(`^${name}$`, 'i') });
-        if (!genre) {
-            genre = new Genre({ name });
-            await genre.save();
-        }
-        genreIds.push(genre._id);
-    }
-    return genreIds;
-}
 
 /**
  * @route   GET /api/v1/movies
@@ -75,11 +61,20 @@ router.get('/', [auth, genreGuard, cache(3600)], async (req, res) => {
         }
     }
 
-    const movies = await Movie.find(filter)
+    let query = Movie.find(filter)
         .select('-cast -originalSourcePath')
         .populate('genres', 'name slug')
         .sort({ addedAt: -1 });
 
+    if (req.query.limit) {
+        const limit = parseInt(req.query.limit, 10);
+        const page = parseInt(req.query.page, 10) || 1;
+        if (limit > 0) {
+            query = query.skip((page - 1) * limit).limit(limit);
+        }
+    }
+
+    const movies = await query;
     res.send(movies);
 });
 

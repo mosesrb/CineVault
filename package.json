@@ -39,5 +39,12 @@
   },
   "directories": {
     "test": "tests"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "<rootDir>/frontend/"
+    ]
   }
 }

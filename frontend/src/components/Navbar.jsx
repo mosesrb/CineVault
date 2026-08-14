@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Search, User, Film, ShieldCheck, LogOut, ChevronUp, ChevronDown, WifiOff } from 'lucide-react'
+import { Search, User, Film, ShieldCheck, LogOut, ChevronUp, ChevronDown, WifiOff, Shield, FileText } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { search as searchApi } from '../api'
 import { OfflineStorageService } from '../services/OfflineStorageService'
 import { DownloadCloud, Play, Trash2, X } from 'lucide-react'
 import ConfirmModal from './ConfirmModal'
 import BrandIcon from './BrandIcon'
+import { openLegalModal } from './LegalViewerModal'
 import './Navbar.css'
 
 const isCapacitor = typeof window !== 'undefined' && 
@@ -301,6 +302,20 @@ export default function Navbar() {
                   <ShieldCheck size={18} /> Admin Panel
                 </Link>
               )}
+              <button 
+                type="button" 
+                className="dropdown-item" 
+                onClick={() => { setMenuOpen(false); openLegalModal('privacy'); }}
+              >
+                <Shield size={18} /> Privacy Policy
+              </button>
+              <button 
+                type="button" 
+                className="dropdown-item" 
+                onClick={() => { setMenuOpen(false); openLegalModal('terms'); }}
+              >
+                <FileText size={18} /> Terms of Service
+              </button>
 
               {/* Downloads Section - Show on Capacitor OR if we have stored downloads for testing */}
               {(isCapacitor || downloads.length > 0) && (

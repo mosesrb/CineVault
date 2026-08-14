@@ -11,15 +11,17 @@ services:
       - NODE_ENV=production
       - PORT=3000
       - delatron_MONGODB_URI=mongodb://mongo:27017/cinevault
+      - REDIS_URL=redis://redis:6379
       # Pass API keys through environment variables if set in .env
       - delatron_TMDB_API_KEY=${TMDB_API_KEY:-}
-      - delatron_jwtPrivateKey=${JWT_PRIVATE_KEY:-cinevault_super_secret_key_123!}
+      - delatron_jwtPrivateKey=${JWT_PRIVATE_KEY:-}
     volumes:
       # Map the user's host media directory to /media inside the container.
       # The user will configure the path inside the app's Admin Settings to be '/media'
       - ${HOST_MEDIA_PATH:-./media}:/media
     depends_on:
       - mongo
+      - redis
     networks:
       - cinevault_net
 
@@ -34,8 +36,20 @@ services:
     networks:
       - cinevault_net
 
+  redis:
+    image: redis:7-alpine
+    container_name: cinevault-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - cinevault_net
+
 volumes:
   mongo_data:
+  redis_data:
 
 networks:
   cinevault_net:

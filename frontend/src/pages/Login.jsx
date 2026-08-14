@@ -6,6 +6,8 @@ import { useAuth } from '../context/AuthContext'
 import { getMe } from '../api'
 import BrandIcon from '../components/BrandIcon'
 import GearIcon from '../components/GearIcon'
+import { Server, Wifi, Check, Trash2, X } from 'lucide-react'
+import { openLegalModal } from '../components/LegalViewerModal'
 import './Login.css'
 
 export default function Login() {
@@ -152,51 +154,102 @@ export default function Login() {
 
         {showServerConfig && (
           <div className="login-server-config animate-fadeIn">
-            <h3 className="login-config-title">
-              <GearIcon size={14} /> Server Configuration
-            </h3>
-            <p className="text-xs text-muted" style={{ marginBottom: 'var(--sp-3)', lineHeight: '1.4' }}>
-              Connect your app to the backend. If using a mobile or TV app, ensure your LocalTunnel points to the <strong>backend port (3000)</strong>, not the frontend.
-            </p>
-            {serverMsg && <div className="alert alert-success" style={{ marginBottom: 'var(--sp-3)', fontSize: 'var(--fs-xs)' }}>{serverMsg}</div>}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)' }}>
-              <input
-                type="url"
-                className="input text-sm"
-                placeholder="https://your-url.loca.lt"
-                value={serverUrl}
-                onChange={e => setServerUrl(e.target.value)}
-                style={{ width: '100%' }}
-              />
-              {/* Quick-fill: local network IPs detected from server */}
-              {localIps.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--sp-1)' }}>
-                  {localIps.map(ip => (
-                    <button
-                      key={ip}
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      style={{ fontSize: '0.7rem', padding: '2px 8px' }}
-                      onClick={() => setServerUrl(ip)}
-                    >
-                      📡 {ip}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <div style={{ display: 'flex', gap: 'var(--sp-2)', justifyContent: 'center', flexWrap: 'wrap' }}>
-                <button type="button" className="btn btn-ghost btn-sm" style={{ flex: '1 1 auto' }} onClick={fetchLocalNetwork}>Detect LAN IP</button>
-                <button className="btn btn-primary btn-sm" style={{ flex: '1 1 auto' }} onClick={handleSaveServer}>Set Server</button>
-                <button className="btn btn-ghost btn-sm" style={{ flex: '1 1 auto' }} onClick={handleClearServer}>Clear</button>
+            <div className="login-config-header">
+              <div className="login-config-title">
+                <Server size={16} className="config-title-icon" />
+                <span>Server Connection</span>
               </div>
+              <button
+                type="button"
+                className="login-config-close"
+                onClick={() => setShowServerConfig(false)}
+                title="Close server settings"
+              >
+                <X size={15} />
+              </button>
             </div>
-            {localStorage.getItem('cv_server_url') && (
-              <div className="active-server-tag">
-                <span className="server-tag-label">Active Server</span>
-                <span className="server-tag-url">{localStorage.getItem('cv_server_url')}</span>
+
+            <p className="login-config-desc">
+              Connect to your self-hosted backend. For remote or mobile access, specify your public IP, domain, or tunnel (e.g. <code>https://your-tunnel.loca.lt</code>).
+            </p>
+
+            {serverMsg && (
+              <div className="alert alert-success" style={{ marginBottom: 'var(--sp-3)', fontSize: 'var(--fs-xs)' }}>
+                {serverMsg}
               </div>
             )}
-            <hr style={{ margin: 'var(--sp-4) 0', borderColor: 'var(--border)' }} />
+
+            <div className="login-config-controls">
+              <div className="login-url-input-wrap">
+                <input
+                  type="url"
+                  className="input login-server-input"
+                  placeholder="https://your-backend.example.com"
+                  value={serverUrl}
+                  onChange={e => setServerUrl(e.target.value)}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck="false"
+                />
+              </div>
+
+              {localIps.length > 0 && (
+                <div className="login-detected-ips">
+                  <span className="detected-ips-label">Detected LAN:</span>
+                  <div className="detected-ips-list">
+                    {localIps.map(ip => (
+                      <button
+                        key={ip}
+                        type="button"
+                        className="detected-ip-chip"
+                        onClick={() => setServerUrl(ip)}
+                      >
+                        📡 {ip}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="login-config-actions">
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm login-action-save"
+                  onClick={handleSaveServer}
+                >
+                  <Check size={14} /> Set Server
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm login-action-detect"
+                  onClick={fetchLocalNetwork}
+                >
+                  <Wifi size={14} /> Detect LAN IP
+                </button>
+                {localStorage.getItem('cv_server_url') && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm login-action-clear"
+                    onClick={handleClearServer}
+                    title="Reset to default origin"
+                  >
+                    <Trash2 size={13} /> Clear
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {localStorage.getItem('cv_server_url') && (
+              <div className="active-server-tag">
+                <div className="server-tag-status">
+                  <span className="server-status-dot" />
+                  <span className="server-tag-label">Active Connection</span>
+                </div>
+                <div className="server-tag-url">
+                  {localStorage.getItem('cv_server_url')}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -252,9 +305,35 @@ export default function Login() {
           </Link>
         </form>
 
-        <p className="login-footer">
+        <p className="login-footer" style={{ marginBottom: 'var(--sp-2)' }}>
           Access is invite-only for guest users.
         </p>
+
+        <div style={{ textAlign: 'center', fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
+          <button 
+            type="button" 
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              openLegalModal('privacy');
+            }} 
+            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', textDecoration: 'underline', marginRight: 'var(--sp-3)', cursor: 'pointer', fontSize: 'inherit' }}
+          >
+            Privacy Policy
+          </button>
+          <span>•</span>
+          <button 
+            type="button" 
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              openLegalModal('terms');
+            }} 
+            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', textDecoration: 'underline', marginLeft: 'var(--sp-3)', cursor: 'pointer', fontSize: 'inherit' }}
+          >
+            Terms &amp; Conditions
+          </button>
+        </div>
       </div>
     </div>
   )

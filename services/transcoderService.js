@@ -124,6 +124,7 @@ async function createHlsStream(filePath, outputDir) {
     const manifestPathFF = toFFmpegPath(manifestPath);
     const segmentPatternFF = toFFmpegPath(path.join(outputDir, 'seg_%03d.ts'));
     const inputPathFF = toFFmpegPath(filePath);
+    const debugLog = path.join(outputDir, 'ffmpeg_debug.log');
 
     const command = ffmpeg(inputPathFF)
         .videoCodec('libx264')
@@ -145,18 +146,22 @@ async function createHlsStream(filePath, outputDir) {
         ])
         .on('start', (cmd) => {
             console.log('🚀 HLS Engine: ' + cmd);
-            const debugLog = path.join(outputDir, 'ffmpeg_debug.log');
-            fs.writeFileSync(debugLog, `START: ${new Date().toISOString()}\nCMD: ${cmd}\n\n`);
+            try {
+                fs.writeFileSync(debugLog, `START: ${new Date().toISOString()}\nCMD: ${cmd}\n\n`);
+            } catch (_) {}
         })
         .on('stderr', (stderrLine) => {
-            const debugLog = path.join(outputDir, 'ffmpeg_debug.log');
-            fs.appendFileSync(debugLog, stderrLine + '\n');
+            try {
+                fs.appendFileSync(debugLog, stderrLine + '\n');
+            } catch (_) {}
         })
         .on('error', (err) => {
             if (err.message && (err.message.includes('SIGKILL') || err.message.includes('Output stream closed'))) {
                 return;
             }
-            fs.appendFileSync(debugLog, `\n\n❌ ERROR: ${err.message}\n`);
+            try {
+                fs.appendFileSync(debugLog, `\n\n❌ ERROR: ${err.message}\n`);
+            } catch (_) {}
         });
         
     const limitedCommand = await withConcurrencyLimit(command);

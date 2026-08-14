@@ -40,7 +40,7 @@ async function getOrCreateSession(mediaId, filePath) {
     const manifestPath = path.join(outputDir, 'master.m3u8');
 
     console.log(`🚀 Starting HLS Session for ${mediaId}`);
-    const ffmpegCommand = createHlsStream(filePath, outputDir);
+    const ffmpegCommand = await createHlsStream(filePath, outputDir);
 
     const session = {
         ffmpegCommand,
@@ -50,9 +50,6 @@ async function getOrCreateSession(mediaId, filePath) {
     };
 
     sessions.set(mediaId, session);
-
-    // Initial segment wait logic can be added here if needed, 
-    // but the route will handle 404 retries or polling.
 
     return session;
 }
@@ -64,25 +61,33 @@ function stopSession(mediaId) {
     if (sessions.has(mediaId)) {
         const session = sessions.get(mediaId);
         try {
-            session.ffmpegCommand.kill('SIGKILL');
-        } catch (e) { }
+            if (session.ffmpegCommand && typeof session.ffmpegCommand.kill === 'function') {
+                session.ffmpegCommand.kill('SIGKILL');
+            }
+        } catch (e) {
+            console.warn(`[HLS] Warning killing FFmpeg process for ${mediaId}:`, e.message);
+        }
 
-        // Optional: delete files immediately
-        // deleteFolderRecursive(session.outputDir);
+        try {
+            if (session.outputDir && fs.existsSync(session.outputDir)) {
+                fs.rmSync(session.outputDir, { recursive: true, force: true });
+            }
+        } catch (e) {
+            console.warn(`[HLS] Warning cleaning cache dir for ${mediaId}:`, e.message);
+        }
 
         sessions.delete(mediaId);
     }
 }
 
-let cleanupStarted = false;
+let cleanupTimer = null;
 
 /**
  * Periodically cleans up sessions that haven't been accessed for a while.
  */
 function startInactivityCleanup(intervalMs = 60000, maxIdleMs = 600000) {
-    if (cleanupStarted) return;
-    cleanupStarted = true;
-    setInterval(() => {
+    if (cleanupTimer) return cleanupTimer;
+    cleanupTimer = setInterval(() => {
         const now = Date.now();
         for (const [mediaId, session] of sessions.entries()) {
             if (now - session.lastAccessed > maxIdleMs) {
@@ -91,10 +96,23 @@ function startInactivityCleanup(intervalMs = 60000, maxIdleMs = 600000) {
             }
         }
     }, intervalMs);
+
+    if (cleanupTimer && typeof cleanupTimer.unref === 'function') {
+        cleanupTimer.unref();
+    }
+    return cleanupTimer;
+}
+
+function stopInactivityCleanup() {
+    if (cleanupTimer) {
+        clearInterval(cleanupTimer);
+        cleanupTimer = null;
+    }
 }
 
 module.exports = {
     getOrCreateSession,
     stopSession,
-    startInactivityCleanup
+    startInactivityCleanup,
+    stopInactivityCleanup
 };

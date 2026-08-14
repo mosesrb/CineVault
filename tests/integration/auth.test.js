@@ -3,14 +3,12 @@ const { User } = require('../../models/user');
 let app;
 
 describe('/api/v1/auth', () => {
-    beforeEach(() => { app = require('../../index'); });
-    afterEach(async () => {
+    beforeEach(async () => { 
+        app = require('../../index'); 
         await User.deleteMany({});
     });
-    
-    afterAll(async () => {
-        const mongoose = require('mongoose');
-        await mongoose.connection.close();
+    afterEach(async () => {
+        await User.deleteMany({});
     });
 
     describe('POST /', () => {

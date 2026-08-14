@@ -29,14 +29,28 @@ module.exports = function (app) {
     app.use((req, res, next) => {
         const origin = req.headers.origin;
         
-        // Define allowed origin patterns (localhost and local network IPs)
-        const isAllowedOrigin = origin && (
-            origin.startsWith('http://localhost') ||
-            origin.startsWith('http://127.0.0.1') ||
-            origin.startsWith('http://192.168.') ||
-            origin.startsWith('http://10.') ||
-            origin === 'capacitor://localhost'
-        );
+        // Define allowed origin patterns (localhost, Capacitor, and valid RFC1918 private subnets)
+        let isAllowedOrigin = false;
+        if (origin) {
+            if (origin === 'capacitor://localhost' || origin === 'http://localhost' || origin === 'https://localhost') {
+                isAllowedOrigin = true;
+            } else {
+                try {
+                    const parsedUrl = new URL(origin);
+                    const hostname = parsedUrl.hostname;
+                    const isLocal = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+                    const isPrivate10 = /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname);
+                    const isPrivate192 = /^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname);
+                    const isPrivate172 = /^172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}$/.test(hostname);
+
+                    if (isLocal || isPrivate10 || isPrivate192 || isPrivate172) {
+                        isAllowedOrigin = true;
+                    }
+                } catch (_) {
+                    isAllowedOrigin = false;
+                }
+            }
+        }
 
         if (isAllowedOrigin) {
             res.setHeader('Access-Control-Allow-Origin', origin);

@@ -25,6 +25,11 @@ import AdminTVShows   from './pages/admin/AdminTVShows'
 import AdminUsers     from './pages/admin/AdminUsers'
 import AdminGenres    from './pages/admin/AdminGenres'
 import AdminSessions  from './pages/admin/AdminSessions'
+import PrivacyPolicy  from './pages/PrivacyPolicy'
+import TermsOfService from './pages/TermsOfService'
+import Footer         from './components/Footer'
+import LegalConsentModal from './components/LegalConsentModal'
+import LegalViewerModal from './components/LegalViewerModal'
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
@@ -125,6 +130,13 @@ function AppRoutes() {
     try {
       import('@capacitor/app').then(({ App }) => {
         handlerPromise = App.addListener('backButton', ({ canGoBack }) => {
+          // Allow active modals or reader views to handle back press first
+          const backEvent = new CustomEvent('cv_hardware_back', { cancelable: true })
+          const notCancelled = window.dispatchEvent(backEvent)
+          if (!notCancelled) {
+            return // Handled by active modal/reader view
+          }
+
           const rootScreens = ['/', '/login', '/register']
           const path = pathRef.current
           const nav = navRef.current
@@ -152,9 +164,15 @@ function AppRoutes() {
   }, []) // Register EXACTLY ONCE on mount
 
   const isPlayer = location.pathname.startsWith('/watch/')
+  const isAdmin = location.pathname.startsWith('/admin')
+  const isAuthPage = location.pathname === '/login' || location.pathname === '/register'
+  const isLegalPage = location.pathname === '/privacy' || location.pathname === '/terms'
+  const showFooter = (user || isLegalPage) && !isPlayer && !isAdmin && !isAuthPage
 
   return (
     <>
+      <LegalConsentModal />
+      <LegalViewerModal />
       {user && !isPlayer && <Navbar />}
       {user && !isPlayer && <MobileNav />}
       <Routes>
@@ -180,8 +198,12 @@ function AppRoutes() {
           <Route path="sessions" element={<AdminSessions />} />
         </Route>
 
+        <Route path="/privacy" element={<PrivacyPolicy />} />
+        <Route path="/terms" element={<TermsOfService />} />
+
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      {showFooter && <Footer />}
     </>
   )
 }

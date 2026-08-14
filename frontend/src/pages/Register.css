@@ -1,11 +1,15 @@
 .register-page {
   position: relative;
   min-height: 100vh;
+  min-height: 100dvh;
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  background-color: var(--bg);
+  background: radial-gradient(circle at 50% 30%, hsl(220, 22%, 9%) 0%, var(--bg-base) 100%);
+  padding: max(var(--sp-6), env(safe-area-inset-top)) var(--sp-4) max(var(--sp-6), env(safe-area-inset-bottom));
+  box-sizing: border-box;
 }
 
 .register-blob {

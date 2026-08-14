@@ -24,18 +24,20 @@ module.exports = function(){
       });
 
     // logging error in database
-    let logDb;
-    try {
-        logDb = config.get('mongoURI');
-    } catch (_) {
-        logDb = config.get('host.domain');
-    }
+    if (process.env.NODE_ENV !== 'test') {
+        let logDb;
+        try {
+            logDb = config.get('mongoURI');
+        } catch (_) {
+            logDb = config.get('host.domain');
+        }
 
-    winston.add(new winston.transports.MongoDB({
-        db: logDb,
-        level: 'info',
-        options: { useUnifiedTopology: true }
-    }));
+        winston.add(new winston.transports.MongoDB({
+            db: logDb,
+            level: 'info',
+            options: { useUnifiedTopology: true }
+        }));
+    }
 
     // common error
     // winston.add( 

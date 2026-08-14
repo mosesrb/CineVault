@@ -1,13 +1,19 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { getLibraryConfig, setLibraryConfig, ingestFile, scanLibrary, getScanStatus, getOrganizeMap, refreshMetadata, getDuplicates, cleanupDuplicates, deleteMovie, getMovieConflicts, getTVShowConflicts } from '../../api'
-import { Library, Save, Inbox, RefreshCw, Search, Wand2, CheckCircle2, LayoutGrid, Trash2, Database, X, CloudDownload, FolderSearch, ChevronLeft, Target, AlertOctagon } from 'lucide-react'
+import { getLibraryConfig, setLibraryConfig, testTmdbKey, ingestFile, scanLibrary, getScanStatus, getOrganizeMap, refreshMetadata, getDuplicates, cleanupDuplicates, deleteMovie, getMovieConflicts, getTVShowConflicts } from '../../api'
+import { Library, Save, Inbox, RefreshCw, Search, Wand2, CheckCircle2, LayoutGrid, Trash2, Database, X, CloudDownload, FolderSearch, ChevronLeft, Target, AlertOctagon, Key, Eye, EyeOff, Check, AlertCircle } from 'lucide-react'
 import MetadataModal from './MetadataModal'
 
 export default function AdminLibrary() {
   const [config, setConfig]   = useState(null)
   const [vault, setVault]     = useState('')
   const [inbox, setInbox]     = useState('')
+  const [tmdbKey, setTmdbKey] = useState('')
+  const [showKey, setShowKey] = useState(false)
+  const [tmdbStatus, setTmdbStatus] = useState('idle') // 'idle' | 'testing' | 'verified' | 'error'
+  const [tmdbStatusMsg, setTmdbStatusMsg] = useState('')
+  const [testLoading, setTestLoading] = useState(false)
+
   const [cfgMsg, setCfgMsg]   = useState('')
   const [cfgErr, setCfgErr]   = useState('')
   const [cfgLoading, setCfgLoading] = useState(false)
@@ -43,10 +49,31 @@ export default function AdminLibrary() {
 
   useEffect(() => {
     getLibraryConfig()
-      .then(r => {
+      .then(async r => {
         setConfig(r.data)
         setVault(r.data.vaultRootPath || '')
         setInbox(r.data.inboxPath || '')
+        const key = r.data.tmdbApiKey || ''
+        setTmdbKey(key)
+        if (key) {
+          setTmdbStatus('testing')
+          try {
+            const testRes = await testTmdbKey(key)
+            if (testRes.data?.success) {
+              setTmdbStatus('verified')
+              setTmdbStatusMsg(testRes.data.message || 'TMDB API key verified & connected.')
+            } else {
+              setTmdbStatus('error')
+              setTmdbStatusMsg(testRes.data?.message || 'Authentication failed.')
+            }
+          } catch (err) {
+            setTmdbStatus('error')
+            setTmdbStatusMsg(err.response?.data?.message || err.message || 'Authentication failed.')
+          }
+        } else {
+          setTmdbStatus('idle')
+          setTmdbStatusMsg('')
+        }
       }).catch(() => {})
 
     loadConflicts()
@@ -73,12 +100,54 @@ export default function AdminLibrary() {
     setCfgMsg(''); setCfgErr('')
     setCfgLoading(true)
     try {
-      const r = await setLibraryConfig({ vaultRootPath: vault, inboxPath: inbox })
+      const r = await setLibraryConfig({ vaultRootPath: vault, inboxPath: inbox, tmdbApiKey: tmdbKey })
       setConfig(r.data)
-      setCfgMsg('Vault configuration saved!')
+      setCfgMsg('Vault & TMDB configuration saved successfully!')
+
+      if (tmdbKey) {
+        setTmdbStatus('testing')
+        try {
+          const testRes = await testTmdbKey(tmdbKey)
+          if (testRes.data?.success) {
+            setTmdbStatus('verified')
+            setTmdbStatusMsg(testRes.data.message || 'TMDB API key verified & connected.')
+          } else {
+            setTmdbStatus('error')
+            setTmdbStatusMsg(testRes.data?.message || 'Authentication failed.')
+          }
+        } catch (err) {
+          setTmdbStatus('error')
+          setTmdbStatusMsg(err.response?.data?.message || err.message || 'Authentication failed.')
+        }
+      } else {
+        setTmdbStatus('idle')
+        setTmdbStatusMsg('')
+      }
     } catch (err) {
       setCfgErr(err.response?.data || 'Failed to save config.')
     } finally { setCfgLoading(false) }
+  }
+
+  async function handleTestTmdbKey() {
+    if (!tmdbKey) return
+    setTestLoading(true)
+    setTmdbStatus('testing')
+    setTmdbStatusMsg('Testing TMDB connection...')
+    try {
+      const r = await testTmdbKey(tmdbKey)
+      if (r.data?.success) {
+        setTmdbStatus('verified')
+        setTmdbStatusMsg(r.data.message || 'TMDB API key verified & connected.')
+      } else {
+        setTmdbStatus('error')
+        setTmdbStatusMsg(r.data?.message || 'Authentication failed.')
+      }
+    } catch (err) {
+      setTmdbStatus('error')
+      setTmdbStatusMsg(err.response?.data?.message || err.message || 'Authentication failed.')
+    } finally {
+      setTestLoading(false)
+    }
   }
 
   async function handleIngest(e) {
@@ -182,10 +251,10 @@ export default function AdminLibrary() {
         <h1 className="section-heading" style={{margin:0}}>Library Management</h1>
       </div>
 
-      {/* ── Vault Config ───────────────────────────────── */}
+      {/* ── Vault & Metadata Configuration ─────────────── */}
       <div className="card lib-section">
         <h2 className="lib-section-title" style={{display:'flex', alignItems:'center', gap:'8px'}}>
-          <Library size={20} /> Vault Configuration
+          <Library size={20} /> Vault &amp; Metadata Configuration
         </h2>
         <form onSubmit={handleSaveConfig} className="lib-form">
           {cfgMsg && <div className="alert alert-success">{cfgMsg}</div>}
@@ -212,8 +281,96 @@ export default function AdminLibrary() {
               placeholder="Defaults to Vault\Inbox"
             />
           </div>
-          <button type="submit" className="btn btn-primary lib-save-btn" disabled={cfgLoading}>
-            {cfgLoading ? 'Saving…' : <><Save size={18} /> Save Configuration</>}
+
+          {/* TMDB API Key Setting */}
+          <div className="field" style={{ marginTop: 'var(--sp-2)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--sp-1)' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
+                <Key size={16} /> TMDB API Key (v3 auth)
+              </label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)' }}>
+                {tmdbStatus === 'verified' && (
+                  <span className="badge badge-accent" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)', padding: '2px 8px', borderRadius: '4px', fontSize: 'var(--fs-xs)' }}>
+                    <Check size={12} /> Verified &amp; Active
+                  </span>
+                )}
+                {tmdbStatus === 'testing' && (
+                  <span className="badge badge-accent" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', borderColor: 'rgba(245, 158, 11, 0.3)', padding: '2px 8px', borderRadius: '4px', fontSize: 'var(--fs-xs)' }}>
+                    <RefreshCw className="animate-spin" size={12} /> Verifying...
+                  </span>
+                )}
+                {tmdbStatus === 'error' && (
+                  <span className="badge badge-accent" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.3)', padding: '2px 8px', borderRadius: '4px', fontSize: 'var(--fs-xs)' }}>
+                    <AlertCircle size={12} /> Invalid Key
+                  </span>
+                )}
+                <a 
+                  href="https://www.themoviedb.org/settings/api" 
+                  target="_blank" 
+                  rel="noopener noreferrer" 
+                  style={{ fontSize: 'var(--fs-xs)', color: 'var(--accent)', textDecoration: 'underline' }}
+                >
+                  Get API Key ↗
+                </a>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 'var(--sp-2)' }}>
+              <div style={{ position: 'relative', flex: 1 }}>
+                <input
+                  type={showKey ? 'text' : 'password'}
+                  className="input"
+                  value={tmdbKey}
+                  onChange={e => { 
+                    setTmdbKey(e.target.value); 
+                    setTmdbStatus('idle'); 
+                    setTmdbStatusMsg(''); 
+                  }}
+                  placeholder="Enter TMDB API key..."
+                  style={{ paddingRight: '40px' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowKey(!showKey)}
+                  style={{
+                    position: 'absolute',
+                    right: '10px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--text-muted)',
+                    cursor: 'pointer',
+                    padding: 0
+                  }}
+                  title={showKey ? 'Hide key' : 'Show key'}
+                >
+                  {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={handleTestTmdbKey}
+                disabled={testLoading || !tmdbKey}
+                style={{ flexShrink: 0 }}
+              >
+                {testLoading ? <RefreshCw className="animate-spin" size={16} /> : 'Test Connection'}
+              </button>
+            </div>
+            <span className="text-muted" style={{ fontSize: 'var(--fs-xs)' }}>
+              Enables auto-syncing high-res posters, cast lists, trailers, plot summaries, and backdrop galleries.
+            </span>
+
+            {tmdbStatusMsg && (
+              <div className={`alert ${tmdbStatus === 'verified' ? 'alert-success' : tmdbStatus === 'error' ? 'alert-error' : 'alert-info'}`} style={{ marginTop: 'var(--sp-2)', padding: 'var(--sp-2) var(--sp-3)', fontSize: 'var(--fs-xs)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {tmdbStatus === 'verified' ? <Check size={14} /> : tmdbStatus === 'error' ? <AlertCircle size={14} /> : <RefreshCw className="animate-spin" size={14} />}
+                <span>{tmdbStatusMsg}</span>
+              </div>
+            )}
+          </div>
+
+          <button type="submit" className="btn btn-primary lib-save-btn" disabled={cfgLoading} style={{ marginTop: 'var(--sp-3)' }}>
+            {cfgLoading ? 'Saving…' : <><Save size={18} /> Save Settings</>}
           </button>
         </form>
       </div>

@@ -3,12 +3,21 @@ const config = require('config');
 const { Session } = require('../models/session');
 
 module.exports = async function (req, res, next) {
-    let token = req.header('x-auth-token') || req.query.token;
+    let token = req.header('x-auth-token');
 
-    // Fallback to standard Authorization header
+    // Standard Authorization header
     const authHeader = req.header('Authorization');
     if (!token && authHeader && authHeader.startsWith('Bearer ')) {
         token = authHeader.substring(7);
+    }
+
+    // Allow query parameter token strictly for streaming and subtitle endpoints
+    // where HTML5 <video> and <track> tags cannot set custom HTTP headers
+    if (!token && req.query.token) {
+        const isStreamRequest = req.baseUrl.includes('stream') || req.path.includes('stream') || req.originalUrl.includes('/stream');
+        if (isStreamRequest) {
+            token = req.query.token;
+        }
     }
 
     if (!token) return res.status(401).send('Access denied. No token provided.');

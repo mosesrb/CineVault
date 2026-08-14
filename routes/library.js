@@ -10,6 +10,7 @@ const { Movie } = require('../models/movie');
 const { TVShow } = require('../models/tvShow');
 const { Episode } = require('../models/episode');
 const { Genre } = require('../models/genre');
+const { ensureGenres } = require('../services/genreService');
 const { User } = require('../models/user');
 const { Session } = require('../models/session');
 const { Duplicate } = require('../models/duplicate');
@@ -24,40 +25,50 @@ let activeScan = {
     currentFile: '',
     report: null
 };
-// ─── HELPERS ────────────────────────────────────────────────
-async function ensureGenres(genreNames) {
-    if (!genreNames || !genreNames.length) return [];
-    const genreIds = [];
-    for (const name of genreNames) {
-        let genre = await Genre.findOne({ name: new RegExp(`^${name}$`, 'i') });
-        if (!genre) {
-            genre = new Genre({ name });
-            await genre.save();
-        }
-        genreIds.push(genre._id);
-    }
-    return genreIds;
-}
 
 // ─── GET /api/library/config ─────────────────────────────────
 router.get('/config', [auth, admin], async (req, res) => {
     const config = await getVaultConfig();
     if (!config) return res.status(404).send('Library vault is not configured yet.');
-    res.send(config);
+
+    const { getTmdbKey } = require('../services/metadataService');
+    const activeKey = await getTmdbKey();
+    
+    const configObj = config.toObject ? config.toObject() : { ...config };
+    if (!configObj.tmdbApiKey && activeKey) {
+        configObj.tmdbApiKey = activeKey;
+    }
+    configObj.hasActiveTmdbKey = Boolean(activeKey);
+    res.send(configObj);
 });
 
 // ─── PUT /api/library/config ─────────────────────────────────
-// Admin: set or update vault root path
+// Admin: set or update vault root path and TMDB key
 router.put('/config', [auth, admin], async (req, res) => {
     const { error } = validateLibraryConfig(req.body);
     if (error) return res.status(400).send(error.details[0].message);
 
     try {
-        const library = await setVaultRoot(req.body.vaultRootPath, req.body.inboxPath || '');
+        const library = await setVaultRoot(
+            req.body.vaultRootPath,
+            req.body.inboxPath || '',
+            req.body.tmdbApiKey
+        );
         res.send(library);
     } catch (err) {
         res.status(500).send(`Failed to configure vault: ${err.message}`);
     }
+});
+
+// ─── POST /api/library/tmdb-key/test ─────────────────────────
+// Admin: test TMDB API Key connectivity
+router.post('/tmdb-key/test', [auth, admin], async (req, res) => {
+    const { testTmdbApiKey } = require('../services/metadataService');
+    const result = await testTmdbApiKey(req.body.tmdbApiKey);
+    if (!result.success) {
+        return res.status(400).send(result);
+    }
+    res.send(result);
 });
 
 // ─── POST /api/library/ingest ─────────────────────────────────
@@ -401,14 +412,38 @@ router.post('/scan', [auth, admin], async (req, res) => {
             activeScan.currentFile = path.basename(item.filePath);
             
             try {
-                const relativePath = path.relative(config.vaultRootPath, item.filePath);
+                const relativePath = path.relative(config.vaultRootPath, item.filePath).replace(/\\/g, '/');
 
                 if (item.type === 'movie') {
-                    // Populate missing hashes on legacy records
-                    const existsByPath = await Movie.findOne({ vaultPath: relativePath });
+                    // Check existing movie by normalized vault path
+                    const existsByPath = await Movie.findOne({ 
+                        $or: [
+                            { vaultPath: relativePath },
+                            { vaultPath: path.relative(config.vaultRootPath, item.filePath) }
+                        ]
+                    });
+
                     if (existsByPath) { 
                         if (!existsByPath.sparseHash && hashMode === 'sparse') { existsByPath.sparseHash = await generateSparseHash(item.filePath) || ''; await existsByPath.save(); }
                         if (!existsByPath.deepHash && hashMode === 'deep') { existsByPath.deepHash = await require('../services/scannerService').generateDeepHash(item.filePath) || ''; await existsByPath.save(); }
+                        
+                        // If existing record has no metadata / skeleton metadata, refresh it now
+                        if (!existsByPath.tmdbId || existsByPath.metaSource === 'none' || !existsByPath.posterUrl) {
+                            const meta = await fetchMetadata(item.title, item.year, 'movie');
+                            if (meta && meta.metaSource !== 'none') {
+                                const genreIds = await ensureGenres(meta.genres);
+                                Object.assign(existsByPath, {
+                                    ...meta,
+                                    genres: genreIds,
+                                    vaultPath: relativePath,
+                                    metaSyncedAt: new Date()
+                                });
+                                await existsByPath.save();
+                                report.imported++;
+                                continue;
+                            }
+                        }
+
                         report.skipped++; 
                         continue; 
                     }
@@ -436,7 +471,27 @@ router.post('/scan', [auth, admin], async (req, res) => {
                     }
 
                     const exists = await Movie.findOne({ title: item.title, year: item.year });
-                    if (exists) { report.skipped++; continue; }
+                    if (exists) { 
+                        if (!exists.vaultPath || exists.vaultPath !== relativePath) {
+                            exists.vaultPath = relativePath;
+                        }
+                        if (!exists.tmdbId || exists.metaSource === 'none' || !exists.posterUrl) {
+                            const meta = await fetchMetadata(item.title, item.year, 'movie');
+                            if (meta && meta.metaSource !== 'none') {
+                                const genreIds = await ensureGenres(meta.genres);
+                                Object.assign(exists, {
+                                    ...meta,
+                                    genres: genreIds,
+                                    metaSyncedAt: new Date()
+                                });
+                                await exists.save();
+                                report.imported++;
+                                continue;
+                            }
+                        }
+                        report.skipped++; 
+                        continue; 
+                    }
 
                     const meta = await fetchMetadata(item.title, item.year, item.type);
                     const genreIds = await ensureGenres(meta.genres);
@@ -469,6 +524,17 @@ router.post('/scan', [auth, admin], async (req, res) => {
                             genres: genreIdsT
                         });
                         await show.save();
+                    } else if (!show.tmdbId || show.metaSource === 'none' || !show.posterUrl) {
+                        const showMeta = await fetchMetadata(item.title, item.year, 'tvshow');
+                        if (showMeta && showMeta.metaSource !== 'none') {
+                            const genreIdsT = await ensureGenres(showMeta.genres);
+                            Object.assign(show, {
+                                ...showMeta,
+                                genres: genreIdsT,
+                                metaSyncedAt: new Date()
+                            });
+                            await show.save();
+                        }
                     }
 
                     const existsEp = await Episode.findOne({
@@ -493,7 +559,7 @@ router.post('/scan', [auth, admin], async (req, res) => {
                                 const newDuplicate = new Duplicate({
                                     originalMediaId: duplicateHash._id,
                                     originalMatchModel: 'Episode',
-                                    vaultPath: path.relative(config.vaultRootPath, item.filePath),
+                                    vaultPath: relativePath,
                                     hash: fileHash,
                                     fileSize: item.fileSize
                                 });
@@ -509,7 +575,7 @@ router.post('/scan', [auth, admin], async (req, res) => {
                         showId: show._id,
                         season: item.season,
                         episode: item.episode,
-                        vaultPath: path.relative(config.vaultRootPath, item.filePath),
+                        vaultPath: relativePath,
                         fileSize: item.fileSize,
                         format: item.format,
                         resolution: item.resolution,

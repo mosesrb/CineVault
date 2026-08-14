@@ -19,11 +19,15 @@ router.get('/info', auth, async (req, res) => {
     const library = await getVaultConfig();
     if (!library) return res.status(503).send('Vault not configured.');
 
-    const fullPath = path.join(library.vaultRootPath, vaultPath);
-    if (!fs.existsSync(fullPath)) return res.status(404).send('File not found.');
+    const resolvedVault = path.resolve(library.vaultRootPath);
+    const resolvedFile = path.resolve(path.join(resolvedVault, vaultPath));
+
+    // Path traversal guard
+    if (!resolvedFile.startsWith(resolvedVault)) return res.status(403).send('Access denied.');
+    if (!fs.existsSync(resolvedFile)) return res.status(404).send('File not found.');
 
     try {
-        const metadata = await getMediaMetadata(fullPath);
+        const metadata = await getMediaMetadata(resolvedFile);
         const audioTracks = (metadata.streams || [])
             .filter(s => s.codec_type === 'audio')
             .map((s, idx) => ({
@@ -60,8 +64,14 @@ router.get('/subtitles/vtt', auth, async (req, res) => {
     if (!vaultPath || index === undefined) return res.status(400).send('path and index required.');
 
     const library = await getVaultConfig();
-    const fullPath = path.join(library.vaultRootPath, vaultPath);
-    if (!fs.existsSync(fullPath)) return res.status(404).send('File not found.');
+    if (!library) return res.status(503).send('Vault not configured.');
+
+    const resolvedVault = path.resolve(library.vaultRootPath);
+    const resolvedFile = path.resolve(path.join(resolvedVault, vaultPath));
+
+    // Path traversal guard
+    if (!resolvedFile.startsWith(resolvedVault)) return res.status(403).send('Access denied.');
+    if (!fs.existsSync(resolvedFile)) return res.status(404).send('File not found.');
 
     const subIndex = parseInt(index, 10);
     const seekTime = parseFloat(seek) || 0;
@@ -72,11 +82,15 @@ router.get('/subtitles/vtt', auth, async (req, res) => {
     // Extract specific subtitle stream and convert to vtt
     console.log(`[SubExtra] Extracting track ${subIndex} from ${vaultPath} at seek=${seekTime}`);
     try {
-        const command = await createSubtitleStream(fullPath, subIndex, seekTime);
+        const command = await createSubtitleStream(resolvedFile, subIndex, seekTime);
         command.on('error', (err) => {
             if (!res.headersSent) res.status(500).send('Subtitle extraction failed.');
         });
         command.pipe(res, { end: true });
+
+        req.on('close', () => {
+            try { command.kill('SIGKILL'); } catch (_) {}
+        });
     } catch (err) {
         if (!res.headersSent) res.status(503).send(err.message);
     }
@@ -89,6 +103,15 @@ router.get('/subtitles/vtt', auth, async (req, res) => {
 router.get('/subtitles', auth, async (req, res) => {
     const vaultPath = req.query.path;
     if (!vaultPath) return res.status(400).send('path query parameter is required.');
+
+    const library = await getVaultConfig();
+    if (!library) return res.status(503).send('Vault not configured.');
+
+    const resolvedVault = path.resolve(library.vaultRootPath);
+    const resolvedFile = path.resolve(path.join(resolvedVault, vaultPath));
+
+    // Path traversal guard
+    if (!resolvedFile.startsWith(resolvedVault)) return res.status(403).send('Access denied.');
 
     const { findSidecarFile } = require('../services/vaultService');
     const subPath = await findSidecarFile(vaultPath);

@@ -8,6 +8,10 @@ let token;
 describe('/api/v1/movies', () => {
     beforeEach(async () => { 
         app = require('../../index'); 
+        await Movie.deleteMany({});
+        await User.deleteMany({});
+        await Session.deleteMany({});
+
         const user = new User({ isAdmin: true, name: 'Admin', email: 'admin@test.com', password: 'password123' });
         await user.save();
         token = user.generateAuthToken();
@@ -18,11 +22,6 @@ describe('/api/v1/movies', () => {
         await Movie.deleteMany({});
         await User.deleteMany({});
         await Session.deleteMany({});
-    });
-    
-    afterAll(async () => {
-        const mongoose = require('mongoose');
-        await mongoose.connection.close();
     });
 
     describe('GET /', () => {

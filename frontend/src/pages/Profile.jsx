@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { getMe, updateProfile, getWatchlist, removeFromWatchlist, resolveUrl, getNetworkInfo } from '../api'
-import { User, Film, History, Settings, Trash2, Clock, CheckCircle2, Database, DownloadCloud, Play } from 'lucide-react'
+import { User, Film, History, Settings, Trash2, Clock, CheckCircle2, Database, DownloadCloud, Play, Shield, FileText } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import MediaCard from '../components/MediaCard'
 import { OfflineCacheService } from '../services/OfflineCacheService'
@@ -298,6 +298,23 @@ export default function Profile() {
             <button className="btn btn-ghost" onClick={handleClearCache} style={{color:'var(--danger)', borderColor:'var(--danger)'}}>
               <Trash2 size={16} /> Clear Discovery Cache
             </button>
+
+            {/* Legal & About */}
+            <hr style={{borderColor:'var(--border)', margin:'var(--sp-8) 0 var(--sp-6)'}} />
+            <h3 style={{marginBottom:'var(--sp-2)', fontSize:'var(--fs-base)', display:'flex', alignItems:'center', gap:'8px'}}>
+              <Shield size={18} /> Legal &amp; Compliance
+            </h3>
+            <p className="text-sm text-muted" style={{marginBottom:'var(--sp-4)'}}>
+              CineVault is an independent, self-hosted media server and personal streaming client.
+            </p>
+            <div style={{ display: 'flex', gap: 'var(--sp-3)', flexWrap: 'wrap' }}>
+              <Link to="/privacy" className="btn btn-ghost btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                <Shield size={14} /> Privacy Policy
+              </Link>
+              <Link to="/terms" className="btn btn-ghost btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                <FileText size={14} /> Terms of Service
+              </Link>
+            </div>
           </div>
         )}
 

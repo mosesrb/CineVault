@@ -1,5 +1,5 @@
 const request = require('supertest');
-const { TVShow } = require('../../models/tvshow');
+const { TVShow } = require('../../models/tvShow');
 const { User } = require('../../models/user');
 const { Session } = require('../../models/session');
 let app;
@@ -8,6 +8,10 @@ let token;
 describe('/api/v1/tvshows', () => {
     beforeEach(async () => { 
         app = require('../../index'); 
+        await TVShow.deleteMany({});
+        await User.deleteMany({});
+        await Session.deleteMany({});
+
         const user = new User({ isAdmin: true, name: 'Admin', email: 'admin@test.com', password: 'password123' });
         await user.save();
         token = user.generateAuthToken();
@@ -18,11 +22,6 @@ describe('/api/v1/tvshows', () => {
         await TVShow.deleteMany({});
         await User.deleteMany({});
         await Session.deleteMany({});
-    });
-    
-    afterAll(async () => {
-        const mongoose = require('mongoose');
-        await mongoose.connection.close();
     });
 
     describe('GET /', () => {
