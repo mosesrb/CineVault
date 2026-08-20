@@ -57,6 +57,7 @@ memories.md
 worklog.md
 docs/*.md
 docs/**/*.md
+docs/archive/
 
 # Internal Temp Media
 docs/*.mp4
