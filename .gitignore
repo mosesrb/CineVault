@@ -52,13 +52,13 @@ coverage/
 dist/
 dist-ssr/
 
-# Project Memory & Internal Dev Worklogs
+# Project Memory, Internal Audits & Dev Worklogs
 memories.md
 worklog.md
-docs/memories.md
-docs/worklog.md
+docs/*.md
+docs/**/*.md
 
-# Internal Docs & Temp Media
+# Internal Temp Media
 docs/*.mp4
 
 # Sensitive Configuration
