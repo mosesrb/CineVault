@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { NavLink, Outlet, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Library, Clapperboard, Tv, Tag, Users, ShieldCheck, KeyRound } from 'lucide-react'
+import { NavLink, Link, Outlet, useLocation } from 'react-router-dom'
+import { LayoutDashboard, Library, Clapperboard, Tv, Tag, Users, ShieldCheck, KeyRound, ArrowLeft } from 'lucide-react'
 import './AdminLayout.css'
 
 const NAV = [
@@ -19,10 +19,14 @@ export default function AdminLayout() {
 
   return (
     <div className="admin-layout page-layout">
-      {/* Mobile Header — shows current section title */}
+      {/* Mobile Header — shows current section title & exit button */}
       <div className="admin-mobile-header">
+        <Link to="/" className="admin-exit-btn" title="Exit Admin to CineVault">
+          <ArrowLeft size={16} />
+          <span>Exit to App</span>
+        </Link>
         <span className="admin-mobile-title">
-          {currentPage && <currentPage.icon size={20} />} {currentPage?.label || 'Admin'}
+          {currentPage && <currentPage.icon size={18} />} {currentPage?.label || 'Admin'}
         </span>
         <span className="admin-badge"><ShieldCheck size={14} /> Admin</span>
       </div>
@@ -46,6 +50,11 @@ export default function AdminLayout() {
               <span>{label}</span>
             </NavLink>
           ))}
+          <hr style={{ borderColor: 'var(--border)', margin: 'var(--sp-2) 0' }} />
+          <Link to="/" className="admin-nav-link admin-nav-exit">
+            <ArrowLeft className="admin-nav-icon" size={18} />
+            <span>Back to App</span>
+          </Link>
         </nav>
       </aside>
 

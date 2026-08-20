@@ -19,7 +19,8 @@ export default function MediaCard({ item, type, progress, index = 0, variant = '
 
   if (!item) return null;
 
-  const mediaType = type || item.mediaType || item.type || 'movie'
+  const rawType = (type && type !== 'mixed') ? type : (item._type || item.mediaType || item.type || 'movie')
+  const mediaType = rawType === 'tv' ? 'tvshow' : rawType
   const detailUrl = `/detail/${mediaType}/${item._id}`
   const playUrl = `/watch/${mediaType}/${item._id}`
   const title = item.title || 'Untitled'

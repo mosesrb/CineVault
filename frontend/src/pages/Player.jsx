@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useSearchParams, useNavigate, Link } from 'react-router-dom'
-import { getMovie, getTVShow, getEpisodes, saveProgress, getStreamInfo } from '../api'
+import { getMovie, getTVShow, getEpisodes, saveProgress, getStreamInfo, getStreamTicket } from '../api'
 import { ArrowLeft, Film, PlayCircle, RefreshCw, AlertTriangle } from 'lucide-react'
 import CinemaPlayer from '../components/CinemaPlayer'
 import { OfflineStorageService } from '../services/OfflineStorageService'
@@ -27,6 +27,9 @@ function buildStreamUrl(vaultPath, token, seekSeconds = 0, audioIndex = 0) {
 
 export default function Player() {
   const { type, id } = useParams()
+  const isMovie = type === 'movie'
+  const isTV = type === 'tvshow' || type === 'tv' || type === 'show'
+
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const epId = searchParams.get('ep')
@@ -41,20 +44,21 @@ export default function Player() {
   const [subtitleTracks, setSubtitleTracks] = useState([])
   const [activeSubtitle, setActiveSubtitle] = useState('sidecar')
   const [localUrl, setLocalUrl] = useState(null)
+  const [streamTicket, setStreamTicket] = useState(null)
 
   const progressTimer = useRef(null)
 
   // ── Load media ─────────────────────────────────────────────────────────
   useEffect(() => {
-    const fetcher = type === 'movie' ? getMovie(id) : getTVShow(id)
+    const fetcher = isMovie ? getMovie(id) : getTVShow(id)
     fetcher.then(async res => {
       setMedia(res.data)
-      if (type === 'tvshow' && epId) {
+      if (isTV && epId) {
         const eps = await getEpisodes(id)
         setEpisode(eps.data.find(e => e._id === epId) || null)
       }
     }).finally(() => setLoading(false))
-  }, [id, type, epId])
+  }, [id, type, epId, isMovie, isTV])
 
   // ── Set resume offset once media loads ────────────────────────────────
   useEffect(() => {
@@ -109,6 +113,16 @@ export default function Player() {
       .catch(err => {
         console.error('[Player] Failed to fetch stream info:', err.response?.data || err.message)
       })
+
+    getStreamTicket(vaultPath)
+      .then(res => {
+        if (res.data?.ticket) {
+          setStreamTicket(res.data.ticket)
+        }
+      })
+      .catch(() => {
+        // Fallback: stored token will be used
+      })
   }, [media, episode, localUrl])
 
   // ── Progress tracking ─────────────────────────────────────────────────
@@ -158,7 +172,7 @@ export default function Player() {
     ? `${media.title} — S${episode.season}E${String(episode.episode).padStart(2, '0')} "${episode.title || 'Episode ' + episode.episode}"`
     : media.title
   const vaultPath = episode?.vaultPath || media.vaultPath
-  const token = localStorage.getItem('cv_token')
+  const effectiveToken = streamTicket || localStorage.getItem('cv_token')
   const ext = vaultPath ? '.' + vaultPath.split('.').pop().toLowerCase() : ''
   const needsTranscode = TRANSCODE_EXTS.has(ext)
 
@@ -167,16 +181,20 @@ export default function Player() {
     || (episode?.runtime ? episode.runtime : 0) // Episode runtime is stored as total seconds
     || 0
 
-  const streamUrl = localUrl || buildStreamUrl(vaultPath, token, seekOffset, activeAudio)
+  const posterImage = type === 'tvshow'
+    ? (episode?.stillUrl || media?.backdropUrl || media?.posterUrl)
+    : (media?.backdropUrl || media?.posterUrl)
+
+  const streamUrl = localUrl || buildStreamUrl(vaultPath, effectiveToken, seekOffset, activeAudio)
 
   let subtitlesUrl = null
   const hasSidecar = episode?.hasSidecarSubtitles || media?.hasSidecarSubtitles
   const serverBase = localStorage.getItem('cv_server_url') || ''
 
   if (activeSubtitle === 'sidecar' && hasSidecar) {
-    subtitlesUrl = `${serverBase}/api/v1/stream/subtitles?path=${encodeURIComponent(vaultPath)}&token=${token}`
+    subtitlesUrl = `${serverBase}/api/v1/stream/subtitles?path=${encodeURIComponent(vaultPath)}&token=${effectiveToken}`
   } else if (typeof activeSubtitle === 'number') {
-    subtitlesUrl = `${serverBase}/api/v1/stream/subtitles/vtt?path=${encodeURIComponent(vaultPath)}&index=${activeSubtitle}&seek=${seekOffset}&token=${token}`
+    subtitlesUrl = `${serverBase}/api/v1/stream/subtitles/vtt?path=${encodeURIComponent(vaultPath)}&index=${activeSubtitle}&seek=${seekOffset}&token=${effectiveToken}`
   }
 
   const mimeType = needsTranscode ? 'video/mp4' : (ext === '.webm' ? 'video/webm' : 'video/mp4')
@@ -200,7 +218,7 @@ export default function Player() {
             key={`player-${!!localUrl}`}
             src={localUrl ? { src: streamUrl, type: 'video/mp4' } : { src: streamUrl, type: mimeType }}
             title={title}
-            poster={media.posterUrl || media.backdropUrl}
+            poster={posterImage}
             duration={duration}
             seekOffset={seekOffset}
             onUserSeek={handleSeek}

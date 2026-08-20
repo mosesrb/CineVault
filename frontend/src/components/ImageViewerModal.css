@@ -1,0 +1,275 @@
+/* Image Viewer Modal ── CineVault Cinema Lightbox */
+.iv-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.94);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  z-index: 2500;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: env(safe-area-inset-top, 16px) env(safe-area-inset-right, 16px) env(safe-area-inset-bottom, 16px) env(safe-area-inset-left, 16px);
+  animation: ivFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+@keyframes ivFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Header */
+.iv-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  height: 56px;
+  padding: 0 12px;
+  z-index: 10;
+}
+
+.iv-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #fff;
+  min-width: 0;
+}
+
+.iv-icon {
+  color: var(--accent, #e5362a);
+  flex-shrink: 0;
+}
+
+.iv-title {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.iv-counter {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.1);
+  padding: 3px 10px;
+  border-radius: 20px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.iv-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.iv-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #fff;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.iv-btn:hover,
+.iv-btn:focus-visible {
+  background: rgba(255, 255, 255, 0.25);
+  border-color: var(--accent, #e5362a);
+  outline: none;
+  transform: scale(1.08);
+}
+
+.iv-close-btn:hover,
+.iv-close-btn:focus-visible {
+  background: rgba(229, 54, 42, 0.85);
+  border-color: #e5362a;
+}
+
+/* Stage & Main Image */
+.iv-stage {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  overflow: hidden;
+  padding: 8px 0;
+}
+
+.iv-image-container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.iv-image {
+  max-width: 90vw;
+  max-height: 72vh;
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.85);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  pointer-events: auto;
+}
+
+.animate-fadeIn {
+  animation: imgFade 0.22s ease-out;
+}
+
+@keyframes imgFade {
+  from {
+    opacity: 0.5;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Navigation Arrows */
+.iv-nav-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 52px;
+  height: 52px;
+  background: rgba(18, 18, 18, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #fff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: all 0.2s ease;
+  z-index: 20;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.iv-nav-btn:hover,
+.iv-nav-btn:focus-visible {
+  background: var(--accent, #e5362a);
+  border-color: #fff;
+  outline: none;
+  transform: translateY(-50%) scale(1.1);
+  box-shadow: 0 0 20px rgba(229, 54, 42, 0.5);
+}
+
+.iv-prev-btn {
+  left: 20px;
+}
+
+.iv-next-btn {
+  right: 20px;
+}
+
+/* Thumbnails Strip */
+.iv-thumbs-container {
+  height: 74px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 0;
+  z-index: 10;
+  touch-action: pan-x;
+}
+
+.iv-thumbs-track {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  overflow-x: auto;
+  max-width: 100%;
+  padding: 4px 16px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.iv-thumbs-track::-webkit-scrollbar {
+  display: none;
+}
+
+.iv-thumb-btn {
+  width: 88px;
+  height: 52px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+  opacity: 0.55;
+  transition: all 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.iv-thumb-btn img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.iv-thumb-btn:hover,
+.iv-thumb-btn:focus-visible {
+  opacity: 0.9;
+  border-color: rgba(255, 255, 255, 0.6);
+  outline: none;
+  transform: translateY(-2px);
+}
+
+.iv-thumb-btn.active {
+  opacity: 1;
+  border-color: var(--accent, #e5362a);
+  transform: scale(1.05);
+  box-shadow: 0 0 12px rgba(229, 54, 42, 0.6);
+}
+
+/* Mobile & Android TV Optimizations */
+@media (max-width: 768px) {
+  .iv-nav-btn {
+    width: 44px;
+    height: 44px;
+  }
+  .iv-prev-btn {
+    left: 8px;
+  }
+  .iv-next-btn {
+    right: 8px;
+  }
+  .iv-image {
+    max-width: 95vw;
+    max-height: 65vh;
+  }
+  .iv-thumb-btn {
+    width: 70px;
+    height: 42px;
+  }
+}

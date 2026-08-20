@@ -28,10 +28,15 @@
 
 ---
 
-## ✨ Key Features & Architectural Highlights
+### 📺 Multi-Platform Experience (Android Mobile, Android TV & Web)
+- **Android TV Leanback Launcher**: Native Android TV banner and launcher integration (`LEANBACK_LAUNCHER`), optimized 10-foot overscan safe margins, and glowing D-Pad focus indicators.
+- **YouTube-Style Touch Player Controls**: Double-tap left/right screen zones for rapid +5s/-5s seeking with live accumulated seconds HUD and directional chevron animations.
+- **Orientation & Hardware Back Navigation**: Automatic landscape lock on mobile fullscreen, with hardware back button (`cv_hardware_back`) intercepting fullscreen, lightboxes, and modals.
+- **Cinema Lightbox Gallery**: Full-screen backdrop and poster photo viewer with touch swipe gestures, TV remote navigation, and glassmorphic thumbnail carousels.
 
-### ⚡ Adaptive HLS Streaming Engine
+### ⚡ Adaptive HLS Streaming & Stream Ticket Security
 - **Real-Time Transcoding & Remuxing**: Leverages FFmpeg to transcode on-the-fly into adaptive HTTP Live Streaming (`.m3u8` playlists and `.ts` video chunks).
+- **Ephemeral Stream Tickets**: Media requests use signed 2-minute ephemeral tickets (`POST /api/v1/stream/ticket`), preventing long-lived JWT token exposure in HTML5 `<video>` elements.
 - **Process Lifecycle Management**: Automatically manages and terminates orphan FFmpeg child processes upon stream termination or client disconnect.
 - **Path Traversal Security**: Strict containment checks ensure video segments and master files cannot escape the configured Vault roots.
 

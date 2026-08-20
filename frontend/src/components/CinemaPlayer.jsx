@@ -77,7 +77,10 @@ export default function CinemaPlayer({
   const longPressTimerRef = useRef(null)
   const rewindIntervalRef = useRef(null)
   const isLongPressActiveRef = useRef(false)
-  const lastTapRef = useRef({ time: 0, x: 0 })
+  const lastTapRef = useRef({ time: 0, x: 0, side: null })
+  const singleTapTimerRef = useRef(null)
+  const seekCommitTimerRef = useRef(null)
+  const accumulatedSeekRef = useRef(0)
 
   const [playing, setPlaying] = useState(false)
   const [muted, setMuted] = useState(() => localStorage.getItem('cv_mute') === 'true')
@@ -95,9 +98,9 @@ export default function CinemaPlayer({
   const [scratchedTime, setScratchedTime] = useState(null)
   const [hasStarted, setHasStarted] = useState(false)
 
-  // Speed and Gesture HUD states
+  // Speed and YouTube Gesture HUD states
   const [speedBoost, setSpeedBoost] = useState(null) // '2x' | 'rewind' | null
-  const [gestureRipple, setGestureRipple] = useState(null) // { side: 'left'|'right', text: string }
+  const [seekHud, setSeekHud] = useState(null) // { side: 'left'|'right', seconds: number, animKey: number }
 
   const total = duration || browserDuration || 1
   const absTime = scratchedTime !== null ? scratchedTime : (seekOffset + currentTime)
@@ -109,10 +112,15 @@ export default function CinemaPlayer({
     setShowCtrl(true)
     clearTimeout(hideTimer.current)
     hideTimer.current = setTimeout(() => {
-      if (!dragging.current && !isLongPressActiveRef.current) setShowCtrl(false)
+      if (!dragging.current && !isLongPressActiveRef.current && !accumulatedSeekRef.current) setShowCtrl(false)
     }, 3000)
   }, [])
-  useEffect(() => () => clearTimeout(hideTimer.current), [])
+  useEffect(() => () => {
+    clearTimeout(hideTimer.current)
+    clearTimeout(singleTapTimerRef.current)
+    clearTimeout(seekCommitTimerRef.current)
+    clearInterval(rewindIntervalRef.current)
+  }, [])
 
   // ── seek logic ────────────────────────────────────────────────────────
   const doSeek = useCallback((targetAbsolute) => {
@@ -130,7 +138,31 @@ export default function CinemaPlayer({
     }
   }, [absTime, total, isTranscoding, onUserSeek, seekOffset])
 
-  // ── video events ──────────────────────────────────────────────────────
+  // ── orientation lock helper for Android/Mobile ────────────────────────
+  const handleOrientationLock = useCallback(async (isFs) => {
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || !!(window.Capacitor?.isNativePlatform?.())
+    if (isFs && isMobile) {
+      try {
+        const { ScreenOrientation } = await import('@capacitor/screen-orientation')
+        await ScreenOrientation.lock({ orientation: 'landscape' })
+      } catch {
+        if (window.screen?.orientation?.lock) {
+          window.screen.orientation.lock('landscape').catch(() => {})
+        }
+      }
+    } else {
+      try {
+        const { ScreenOrientation } = await import('@capacitor/screen-orientation')
+        await ScreenOrientation.unlock()
+      } catch {
+        if (window.screen?.orientation?.unlock) {
+          window.screen.orientation.unlock()
+        }
+      }
+    }
+  }, [])
+
+  // ── video events & fullscreen listeners ───────────────────────────────
   useEffect(() => {
     const v = videoRef.current; if (!v) return
     v.volume = volume
@@ -151,32 +183,17 @@ export default function CinemaPlayer({
       setCurrentTime(v.currentTime)
       if (v.buffered.length) setBuffered(v.buffered.end(v.buffered.length - 1))
     }
-    const onFsChg = async () => {
-      const isFs = !!document.fullscreenElement;
-      setFullscreen(isFs);
-      
-      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-      
-      if (isFs && isMobile) {
-        try {
-          const { ScreenOrientation } = await import('@capacitor/screen-orientation');
-          await ScreenOrientation.lock({ orientation: 'landscape' });
-        } catch (err) {
-          if (screen.orientation && screen.orientation.lock) {
-             screen.orientation.lock('landscape').catch(() => {});
-          }
-        }
-      } else {
-        try {
-          const { ScreenOrientation } = await import('@capacitor/screen-orientation');
-          await ScreenOrientation.unlock();
-        } catch (e) {
-          if (screen.orientation && screen.orientation.unlock) {
-            screen.orientation.unlock();
-          }
-        }
-      }
+    const onFsChg = () => {
+      const isFs = !!(
+        document.fullscreenElement ||
+        document.webkitFullscreenElement ||
+        document.mozFullScreenElement ||
+        document.msFullscreenElement
+      )
+      setFullscreen(isFs)
+      handleOrientationLock(isFs)
     }
+
     v.addEventListener('play', onPlay); v.addEventListener('pause', onPause)
     v.addEventListener('ended', onEnd); v.addEventListener('timeupdate', onTime)
     v.addEventListener('progress', onTime)
@@ -205,6 +222,10 @@ export default function CinemaPlayer({
     v.addEventListener('error', onError);
 
     document.addEventListener('fullscreenchange', onFsChg)
+    document.addEventListener('webkitfullscreenchange', onFsChg)
+    document.addEventListener('mozfullscreenchange', onFsChg)
+    document.addEventListener('MSFullscreenChange', onFsChg)
+
     return () => {
       v.removeEventListener('play', onPlay); v.removeEventListener('pause', onPause)
       v.removeEventListener('ended', onEnd); v.removeEventListener('timeupdate', onTime)
@@ -212,8 +233,11 @@ export default function CinemaPlayer({
       v.removeEventListener('loadedmetadata', onLoaded)
       v.removeEventListener('error', onError)
       document.removeEventListener('fullscreenchange', onFsChg)
+      document.removeEventListener('webkitfullscreenchange', onFsChg)
+      document.removeEventListener('mozfullscreenchange', onFsChg)
+      document.removeEventListener('MSFullscreenChange', onFsChg)
     }
-  }, [src?.src, showControls, isTranscoding, seekOffset])
+  }, [src?.src, showControls, isTranscoding, seekOffset, handleOrientationLock])
 
   // ── subtitle mode sync ────────────────────────────────────────────────
   useEffect(() => {
@@ -273,7 +297,16 @@ export default function CinemaPlayer({
     return () => window.removeEventListener('keydown', onKey)
   }, [absTime, subtitlesUrl, showControls, onTheaterToggle, doSeek, total])
 
-  // ── Long Press Gestures & Double-Tap Seeking ─────────────────────────
+  // ── YouTube Multi-Tap Seek Commit ────────────────────────────────────
+  const commitSeek = useCallback((delta) => {
+    const targetAbs = Math.max(0, Math.min(total, absTime + delta))
+    doSeek(targetAbs)
+    setSeekHud(null)
+    accumulatedSeekRef.current = 0
+    showControls()
+  }, [absTime, total, doSeek, showControls])
+
+  // ── Long Press Gestures ──────────────────────────────────────────────
   const startLongPress = useCallback((clientX) => {
     const wrapper = wrapperRef.current; if (!wrapper) return
     const rect = wrapper.getBoundingClientRect()
@@ -308,7 +341,7 @@ export default function CinemaPlayer({
           }
         }, 200)
       }
-    }, 300)
+    }, 400)
   }, [])
 
   const stopLongPress = useCallback(() => {
@@ -326,36 +359,131 @@ export default function CinemaPlayer({
     }
   }, [ended, showControls])
 
-  const handleScreenTap = (e) => {
-    if (isLongPressActiveRef.current) {
-      e.stopPropagation()
-      return
-    }
+  // ── Touch and Gesture References ──────────────────────────────────────
+  const lastTouchRef = useRef({ time: 0, x: 0, y: 0 })
+  const lastProcessedTouchTimeRef = useRef(0)
+
+  // ── YouTube-Style Multi-Tap Screen Tap Handler ───────────────────────
+  const processTapAt = useCallback((clientX) => {
+    if (isLongPressActiveRef.current) return
 
     const now = Date.now()
-    const clientX = e.clientX || (e.changedTouches && e.changedTouches[0]?.clientX) || 0
     const wrapper = wrapperRef.current; if (!wrapper) return
     const rect = wrapper.getBoundingClientRect()
     const relX = clientX - rect.left
+    const width = rect.width
 
-    // Double tap detection (<300ms between taps)
-    if (now - lastTapRef.current.time < 300 && Math.abs(relX - lastTapRef.current.x) < 60) {
-      if (relX < rect.width * 0.35) {
-        // Double tap left: seek -5s
-        doSeek(absTime - 5)
-        setGestureRipple({ side: 'left', text: '⏪ 5s' })
-        setTimeout(() => setGestureRipple(null), 600)
-      } else if (relX > rect.width * 0.65) {
-        // Double tap right: seek +5s
-        doSeek(absTime + 5)
-        setGestureRipple({ side: 'right', text: '5s ⏩' })
-        setTimeout(() => setGestureRipple(null), 600)
-      }
-      lastTapRef.current = { time: 0, x: 0 }
-    } else {
-      lastTapRef.current = { time: now, x: relX }
-      showControls()
+    const isLeft = relX < width * 0.38
+    const isRight = relX > width * 0.62
+    const side = isLeft ? 'left' : isRight ? 'right' : null
+
+    // Case 1: Multi-tap is already active on this side -> Accumulate another 5s
+    if (side && accumulatedSeekRef.current !== 0 && ((side === 'left' && accumulatedSeekRef.current < 0) || (side === 'right' && accumulatedSeekRef.current > 0))) {
+      clearTimeout(seekCommitTimerRef.current)
+      const step = side === 'right' ? 5 : -5
+      accumulatedSeekRef.current += step
+      const currentDelta = accumulatedSeekRef.current
+
+      setSeekHud({
+        side,
+        seconds: Math.abs(currentDelta),
+        animKey: now
+      })
+
+      seekCommitTimerRef.current = setTimeout(() => {
+        commitSeek(accumulatedSeekRef.current)
+      }, 700)
+      return
     }
+
+    // Case 2: Double tap detection (<320ms on the same side)
+    const prevTap = lastTapRef.current
+    if (side && (now - prevTap.time < 320) && prevTap.side === side && Math.abs(relX - prevTap.x) < 80) {
+      clearTimeout(singleTapTimerRef.current)
+      clearTimeout(seekCommitTimerRef.current)
+
+      const step = side === 'right' ? 5 : -5
+      accumulatedSeekRef.current = step
+
+      // Hide standard controls so YouTube HUD is cleanly visible
+      setShowCtrl(false)
+
+      setSeekHud({
+        side,
+        seconds: 5,
+        animKey: now
+      })
+
+      lastTapRef.current = { time: 0, x: 0, side: null }
+
+      seekCommitTimerRef.current = setTimeout(() => {
+        commitSeek(accumulatedSeekRef.current)
+      }, 700)
+    } else {
+      // Case 3: First tap or center tap
+      lastTapRef.current = { time: now, x: relX, side }
+
+      // If user tapped elsewhere while a seek is pending, commit it immediately
+      if (accumulatedSeekRef.current !== 0) {
+        clearTimeout(seekCommitTimerRef.current)
+        commitSeek(accumulatedSeekRef.current)
+        return
+      }
+
+      // Delay controls toggle slightly on side taps so double tap doesn't flash the controls
+      clearTimeout(singleTapTimerRef.current)
+      if (side) {
+        singleTapTimerRef.current = setTimeout(() => {
+          showControls()
+        }, 220)
+      } else {
+        showControls()
+      }
+    }
+  }, [commitSeek, showControls])
+
+  const handleTouchStart = (e) => {
+    if (e.touches && e.touches[0]) {
+      const touch = e.touches[0]
+      lastTouchRef.current = { time: Date.now(), x: touch.clientX, y: touch.clientY }
+      startLongPress(touch.clientX)
+    }
+  }
+
+  const handleTouchEnd = (e) => {
+    stopLongPress()
+    if (e.changedTouches && e.changedTouches[0]) {
+      const touch = e.changedTouches[0]
+      const start = lastTouchRef.current
+      const dist = Math.hypot(touch.clientX - start.x, touch.clientY - start.y)
+      const duration = Date.now() - start.time
+
+      // If it wasn't a drag/swipe (<25px) and didn't trigger long press (<400ms)
+      if (dist < 25 && duration < 400) {
+        lastProcessedTouchTimeRef.current = Date.now()
+        processTapAt(touch.clientX)
+      }
+    }
+  }
+
+  const handleTouchCancel = () => {
+    stopLongPress()
+  }
+
+  const handleMouseDown = (e) => {
+    if (Date.now() - lastProcessedTouchTimeRef.current < 500) return
+    startLongPress(e.clientX)
+  }
+
+  const handleMouseUp = () => {
+    stopLongPress()
+  }
+
+  const handleSurfaceClick = (e) => {
+    if (Date.now() - lastProcessedTouchTimeRef.current < 500) {
+      return
+    }
+    processTapAt(e.clientX)
   }
 
   // ── progress bar dragging ─────────────────────────────────────────────
@@ -433,10 +561,64 @@ export default function CinemaPlayer({
     localStorage.setItem('cv_vol', String(val))
     localStorage.setItem('cv_mute', String(val === 0))
   }
-  const toggleFs = () => {
-    if (!document.fullscreenElement) wrapperRef.current?.requestFullscreen()
-    else document.exitFullscreen()
-  }
+
+  // ── Fullscreen toggle with WebView Fallback & Android back support ────
+  const toggleFs = useCallback(async () => {
+    const el = wrapperRef.current
+    const isCurrentlyFs = !!(
+      document.fullscreenElement ||
+      document.webkitFullscreenElement ||
+      document.mozFullScreenElement ||
+      document.msFullscreenElement ||
+      fullscreen
+    )
+
+    if (!isCurrentlyFs) {
+      if (el) {
+        try {
+          if (el.requestFullscreen) {
+            await el.requestFullscreen()
+          } else if (el.webkitRequestFullscreen) {
+            await el.webkitRequestFullscreen()
+          } else if (el.mozRequestFullScreen) {
+            await el.mozRequestFullScreen()
+          } else if (el.msRequestFullscreen) {
+            await el.msRequestFullscreen()
+          }
+        } catch {
+          // Native fullscreen rejected or unsupported in WebView — fall back to CSS fullscreen
+        }
+      }
+      setFullscreen(true)
+      handleOrientationLock(true)
+    } else {
+      try {
+        if (document.exitFullscreen && document.fullscreenElement) {
+          await document.exitFullscreen()
+        } else if (document.webkitExitFullscreen && document.webkitFullscreenElement) {
+          await document.webkitExitFullscreen()
+        } else if (document.mozCancelFullScreen && document.mozFullScreenElement) {
+          await document.mozCancelFullScreen()
+        }
+      } catch {
+        // Ignore exit errors
+      }
+      setFullscreen(false)
+      handleOrientationLock(false)
+    }
+  }, [fullscreen, handleOrientationLock])
+
+  // Android hardware back button handler when in fullscreen mode
+  useEffect(() => {
+    if (!fullscreen) return
+    const handleBack = (e) => {
+      e.preventDefault?.()
+      toggleFs()
+    }
+    window.addEventListener('cv_hardware_back', handleBack)
+    return () => window.removeEventListener('cv_hardware_back', handleBack)
+  }, [fullscreen, toggleFs])
+
   const togglePip = () => {
     if (document.pictureInPictureElement) document.exitPictureInPicture()
     else videoRef.current?.requestPictureInPicture?.()
@@ -458,7 +640,7 @@ export default function CinemaPlayer({
   ], [subtitlesUrl, activeSubtitle, subtitleTracks])
 
   const activeSubValue = (!subtitlesUrl || !subsOn) ? 'off' : activeSubtitle
-  const ctrlVisible = showCtrl || !playing || !!menu
+  const ctrlVisible = (showCtrl || !playing || !!menu) && !seekHud
 
   return (
     <div
@@ -470,22 +652,36 @@ export default function CinemaPlayer({
         stopLongPress()
         if (playing && !menu) setShowCtrl(false)
       }}
-      onMouseDown={e => {
-        if (e.target.closest('.cp-controls') || e.target.closest('.cp-menu')) return
-        startLongPress(e.clientX)
-      }}
-      onMouseUp={e => {
-        stopLongPress()
-      }}
-      onTouchStart={e => {
-        if (e.target.closest('.cp-controls') || e.target.closest('.cp-menu')) return
-        if (e.touches[0]) startLongPress(e.touches[0].clientX)
-      }}
-      onTouchEnd={() => {
-        stopLongPress()
-      }}
       onClick={() => setMenu(null)}
     >
+      {/* ── Main Video ── */}
+      <video
+        ref={videoRef}
+        src={src?.src}
+        poster={hasStarted ? null : poster}
+        className="cp-video"
+        playsInline autoPlay
+        crossOrigin="anonymous"
+        onLoadedMetadata={(e) => {
+          if (duration <= 0 && e.target.duration > 0 && e.target.duration !== Infinity) {
+            setBrowserDuration(e.target.duration);
+          }
+        }}
+      >
+        {subtitlesUrl && <track key={subtitlesUrl} src={subtitlesUrl} kind="subtitles" label="Subtitles" srcLang="en" default />}
+      </video>
+
+      {/* ── Dedicated Touch & Gesture Surface ── */}
+      <div
+        className="cp-touch-surface"
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchCancel}
+        onMouseDown={handleMouseDown}
+        onMouseUp={handleMouseUp}
+        onClick={handleSurfaceClick}
+      />
+
       {/* ── Gesture HUD Speed Pill ── */}
       {speedBoost === '2x' && (
         <div className="cp-speed-hud cp-speed-hud--boost">
@@ -498,30 +694,30 @@ export default function CinemaPlayer({
         </div>
       )}
 
-      {/* ── Double Tap Ripple ── */}
-      {gestureRipple && (
-        <div className={`cp-gesture-ripple cp-gesture-ripple--${gestureRipple.side}`}>
-          {gestureRipple.text}
+      {/* ── YouTube-Style Multi-Tap Seek HUD ── */}
+      {seekHud && (
+        <div key={seekHud.animKey} className={`cp-yt-seek cp-yt-seek--${seekHud.side}`}>
+          <div className="cp-yt-seek-ripple" />
+          <div className="cp-yt-seek-content">
+            <div className="cp-yt-seek-arrows">
+              {seekHud.side === 'left' ? (
+                <>
+                  <span className="cp-arrow-1">‹</span>
+                  <span className="cp-arrow-2">‹</span>
+                  <span className="cp-arrow-3">‹</span>
+                </>
+              ) : (
+                <>
+                  <span className="cp-arrow-1">›</span>
+                  <span className="cp-arrow-2">›</span>
+                  <span className="cp-arrow-3">›</span>
+                </>
+              )}
+            </div>
+            <span className="cp-yt-seek-text">{seekHud.seconds} seconds</span>
+          </div>
         </div>
       )}
-
-      {/* ── Main Video ── */}
-      <video
-        ref={videoRef}
-        src={src?.src}
-        poster={hasStarted ? null : poster}
-        className="cp-video"
-        playsInline autoPlay
-        onClick={handleScreenTap}
-        crossOrigin="anonymous"
-        onLoadedMetadata={(e) => {
-          if (duration <= 0 && e.target.duration > 0 && e.target.duration !== Infinity) {
-            setBrowserDuration(e.target.duration);
-          }
-        }}
-      >
-        {subtitlesUrl && <track key={subtitlesUrl} src={subtitlesUrl} kind="subtitles" label="Subtitles" srcLang="en" default />}
-      </video>
 
       {/* ended overlay */}
       {ended && (
@@ -569,41 +765,41 @@ export default function CinemaPlayer({
         <div className="cp-row">
           <div className="cp-row-l">
             {/* play/pause */}
-            <button className="cp-btn" onClick={e => { e.stopPropagation(); togglePlay() }}>
+            <button className="cp-btn" onClick={e => { e.stopPropagation(); togglePlay() }} aria-label={playing ? 'Pause' : 'Play'}>
               <Icon d={playing ? IC.pause : IC.play} />
             </button>
 
-            {/* 5s Seek Backward */}
+            {/* 5s Seek Backward (Desktop/Larger screens) */}
             <button
-              className="cp-btn"
+              className="cp-btn cp-btn-seek cp-desktop-only"
               title="Jump Back 5s (←)"
+              aria-label="Jump back 5 seconds"
               onClick={e => { e.stopPropagation(); doSeek(absTime - 5) }}
-              style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '-0.5px' }}
             >
               -5s
             </button>
 
-            {/* 5s Seek Forward */}
+            {/* 5s Seek Forward (Desktop/Larger screens) */}
             <button
-              className="cp-btn"
+              className="cp-btn cp-btn-seek cp-desktop-only"
               title="Jump Forward 5s (→)"
+              aria-label="Jump forward 5 seconds"
               onClick={e => { e.stopPropagation(); doSeek(absTime + 5) }}
-              style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '-0.5px' }}
             >
               +5s
             </button>
 
-            {/* 10s Skip Buttons */}
-            <button className="cp-btn" title="Skip -10s (J)" onClick={e => { e.stopPropagation(); doSeek(absTime - 10) }}>
+            {/* 10s Skip Buttons (Desktop/Larger screens) */}
+            <button className="cp-btn cp-btn-seek cp-desktop-only" title="Skip -10s (J)" aria-label="Skip back 10 seconds" onClick={e => { e.stopPropagation(); doSeek(absTime - 10) }}>
               <Icon d={IC.bwd10} size={16} />
             </button>
-            <button className="cp-btn" title="Skip +10s (L)" onClick={e => { e.stopPropagation(); doSeek(absTime + 10) }}>
+            <button className="cp-btn cp-btn-seek cp-desktop-only" title="Skip +10s (L)" aria-label="Skip forward 10 seconds" onClick={e => { e.stopPropagation(); doSeek(absTime + 10) }}>
               <Icon d={IC.fwd10} size={16} />
             </button>
 
             {/* volume — hidden on mobile (native handles it) */}
             <div className="cp-vol cp-desktop-only">
-              <button className="cp-btn" onClick={e => { e.stopPropagation(); toggleMute() }}>
+              <button className="cp-btn" onClick={e => { e.stopPropagation(); toggleMute() }} aria-label={muted ? 'Unmute' : 'Mute'}>
                 <Icon d={volIcon} />
               </button>
               <input
@@ -611,6 +807,7 @@ export default function CinemaPlayer({
                 value={muted ? 0 : volume}
                 onChange={e => setVol(parseFloat(e.target.value))}
                 className="cp-vol-range"
+                aria-label="Volume slider"
               />
             </div>
 
@@ -629,6 +826,7 @@ export default function CinemaPlayer({
                 <button
                   className={`cp-btn${(subtitlesUrl && subsOn) ? ' cp-btn--on' : ''}`}
                   onClick={e => { e.stopPropagation(); setMenu(menu === 'sub' ? null : 'sub') }}
+                  aria-label="Subtitles menu"
                 >
                   <Icon d={IC.sub} />
                 </button>
@@ -654,6 +852,7 @@ export default function CinemaPlayer({
               <div className="cp-anchor">
                 <button className="cp-btn"
                   onClick={e => { e.stopPropagation(); setMenu(menu === 'audio' ? null : 'audio') }}
+                  aria-label="Audio tracks menu"
                 >
                   <Icon d={IC.audio} />
                 </button>
@@ -672,6 +871,7 @@ export default function CinemaPlayer({
               <button
                 className={`cp-btn cp-desktop-only${isTheater ? ' cp-btn--on' : ''}`}
                 title="Theater (t)"
+                aria-label="Toggle theater mode"
                 onClick={e => { e.stopPropagation(); onTheaterToggle() }}
               >
                 <Icon d={IC.theater} />
@@ -680,14 +880,14 @@ export default function CinemaPlayer({
 
             {/* pip — desktop only */}
             {'pictureInPictureEnabled' in document && (
-              <button className="cp-btn cp-desktop-only" onClick={e => { e.stopPropagation(); togglePip() }}>
+              <button className="cp-btn cp-desktop-only" onClick={e => { e.stopPropagation(); togglePip() }} aria-label="Picture in picture">
                 <Icon d={IC.pip} />
               </button>
             )}
 
             {/* fullscreen */}
-            <button className="cp-btn" onClick={e => { e.stopPropagation(); toggleFs() }}>
-              <Icon d={fullscreen ? IC.fsOff : IC.fsOn} />
+            <button className="cp-btn cp-fs-btn" onClick={e => { e.stopPropagation(); toggleFs() }} aria-label={fullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}>
+              <Icon d={fullscreen ? IC.fsOff : IC.fsOn} size={22} />
             </button>
           </div>
         </div>

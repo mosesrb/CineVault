@@ -50,7 +50,7 @@ function AppRoutes() {
   // TV Remote: Prevent default scroll on arrow keys when inside player or certain views
   useEffect(() => {
     const handleTVKeys = (e) => {
-      const isPlayer = window.location.pathname.startsWith('/player');
+      const isPlayer = window.location.pathname.startsWith('/watch/');
       const isArrow = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key);
       if (isPlayer && isArrow) e.preventDefault();
     };
@@ -174,7 +174,7 @@ function AppRoutes() {
       <LegalConsentModal />
       <LegalViewerModal />
       {user && !isPlayer && <Navbar />}
-      {user && !isPlayer && <MobileNav />}
+      {user && !isPlayer && !isAdmin && <MobileNav />}
       <Routes>
         <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
         <Route path="/register" element={user ? <Navigate to="/" replace /> : <Register />} />

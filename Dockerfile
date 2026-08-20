@@ -25,12 +25,18 @@ COPY . .
 # Copy compiled frontend from Stage 1
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist
 
+# Create runtime directories and set ownership for non-root node user
+RUN mkdir -p hls-cache && chown -R node:node /app
+
 # Expose backend port
 EXPOSE 3000
 
 # Set production environment
 ENV NODE_ENV=production
 ENV PORT=3000
+
+# Switch to non-root user
+USER node
 
 # Start the server
 CMD ["npm", "start"]

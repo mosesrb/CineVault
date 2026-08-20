@@ -33,13 +33,13 @@
 }
 .filter-pill:hover {
   background: rgba(255, 255, 255, 0.1);
-  color: var(--text);
+  color: var(--text-primary);
 }
 .filter-pill.active {
-  background: var(--primary);
-  border-color: var(--primary);
+  background: var(--accent);
+  border-color: var(--accent);
   color: white;
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+  box-shadow: 0 4px 12px var(--accent-glow);
 }
 
 /* Horizontal scroll row */
@@ -73,7 +73,7 @@
   align-items: center;
   gap: var(--sp-1);
   padding: var(--sp-1) var(--sp-2);
-  background: var(--success-dim);
+  background: hsla(145, 63%, 49%, 0.15);
   border: 1px solid rgba(46, 204, 113, 0.2);
   border-radius: var(--radius-sm);
   font-size: 10px;
@@ -97,13 +97,13 @@
 }
 .offline-empty-icon {
   margin-bottom: var(--sp-6);
-  color: var(--text-dim);
+  color: var(--text-muted);
   opacity: 0.5;
 }
 .offline-empty-state h3 {
   font-size: 20px;
   margin-bottom: var(--sp-2);
-  color: var(--text);
+  color: var(--text-primary);
 }
 .offline-empty-state p {
   font-size: 14px;

@@ -4,6 +4,7 @@ import { getMovie, getTVShow, getSeasonEpisodes, addToWatchlist, getMe, deleteMo
 import { Clapperboard, MonitorPlay, Clock, Star, Play, PlayCircle, Plus, Check, Trash2, Download } from 'lucide-react'
 import DownloadButton from '../components/DownloadButton'
 import ConfirmModal from '../components/ConfirmModal'
+import ImageViewerModal from '../components/ImageViewerModal'
 import './Detail.css'
 
 // Web-only file download (browser's native Save As)
@@ -17,6 +18,10 @@ function buildBrowserDownloadUrl(vaultPath, token) {
 
 export default function Detail() {
   const { type, id } = useParams()
+  const isMovie = type === 'movie'
+  const isTV = type === 'tvshow' || type === 'tv' || type === 'show'
+  const normalizedType = isMovie ? 'movie' : 'tvshow'
+
   const [media, setMedia] = useState(null)
   const [episodes, setEpisodes] = useState([])
   const [activeSeason, setActiveSeason] = useState(1)
@@ -27,11 +32,13 @@ export default function Detail() {
   const [watchlisted, setWatchlisted] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
   const [deleteError, setDeleteError] = useState('')
+  const [viewerOpen, setViewerOpen] = useState(false)
+  const [viewerIndex, setViewerIndex] = useState(0)
   const navigate = useNavigate()
 
   useEffect(() => {
     setLoading(true)
-    const fetcher = type === 'movie' ? getMovie(id) : getTVShow(id)
+    const fetcher = isMovie ? getMovie(id) : getTVShow(id)
     
     Promise.all([
       fetcher,
@@ -42,16 +49,16 @@ export default function Detail() {
       setWatchlisted(inWatchlist)
       setIsAdmin(userRes.data.isAdmin || false)
       
-      if (type === 'tvshow') {
+      if (isTV) {
         getSeasonEpisodes(id, 1).then(r => setEpisodes(r.data))
       }
     }).finally(() => setLoading(false))
-  }, [id, type])
+  }, [id, type, isMovie, isTV])
 
   useEffect(() => {
-    if (type === 'tvshow' && media)
+    if (isTV && media)
       getSeasonEpisodes(id, activeSeason).then(r => setEpisodes(r.data))
-  }, [activeSeason])
+  }, [activeSeason, isTV, id, media])
 
   // Lock scrolling when trailer is open
   useEffect(() => {
@@ -61,7 +68,7 @@ export default function Detail() {
 
   async function handleWatchlist() {
     try {
-      await addToWatchlist(media._id, type)
+      await addToWatchlist(media._id, normalizedType)
       setWatchlisted(true)
     } catch {}
   }
@@ -73,7 +80,7 @@ export default function Detail() {
         setEpisodes(episodes.filter(e => e._id !== deletingEpisode._id))
         setDeletingEpisode(null)
       } else {
-        if (type === 'movie') await deleteMovie(media._id, deleteFile)
+        if (isMovie) await deleteMovie(media._id, deleteFile)
         else await deleteTVShow(media._id, deleteFile)
         navigate('/')
       }
@@ -100,12 +107,34 @@ export default function Detail() {
 
   const youtubeId = getYoutubeId(media.trailerUrl);
 
+  const allPictures = (() => {
+    if (!media) return []
+    const list = []
+    if (media.images?.length > 0) {
+      media.images.forEach(img => {
+        if (img && !list.includes(img)) list.push(img)
+      })
+    }
+    if (media.backdropUrl && !list.includes(media.backdropUrl)) {
+      list.unshift(media.backdropUrl)
+    }
+    if (media.posterUrl && !list.includes(media.posterUrl)) {
+      list.push(media.posterUrl)
+    }
+    return list
+  })()
+
+  const openViewer = (idx = 0) => {
+    setViewerIndex(idx)
+    setViewerOpen(true)
+  }
+
   return (
     <div className="detail-page">
       {/* Delete Confirmation Modal */}
       <ConfirmModal
         open={showDeleteModal}
-        title={deletingEpisode ? 'Delete Episode' : `Delete ${type === 'movie' ? 'Movie' : 'TV Show'}`}
+        title={deletingEpisode ? 'Delete Episode' : `Delete ${isMovie ? 'Movie' : 'TV Show'}`}
         danger
         confirmLabel="Delete (Keep File)"
         cancelLabel="Cancel"
@@ -159,7 +188,25 @@ export default function Detail() {
       <div className="page-content detail-content animate-fadeUp">
         <div className="detail-main">
           {/* Poster */}
-          <div className="detail-poster">
+          <div
+            className="detail-poster"
+            onClick={() => {
+              if (allPictures.length > 0) {
+                const posterIdx = allPictures.indexOf(media.posterUrl)
+                openViewer(posterIdx >= 0 ? posterIdx : 0)
+              }
+            }}
+            tabIndex={allPictures.length > 0 ? 0 : -1}
+            role={allPictures.length > 0 ? "button" : undefined}
+            aria-label={allPictures.length > 0 ? `View ${media.title} poster` : undefined}
+            onKeyDown={(e) => {
+              if ((e.key === 'Enter' || e.key === ' ') && allPictures.length > 0) {
+                e.preventDefault()
+                const posterIdx = allPictures.indexOf(media.posterUrl)
+                openViewer(posterIdx >= 0 ? posterIdx : 0)
+              }
+            }}
+          >
             {media.posterUrl
               ? <img src={resolveUrl(media.posterUrl)} alt={media.title} />
               : <div className="detail-poster-placeholder">{media.title?.charAt(0)}</div>
@@ -173,7 +220,7 @@ export default function Detail() {
                 <Link key={g._id} to={`/browse/${g.slug}`} className="badge badge-accent">{g.name}</Link>
               ))}
               {media.year && <span className="badge badge-muted">{media.year}</span>}
-              {media.status && type === 'tvshow' && (
+              {media.status && isTV && (
                 <span className={`badge ${media.status === 'ongoing' ? 'badge-success' : 'badge-muted'}`}>
                   {media.status}
                 </span>
@@ -194,25 +241,25 @@ export default function Detail() {
             {media.description && <p className="detail-desc">{media.description}</p>}
 
             <div className="detail-actions">
-              {type === 'movie' && media.userProgress && !media.userProgress.completed && media.userProgress.progressSeconds > 0 ? (
+              {isMovie && media.userProgress && !media.userProgress.completed && media.userProgress.progressSeconds > 0 ? (
                 <Link to={`/watch/movie/${media._id}`} className="btn btn-primary btn-lg">
                   <Play size={20} fill="currentColor" /> Resume Movie
                 </Link>
-              ) : type === 'tvshow' && media.resumePoint ? (
+              ) : isTV && media.resumePoint ? (
                 <Link to={`/watch/tvshow/${media._id}?ep=${media.resumePoint.episodeId}`} className="btn btn-primary btn-lg">
                   <Play size={20} fill="currentColor" /> Resume S{media.resumePoint.season}:E{media.resumePoint.episode}
                 </Link>
               ) : (
                 <Link 
-                  to={type === 'movie' ? `/watch/movie/${media._id}` : (episodes[0] ? `/watch/tvshow/${media._id}?ep=${episodes[0]._id}` : '#')} 
+                  to={isMovie ? `/watch/movie/${media._id}` : (episodes[0] ? `/watch/tvshow/${media._id}?ep=${episodes[0]._id}` : '#')} 
                   className="btn btn-primary btn-lg"
-                  onClick={e => { if (type==='tvshow' && !episodes[0]) e.preventDefault(); }}
+                  onClick={e => { if (isTV && !episodes[0]) e.preventDefault(); }}
                 >
                   <Play size={20} fill="currentColor" /> Play
                 </Link>
               )}
               
-              {isCapacitor && type === 'movie' && (
+              {isCapacitor && isMovie && (
                 <DownloadButton 
                   mediaId={media._id}
                   url={media.vaultPath ? resolveUrl(`/api/v1/stream?path=${encodeURIComponent(media.vaultPath)}&download=true`) : null}
@@ -222,7 +269,7 @@ export default function Detail() {
                 />
               )}
               {/* Web browser direct download — only on non-Capacitor */}
-              {!isCapacitor && type === 'movie' && media.vaultPath && (() => {
+              {!isCapacitor && isMovie && media.vaultPath && (() => {
                 const token = localStorage.getItem('cv_token')
                 const dlUrl = buildBrowserDownloadUrl(media.vaultPath, token)
                 return dlUrl ? (
@@ -321,11 +368,28 @@ export default function Detail() {
               <div className="cast-section" style={{ marginTop: 'var(--sp-6)' }}>
                 <h3 className="cast-title">Pictures</h3>
                 <div className="cast-list">
-                  {media.images.map((img, i) => (
-                    <div key={i} className="picture-item">
-                      <img src={resolveUrl(img)} alt={`Backdrop ${i+1}`} loading="lazy" />
-                    </div>
-                  ))}
+                  {media.images.map((img, i) => {
+                    const picIdx = allPictures.indexOf(img)
+                    const targetIdx = picIdx >= 0 ? picIdx : i
+                    return (
+                      <div
+                        key={i}
+                        className="picture-item"
+                        onClick={() => openViewer(targetIdx)}
+                        tabIndex={0}
+                        role="button"
+                        aria-label={`View picture ${i + 1}`}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            openViewer(targetIdx)
+                          }
+                        }}
+                      >
+                        <img src={resolveUrl(img)} alt={`Backdrop ${i + 1}`} loading="lazy" />
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )}
@@ -387,7 +451,7 @@ export default function Detail() {
         </div>
 
         {/* TV — Seasons & Episodes */}
-        {type === 'tvshow' && seasons.length > 0 && (
+        {isTV && seasons.length > 0 && (
           <div className="episodes-section">
             <div className="season-tabs">
               {seasons.map(s => (
@@ -458,6 +522,15 @@ export default function Detail() {
           </div>
         )}
       </div>
+
+      {/* Picture Viewer Lightbox */}
+      <ImageViewerModal
+        isOpen={viewerOpen}
+        images={allPictures}
+        initialIndex={viewerIndex}
+        title={media.title}
+        onClose={() => setViewerOpen(false)}
+      />
     </div>
   )
 }

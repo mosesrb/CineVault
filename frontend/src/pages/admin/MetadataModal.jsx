@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Search, Check, Save, Info, Globe } from 'lucide-react';
 import { searchTMDB, linkMovieToTMDB, linkTVShowToTMDB, updateMovie, updateTVShow, resolveUrl } from '../../api';
 import './MetadataModal.css';
 
 export default function MetadataModal({ item, type, onClose, onSave }) {
+    const modalRef = useRef(null);
     const [activeTab, setActiveTab] = useState('search');
     const [searchQuery, setSearchQuery] = useState(item?.title || '');
     const [results, setResults] = useState([]);
@@ -23,6 +24,46 @@ export default function MetadataModal({ item, type, onClose, onSave }) {
         network: item?.network || '',
         metaSource: item?.metaSource || 'manual'
     });
+
+    useEffect(() => {
+        const handleBack = (e) => {
+            e.preventDefault?.();
+            onClose?.();
+        };
+
+        const handleKeyDown = (e) => {
+            if (e.key === 'Escape') {
+                e.stopPropagation();
+                onClose?.();
+                return;
+            }
+
+            if (e.key === 'Tab' && modalRef.current) {
+                const focusables = modalRef.current.querySelectorAll(
+                    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+                );
+                if (focusables.length > 0) {
+                    const first = focusables[0];
+                    const last = focusables[focusables.length - 1];
+                    if (e.shiftKey && document.activeElement === first) {
+                        e.preventDefault();
+                        last.focus();
+                    } else if (!e.shiftKey && document.activeElement === last) {
+                        e.preventDefault();
+                        first.focus();
+                    }
+                }
+            }
+        };
+
+        window.addEventListener('cv_hardware_back', handleBack);
+        window.addEventListener('keydown', handleKeyDown);
+
+        return () => {
+            window.removeEventListener('cv_hardware_back', handleBack);
+            window.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [onClose]);
 
     useEffect(() => {
         if (activeTab === 'search' && searchQuery && results.length === 0) {
@@ -78,7 +119,7 @@ export default function MetadataModal({ item, type, onClose, onSave }) {
 
     return createPortal(
         <div className="meta-modal-overlay" onClick={onClose}>
-            <div className="meta-modal animate-scaleIn" onClick={e => e.stopPropagation()}>
+            <div ref={modalRef} className="meta-modal animate-scaleIn" onClick={e => e.stopPropagation()}>
                 <div className="meta-modal-header">
                     <div style={{display:'flex', alignItems:'center', gap:'var(--sp-2)'}}>
                         <Info size={18} className="text-accent" />

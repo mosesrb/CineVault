@@ -4,7 +4,7 @@
   height: 75vh;
   min-height: 480px;
   overflow: hidden;
-  background-color: var(--background);
+  background-color: var(--bg-base);
   touch-action: pan-y; /* Allow vertical scroll while capturing horizontal swipe */
 }
 
@@ -55,7 +55,7 @@
   inset: 0;
   background: linear-gradient(
     to top,
-    var(--background) 0%,
+    var(--bg-base) 0%,
     rgba(10, 10, 15, 0.5) 20%,
     transparent 50%
   );
@@ -88,7 +88,7 @@
   border-radius: 4px;
   font-size: 11px;
   font-weight: 700;
-  color: var(--text);
+  color: var(--text-primary);
   border: 1px solid rgba(255, 255, 255, 0.1);
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -105,7 +105,7 @@
   font-weight: 800;
   line-height: 1.1;
   margin-bottom: var(--sp-2);
-  color: var(--text);
+  color: var(--text-primary);
   text-shadow: 0 2px 10px rgba(0,0,0,0.8);
 }
 
@@ -150,7 +150,7 @@
 
 .hero-btn-primary {
   background: var(--accent);
-  color: var(--text);
+  color: #fff;
 }
 
 .hero-btn-primary:hover {
@@ -161,7 +161,7 @@
 .hero-btn-ghost {
   background: rgba(255, 255, 255, 0.15);
   backdrop-filter: blur(10px);
-  color: var(--text);
+  color: var(--text-primary);
   border: 1px solid rgba(255, 255, 255, 0.2);
 }
 

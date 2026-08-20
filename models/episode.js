@@ -28,7 +28,7 @@ const episodeSchema = new mongoose.Schema({
     runtime: { type: Number, default: 0 },           // seconds
 
     // --- File Info ---
-    vaultPath: { type: String, default: '', unique: true },         // relative inside vault
+    vaultPath: { type: String, index: { unique: true, sparse: true } },         // relative inside vault
     originalSourcePath: { type: String, default: '' },
     fileSize: { type: Number, default: 0 },           // bytes
     format: { type: String, default: '' },

@@ -7,6 +7,30 @@ const { getVaultConfig } = require('../services/vaultService');
 const { createTranscodeStream, createSubtitleStream, getMediaMetadata } = require('../services/transcoderService');
 const { Episode } = require('../models/episode');
 const { Movie } = require('../models/movie');
+const jwt = require('jsonwebtoken');
+const config = require('config');
+
+/**
+ * POST /api/v1/stream/ticket
+ * Issues a short-lived (2-minute) single-purpose stream ticket for video and subtitle playback.
+ */
+router.post('/ticket', auth, async (req, res) => {
+    try {
+        const ticket = jwt.sign(
+            {
+                _id: req.user._id,
+                isAdmin: req.user.isAdmin,
+                isStreamTicket: true,
+                path: req.body?.path || '*'
+            },
+            config.get('jwtPrivateKey'),
+            { expiresIn: '2m' }
+        );
+        res.json({ ticket });
+    } catch (err) {
+        res.status(500).send('Failed to generate stream ticket.');
+    }
+});
 
 /**
  * GET /stream/info?path=

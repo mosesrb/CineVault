@@ -171,7 +171,12 @@ export default function Movies() {
               </div>
             )
           ) : loading
-            ? <div className="loading-center"><div className="spinner" /></div>
+            ? (
+              <div className="discovery-shelves">
+                <MediaShelf loading={true} />
+                <MediaShelf loading={true} />
+              </div>
+            )
             : !isFiltered
               ? (
                 <div className="discovery-shelves">

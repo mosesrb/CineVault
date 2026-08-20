@@ -43,17 +43,23 @@
 .player-stage {
   flex: 1;
   display: flex;
-  align-items: flex-start; /* Moved from center to flex-start to remove top gap */
+  align-items: flex-start;
   justify-content: center;
   background: #000;
-  padding-top: 0; /* Let video flow behind the absolute header */
+  padding-top: 0;
+  width: 100%;
+  max-width: 100vw;
+  overflow: hidden;
   transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* ── CinemaPlayer Overrides ── */
 .player-stage .cp {
   width: 100%;
-  border-radius: 0; /* Removing radius as well to ensure it feels truly edge-to-edge */
+  max-width: 100%;
+  aspect-ratio: 16 / 9;
+  max-height: calc(100vh - var(--navbar-h));
+  border-radius: 0;
   box-shadow: none;
   transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }

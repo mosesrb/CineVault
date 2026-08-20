@@ -259,7 +259,7 @@ export default function Navbar() {
                     </Link>
                   ))}
                   {results.shows?.map(s => (
-                    <Link to={`/detail/tv/${s._id}`} className="search-result-item" key={s._id} onClick={() => { setShowDropdown(false); setQuery(''); }}>
+                    <Link to={`/detail/tvshow/${s._id}`} className="search-result-item" key={s._id} onClick={() => { setShowDropdown(false); setQuery(''); }}>
                       {s.posterUrl ? <img src={s.posterUrl} className="search-result-poster" alt=""/> : <div className="search-result-poster"/>}
                       <div className="search-result-info">
                         <span className="search-result-title">{s.title}</span>

@@ -3,13 +3,19 @@ const { Library } = require('../../models/library');
 const { User } = require('../../models/user');
 const { Session } = require('../../models/session');
 const { getTmdbKey, testTmdbApiKey } = require('../../services/metadataService');
+const mongoose = require('mongoose');
 let app;
 let adminToken;
 let adminUser;
 
+jest.setTimeout(15000);
+
 describe('Phase 5: Dynamic TMDB API Key & Settings', () => {
     beforeEach(async () => {
         app = require('../../index');
+        if (mongoose.connection.readyState !== 1) {
+            await new Promise(r => mongoose.connection.once('open', r));
+        }
         await Library.deleteMany({});
         await User.deleteMany({});
         await Session.deleteMany({});

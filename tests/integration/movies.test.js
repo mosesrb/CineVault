@@ -9,6 +9,7 @@ describe('/api/v1/movies', () => {
     beforeEach(async () => { 
         app = require('../../index'); 
         await Movie.deleteMany({});
+        await Movie.syncIndexes();
         await User.deleteMany({});
         await Session.deleteMany({});
 
@@ -37,6 +38,16 @@ describe('/api/v1/movies', () => {
 
             expect(res.status).toBe(200);
             expect(res.body.length).toBe(2);
+        });
+
+        it('should allow saving multiple movies without vaultPath (sparse unique index)', async () => {
+            const m1 = new Movie({ title: 'Manual Movie A', year: 2021 });
+            const m2 = new Movie({ title: 'Manual Movie B', year: 2022 });
+            await m1.save();
+            await m2.save();
+
+            const movies = await Movie.find();
+            expect(movies.length).toBe(2);
         });
     });
 });

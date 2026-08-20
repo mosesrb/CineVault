@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Download, CheckCircle2, Loader2, XCircle, AlertCircle } from 'lucide-react';
 import { OfflineStorageService } from '../services/OfflineStorageService';
+import ConfirmModal from './ConfirmModal';
 import './DownloadButton.css';
 
 export default function DownloadButton({ mediaId, url, type, metadata, variant = 'default' }) {
@@ -9,6 +10,27 @@ export default function DownloadButton({ mediaId, url, type, metadata, variant =
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [error, setError] = useState(null);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  // Hardware back & Escape listener for download permission modal
+  useEffect(() => {
+    if (!showConfirm) return
+
+    const handleBack = (e) => {
+      e.preventDefault?.()
+      setShowConfirm(false)
+    }
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') setShowConfirm(false)
+    }
+
+    window.addEventListener('cv_hardware_back', handleBack)
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('cv_hardware_back', handleBack)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [showConfirm])
 
   useEffect(() => {
     let unsubscribe = null;
@@ -135,11 +157,15 @@ export default function DownloadButton({ mediaId, url, type, metadata, variant =
     }
   }
 
-  async function removeDownload(e) {
-    e.stopPropagation();
-    if (!window.confirm('Delete local download?')) return;
+  async function handleConfirmDeleteDownload() {
+    setShowDeleteConfirm(false);
     await OfflineStorageService.deleteDownload(mediaId);
     setStatus('idle');
+  }
+
+  function removeDownload(e) {
+    e.stopPropagation();
+    setShowDeleteConfirm(true);
   }
 
   const isDetail = variant === 'detail';
@@ -160,6 +186,15 @@ export default function DownloadButton({ mediaId, url, type, metadata, variant =
 
   return (
     <div className={`download-btn-container ${isDetail ? 'download-btn--detail' : ''}`}>
+      <ConfirmModal
+        open={showDeleteConfirm}
+        title="Delete Download"
+        message="Delete this local download from your device storage?"
+        confirmLabel="Delete"
+        danger
+        onConfirm={handleConfirmDeleteDownload}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
       {status === 'idle' && (
         <button className="btn btn-ghost btn-download" onClick={handleDownload} title="Download for offline">
           <Download size={isDetail ? 20 : 16} />

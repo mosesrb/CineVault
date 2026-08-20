@@ -1,9 +1,33 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { SlidersHorizontal, X } from 'lucide-react'
 import './FilterDrawer.css'
 
 export default function FilterDrawer({ genres = [], filters, onChange }) {
   const [open, setOpen] = useState(false)
+
+  // Hardware back button and Escape key listener
+  useEffect(() => {
+    if (!open) return
+
+    const handleBack = (e) => {
+      e.preventDefault?.()
+      setOpen(false)
+    }
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setOpen(false)
+      }
+    }
+
+    window.addEventListener('cv_hardware_back', handleBack)
+    window.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      window.removeEventListener('cv_hardware_back', handleBack)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [open])
 
   const activeCount = [
     filters.minRating > 0,

@@ -26,6 +26,11 @@ module.exports = async function (req, res, next) {
         const decoded = jwt.verify(token, config.get('jwtPrivateKey'));
         req.user = decoded;
 
+        // Stream Tickets are short-lived cryptographic tickets for media streams
+        if (decoded.isStreamTicket) {
+            return next();
+        }
+
         // Session Tracking & Self-Healing
         try {
             let session = await Session.findOne({ token });

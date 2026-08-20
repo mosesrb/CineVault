@@ -145,19 +145,31 @@ export default function Profile() {
     }
   }
 
+  const [showClearCacheModal, setShowClearCacheModal] = useState(false)
+
   async function handleClearCache() {
-    if (!window.confirm('Clear all offline API cache? This will not delete your downloads.')) return;
     try {
       await OfflineCacheService.clearCache();
+      setShowClearCacheModal(false);
       setServerMsg('Offline cache cleared successfully!');
       setTimeout(() => setServerMsg(''), 3000);
     } catch (e) {
+      setShowClearCacheModal(false);
       setError('Failed to clear cache.');
     }
   }
 
   return (
     <div className="page-layout">
+      <ConfirmModal
+        open={showClearCacheModal}
+        title="Clear Offline Cache"
+        message="Clear all offline API cache? This will not delete your downloaded media files."
+        confirmLabel="Clear Cache"
+        danger
+        onConfirm={handleClearCache}
+        onCancel={() => setShowClearCacheModal(false)}
+      />
       <ConfirmModal
         open={!!deleteConfirmId}
         title="Delete Download"
@@ -295,7 +307,7 @@ export default function Profile() {
             <p className="text-sm text-muted" style={{marginBottom:'var(--sp-4)'}}>
               Discovery data (movies list, TV shows, and genres) are cached locally for 24 hours to enable offline browsing.
             </p>
-            <button className="btn btn-ghost" onClick={handleClearCache} style={{color:'var(--danger)', borderColor:'var(--danger)'}}>
+            <button className="btn btn-ghost" onClick={() => setShowClearCacheModal(true)} style={{color:'var(--danger)', borderColor:'var(--danger)'}}>
               <Trash2 size={16} /> Clear Discovery Cache
             </button>
 

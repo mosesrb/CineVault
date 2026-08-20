@@ -119,6 +119,7 @@ export default function HeroCarousel({ items = [] }) {
                 key={idx} 
                 className={`carousel-dot ${idx === current ? 'active' : ''}`}
                 onClick={() => setCurrent(idx)}
+                aria-label={`Go to slide ${idx + 1}`}
               />
             ))}
           </div>

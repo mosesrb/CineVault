@@ -96,7 +96,17 @@ export default function Home() {
     };
   }, [q])
 
-  if (loading) return <div className="loading-center" style={{minHeight:'100vh'}}><div className="spinner"/></div>
+  if (loading) {
+    return (
+      <div className="home-page">
+        <div className="page-content" style={{ paddingTop: 'var(--sp-6)' }}>
+          <MediaShelf loading={true} />
+          <MediaShelf loading={true} />
+          <MediaShelf loading={true} />
+        </div>
+      </div>
+    )
+  }
 
   // SEARCH RESULTS VIEW
   if (q && searchResults) {

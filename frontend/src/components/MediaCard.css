@@ -134,7 +134,7 @@
   font-weight: 600;
   text-decoration: none;
   transition: all var(--t-fast);
-  min-height: 36px;
+  min-height: 42px;
   padding: 0 var(--sp-3);
 }
 
@@ -151,7 +151,8 @@
   background: var(--bg-glass-mid);
   color: var(--text-secondary);
   border: 1px solid var(--border);
-  width: 36px;
+  width: 42px;
+  min-width: 42px;
   padding: 0;
 }
 .card-quick-info:hover { background: var(--bg-overlay); color: var(--text-primary); border-color: var(--border-mid); }

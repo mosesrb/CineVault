@@ -187,6 +187,16 @@
   padding: var(--sp-6) var(--sp-8);
 }
 
+.admin-nav-link.admin-nav-exit {
+  color: var(--accent);
+  font-weight: 600;
+  margin-top: auto;
+}
+.admin-nav-link.admin-nav-exit:hover {
+  background: hsla(338, 85%, 55%, 0.1);
+  color: var(--accent);
+}
+
 /* ── Mobile Header ───────────────────────────────────────── */
 .admin-mobile-header {
   display: none;
@@ -204,10 +214,31 @@
   backdrop-filter: blur(10px);
 }
 
+.admin-exit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--bg-glass);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  text-decoration: none;
+  transition: all var(--t-fast);
+}
+.admin-exit-btn:hover {
+  background: var(--bg-glass-mid);
+}
+
 .admin-mobile-title {
-  font-size: var(--fs-base);
+  font-size: var(--fs-sm);
   font-weight: 700;
   color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 /* ── Mobile Bottom Tab Bar ───────────────────────────────── */

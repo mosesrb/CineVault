@@ -25,6 +25,7 @@ local.properties
 
 # Transcoding & Media Files
 transcode/
+hls-cache/
 *.mp4
 *.mkv
 *.avi
@@ -50,6 +51,12 @@ coverage/
 # Build outputs
 dist/
 dist-ssr/
+
+# Project Memory & Internal Dev Worklogs
+memories.md
+worklog.md
+docs/memories.md
+docs/worklog.md
 
 # Internal Docs & Temp Media
 docs/*.mp4

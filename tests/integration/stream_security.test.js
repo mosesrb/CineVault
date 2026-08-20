@@ -108,4 +108,22 @@ describe('Security & Path Traversal Guards (/api/v1/stream)', () => {
 
         expect(res.status).toBe(200);
     });
+
+    it('should issue a stream ticket via POST /api/v1/stream/ticket', async () => {
+        const res = await request(app)
+            .post('/api/v1/stream/ticket')
+            .set('x-auth-token', token)
+            .send({ path: 'test_movie.mp4' });
+
+        expect(res.status).toBe(200);
+        expect(res.body.ticket).toBeDefined();
+        expect(typeof res.body.ticket).toBe('string');
+
+        // Test that the generated ticket authenticates media streaming
+        const streamRes = await request(app)
+            .get(`/api/v1/stream?path=test_movie.mp4&token=${res.body.ticket}`);
+
+        expect(streamRes.status).toBe(200);
+        expect(streamRes.body.toString()).toContain('fake-mp4-data');
+    });
 });

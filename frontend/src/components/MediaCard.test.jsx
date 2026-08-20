@@ -35,4 +35,26 @@ describe('MediaCard', () => {
     
     expect(screen.getByText('TV')).toBeInTheDocument();
   });
+
+  it('correctly resolves item._type when type="mixed" is passed', () => {
+    const tvItem = { _id: 'tv99', title: 'Mixed TV', _type: 'tvshow' };
+    const { container } = render(
+      <BrowserRouter>
+        <MediaCard item={tvItem} type="mixed" />
+      </BrowserRouter>
+    );
+    const link = container.querySelector('a[href="/detail/tvshow/tv99"]');
+    expect(link).toBeInTheDocument();
+  });
+
+  it('normalizes type="tv" to "tvshow" in detail link', () => {
+    const tvItem = { _id: 'tv88', title: 'Short TV', type: 'tv' };
+    const { container } = render(
+      <BrowserRouter>
+        <MediaCard item={tvItem} />
+      </BrowserRouter>
+    );
+    const link = container.querySelector('a[href="/detail/tvshow/tv88"]');
+    expect(link).toBeInTheDocument();
+  });
 });

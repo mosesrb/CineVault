@@ -6,6 +6,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const fsPromises = require('fs').promises;
 const { createHlsStream } = require('./transcoderService');
 
 const CACHE_DIR = path.join(process.cwd(), 'hls-cache');
@@ -27,14 +28,14 @@ async function getOrCreateSession(mediaId, filePath) {
     // We use a try-catch because on Windows, another process (like the previous FFmpeg) might still have a lock.
     try {
         if (fs.existsSync(outputDir)) {
-            fs.rmSync(outputDir, { recursive: true, force: true });
+            await fsPromises.rm(outputDir, { recursive: true, force: true });
         }
     } catch (e) {
         console.warn(`⚠️ HLS Clean Warning for ${mediaId}: ${e.message}`);
     }
 
     if (!fs.existsSync(outputDir)) {
-        fs.mkdirSync(outputDir, { recursive: true });
+        await fsPromises.mkdir(outputDir, { recursive: true });
     }
 
     const manifestPath = path.join(outputDir, 'master.m3u8');
@@ -57,7 +58,7 @@ async function getOrCreateSession(mediaId, filePath) {
 /**
  * Kills a specific session.
  */
-function stopSession(mediaId) {
+async function stopSession(mediaId) {
     if (sessions.has(mediaId)) {
         const session = sessions.get(mediaId);
         try {
@@ -70,7 +71,7 @@ function stopSession(mediaId) {
 
         try {
             if (session.outputDir && fs.existsSync(session.outputDir)) {
-                fs.rmSync(session.outputDir, { recursive: true, force: true });
+                await fsPromises.rm(session.outputDir, { recursive: true, force: true });
             }
         } catch (e) {
             console.warn(`[HLS] Warning cleaning cache dir for ${mediaId}:`, e.message);

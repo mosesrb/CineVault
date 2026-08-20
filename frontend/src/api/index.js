@@ -148,6 +148,7 @@ export const deleteGenre = id => api.delete(`/genres/${id}`)
 export const search = (q, params = {}) => api.get('/search', { params: { q, ...params } })
 export const getTrending = () => api.get('/discover/trending')
 export const getStreamInfo = (path) => api.get(`/stream/info?path=${encodeURIComponent(path)}`)
+export const getStreamTicket = (path) => api.post('/stream/ticket', { path })
 export const getSmartCollections = () => api.get('/discover/smart')
 export const getRecommendations = () => api.get('/discover/recommended')
 

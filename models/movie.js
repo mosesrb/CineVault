@@ -34,8 +34,7 @@ const movieSchema = new mongoose.Schema({
     // --- File Info ---
     vaultPath: {
         type: String,
-        default: '',
-        unique: true
+        index: { unique: true, sparse: true }
     },
     originalSourcePath: {
         type: String,
@@ -83,6 +82,8 @@ const movieSchema = new mongoose.Schema({
 movieSchema.index({ title: 'text', description: 'text', director: 'text' });
 movieSchema.index({ genres: 1 });
 movieSchema.index({ year: 1 });
+movieSchema.index({ rating: -1 });
+movieSchema.index({ isConflict: 1 });
 
 const Movie = mongoose.model('Movie', movieSchema);
 
