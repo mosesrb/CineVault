@@ -55,6 +55,8 @@ dist-ssr/
 # Project Memory, Internal Audits & Dev Worklogs
 memories.md
 worklog.md
+worklogs.md
+project-status.md
 docs/*.md
 docs/**/*.md
 docs/archive/
