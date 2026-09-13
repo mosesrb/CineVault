@@ -4,9 +4,14 @@ const { User } = require('../../models/user');
 const { Session } = require('../../models/session');
 const { getTmdbKey, testTmdbApiKey } = require('../../services/metadataService');
 const mongoose = require('mongoose');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 let app;
 let adminToken;
 let adminUser;
+let testVaultRoot;
+let testInboxPath;
 
 jest.setTimeout(15000);
 
@@ -16,6 +21,8 @@ describe('Phase 5: Dynamic TMDB API Key & Settings', () => {
         if (mongoose.connection.readyState !== 1) {
             await new Promise(r => mongoose.connection.once('open', r));
         }
+        testVaultRoot = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'cinevault-tmdb-admin-'));
+        testInboxPath = path.join(testVaultRoot, 'Inbox');
         await Library.deleteMany({});
         await User.deleteMany({});
         await Session.deleteMany({});
@@ -36,6 +43,7 @@ describe('Phase 5: Dynamic TMDB API Key & Settings', () => {
         await Library.deleteMany({});
         await User.deleteMany({});
         await Session.deleteMany({});
+        await fs.promises.rm(testVaultRoot, { recursive: true, force: true });
     });
 
     it('should save tmdbApiKey in vault config via PUT /api/v1/library/config', async () => {
@@ -43,8 +51,8 @@ describe('Phase 5: Dynamic TMDB API Key & Settings', () => {
             .put('/api/v1/library/config')
             .set('x-auth-token', adminToken)
             .send({
-                vaultRootPath: 'E:\\MockVault',
-                inboxPath: 'E:\\MockVault\\Inbox',
+                vaultRootPath: testVaultRoot,
+                inboxPath: testInboxPath,
                 tmdbApiKey: 'mock_tmdb_key_12345'
             });
 
