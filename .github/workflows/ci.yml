@@ -54,9 +54,10 @@ jobs:
     - name: Run Backend Integration Tests
       env:
         NODE_ENV: test
-        JWT_PRIVATE_KEY: test_key_for_ci_cd_pipeline
-        MONGO_URI: mongodb://localhost:27017/cinevault_test
-        REDIS_URL: redis://localhost:6379
+        NODE_CONFIG_ENV: ci
+        delatron_jwtPrivateKey: cinevault_ci_test_signing_key_2026_only
+        delatron_MONGODB_URI: mongodb://localhost:27017/cinevault_test
+        delatron_TMDB_API_KEY: test_tmdb_api_key
       run: npm test
 
   android:
