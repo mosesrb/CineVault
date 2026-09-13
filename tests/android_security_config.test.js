@@ -26,7 +26,7 @@ describe('Android release transport and signing configuration', () => {
 
         expect(debugManifest).toContain('android:usesCleartextTraffic="true"');
         expect(debugNetworkConfig).toContain('cleartextTrafficPermitted="true"');
-        expect(activity).toContain('if (BuildConfig.DEBUG)');
+        expect(activity).toContain('ApplicationInfo.FLAG_DEBUGGABLE');
         expect(activity).toContain('MIXED_CONTENT_ALWAYS_ALLOW');
     });
 
