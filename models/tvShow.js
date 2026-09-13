@@ -92,7 +92,7 @@ function validateTVShow(show) {
         isConflict: Joi.boolean(),
         conflictOptions: Joi.array().items(Joi.any())
     };
-    return Joi.validate(show, schema);
+    return Joi.object(schema).validate(show);
 }
 
 function validateTVShowPatch(show) {
@@ -118,7 +118,7 @@ function validateTVShowPatch(show) {
         conflictOptions: Joi.array().items(Joi.any()),
         metaSource: Joi.string().valid('tmdb', 'omdb', 'manual', 'none')
     };
-    return Joi.validate(show, schema);
+    return Joi.object(schema).validate(show);
 }
 
 module.exports.TVShow = TVShow;

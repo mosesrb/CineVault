@@ -7,13 +7,13 @@ let token;
 
 describe('/api/v1/movies', () => {
     beforeEach(async () => { 
-        app = require('../../index'); 
+        app = require('../../app').createApp();
         await Movie.deleteMany({});
         await Movie.syncIndexes();
         await User.deleteMany({});
         await Session.deleteMany({});
 
-        const user = new User({ isAdmin: true, name: 'Admin', email: 'admin@test.com', password: 'password123' });
+        const user = new User({ isAdmin: true, isApproved: true, name: 'Admin', email: 'admin@test.com', password: 'password123' });
         await user.save();
         token = user.generateAuthToken();
         await new Session({ userId: user._id, token, ip: '127.0.0.1' }).save();

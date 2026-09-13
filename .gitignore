@@ -36,6 +36,8 @@ hls-cache/
 
 # Logs & Runtime
 *.log
+backups/
+runtime/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

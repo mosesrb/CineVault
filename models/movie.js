@@ -115,7 +115,7 @@ function validateMovie(movie) {
         isConflict: Joi.boolean(),
         conflictOptions: Joi.array().items(Joi.any())
     };
-    return Joi.validate(movie, schema);
+    return Joi.object(schema).validate(movie);
 }
 
 function validateMoviePatch(movie) {
@@ -136,7 +136,7 @@ function validateMoviePatch(movie) {
         conflictOptions: Joi.array().items(Joi.any()),
         metaSource: Joi.string().valid('tmdb', 'omdb', 'manual', 'none')
     };
-    return Joi.validate(movie, schema);
+    return Joi.object(schema).validate(movie);
 }
 
 module.exports.Movie = Movie;

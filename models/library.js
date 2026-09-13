@@ -37,7 +37,7 @@ function validateLibraryConfig(config) {
         inboxPath: Joi.string().allow(''),
         tmdbApiKey: Joi.string().allow('')
     };
-    return Joi.validate(config, schema);
+    return Joi.object(schema).validate(config);
 }
 
 module.exports.Library = Library;

@@ -9,6 +9,20 @@ const { User, validateUser, validateProfileUpdate, hashPassword } = require('../
 const { Movie } = require('../models/movie');
 const { TVShow } = require('../models/tvShow');
 const { Genre } = require('../models/genre');
+const { authorizeMediaReference, ContentAccessError } = require('../services/contentPolicyService');
+const { createSessionForRequest, revokeUserSessions } = require('../services/sessionService');
+
+async function authorizeReference(req, res, mediaType, mediaId, episodeId = null) {
+    try {
+        return await authorizeMediaReference(req.user, mediaType, mediaId, episodeId);
+    } catch (error) {
+        if (error instanceof ContentAccessError) {
+            res.status(error.status).send(error.message);
+            return null;
+        }
+        throw error;
+    }
+}
 
 // ─── POST /api/users/register — Public registration ───────────
 router.post('/register', async (req, res) => {
@@ -33,7 +47,18 @@ router.post('/register', async (req, res) => {
 
     await user.save();
 
+    if (!isAdmin) {
+        return res.status(202).send({
+            _id: user._id,
+            name: user.name,
+            email: user.email,
+            isApproved: false,
+            message: 'Registration submitted for administrator approval.'
+        });
+    }
+
     const token = user.generateAuthToken();
+    await createSessionForRequest(user, token, req);
     res.header('x-auth-token', token).send({
         token,
         _id: user._id,
@@ -142,6 +167,8 @@ router.put('/me/profile', auth, async (req, res) => {
         { new: true }
     ).select('-password');
 
+    if (req.body.password) await revokeUserSessions(req.user._id);
+
     res.send(user);
 });
 
@@ -196,7 +223,11 @@ router.post('/me/watchlist', auth, async (req, res) => {
     if (!mediaId || !mediaType) return res.status(400).send('mediaId and mediaType are required.');
     if (!['movie', 'tvshow'].includes(mediaType)) return res.status(400).send('mediaType must be movie or tvshow.');
 
+    const authorized = await authorizeReference(req, res, mediaType, mediaId);
+    if (!authorized) return;
+
     const user = await User.findById(req.user._id);
+    if (!user) return res.status(401).send('User not found.');
     const exists = user.watchlist.find(
         w => w.mediaId.toString() === mediaId && w.mediaType === mediaType
     );
@@ -221,8 +252,13 @@ router.delete('/me/watchlist/:mediaId', auth, async (req, res) => {
 router.post('/me/history', auth, async (req, res) => {
     const { mediaId, mediaType, episodeId, progressSeconds, completed } = req.body;
     if (!mediaId || !mediaType) return res.status(400).send('mediaId and mediaType are required.');
+    if (!['movie', 'tvshow'].includes(mediaType)) return res.status(400).send('mediaType must be movie or tvshow.');
+
+    const authorized = await authorizeReference(req, res, mediaType, mediaId, episodeId);
+    if (!authorized) return;
 
     const user = await User.findById(req.user._id);
+    if (!user) return res.status(401).send('User not found.');
 
     const existingIndex = user.watchHistory.findIndex(
         h => h.mediaId.toString() === mediaId &&
@@ -299,6 +335,9 @@ router.put('/:id', [auth, admin, validateObjectId], async (req, res) => {
         { $set: update },
         { new: true }
     ).select('-password');
+    if (req.body.isAdmin !== undefined || req.body.password || req.body.isApproved !== undefined) {
+        await revokeUserSessions(req.params.id);
+    }
     res.send(updated);
 });
 
@@ -306,6 +345,7 @@ router.put('/:id', [auth, admin, validateObjectId], async (req, res) => {
 router.delete('/:id', [auth, admin, validateObjectId], async (req, res) => {
     const user = await User.findByIdAndDelete(req.params.id);
     if (!user) return res.status(404).send('User not found.');
+    await revokeUserSessions(user._id);
     res.send({ message: 'User deleted.', _id: user._id });
 });
 
@@ -328,6 +368,7 @@ router.put('/:id/ban', [auth, admin, validateObjectId], async (req, res) => {
     }
 
     await user.save();
+    if (req.body.ban !== false) await revokeUserSessions(user._id);
     res.send({ _id: user._id, isBanned: user.isBanned, banExpiresAt: user.banExpiresAt });
 });
 
@@ -358,6 +399,7 @@ router.put('/:id/approve', [auth, admin, validateObjectId], async (req, res) => 
 
     user.isApproved = req.body.approve !== false; // Default to true
     await user.save();
+    await revokeUserSessions(user._id);
 
     res.send({ _id: user._id, isApproved: user.isApproved });
 });

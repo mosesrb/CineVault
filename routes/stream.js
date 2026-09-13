@@ -9,6 +9,82 @@ const { Episode } = require('../models/episode');
 const { Movie } = require('../models/movie');
 const jwt = require('jsonwebtoken');
 const config = require('config');
+const {
+    authorizeVaultPath,
+    hashVaultPath,
+    ContentAccessError
+} = require('../services/contentPolicyService');
+const {
+    PathSecurityError,
+    resolveExistingFileWithinRoot
+} = require('../services/pathSecurityService');
+
+async function authorizeRequestPath(req, res) {
+    try {
+        const resource = await authorizeVaultPath(req.user, req.query.path);
+        if (req.auth?.kind === 'stream-ticket' &&
+            (String(req.auth.resourceId) !== String(resource.resourceId) ||
+             String(req.auth.mediaId) !== String(resource.mediaId))) {
+            res.status(403).send('Stream ticket is not valid for this resource.');
+            return null;
+        }
+        return resource;
+    } catch (error) {
+        if (error instanceof ContentAccessError) {
+            res.status(error.status).send(error.status === 403 ? 'Access denied.' : error.message);
+            return null;
+        }
+        throw error;
+    }
+}
+
+async function resolveAuthorizedFile(library, vaultPath, res) {
+    try {
+        return await resolveExistingFileWithinRoot(library.vaultRootPath, vaultPath);
+    } catch (error) {
+        if (error instanceof PathSecurityError) {
+            const notFound = error.code === 'PATH_NOT_FOUND' || error.code === 'NOT_A_FILE';
+            res.status(notFound ? 404 : 403).send(notFound ? 'File not found.' : 'Access denied.');
+            return null;
+        }
+        throw error;
+    }
+}
+
+function parseSingleRange(rangeHeader, fileSize) {
+    if (!rangeHeader) return null;
+    const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim());
+    if (!match || rangeHeader.includes(',') || fileSize <= 0) return false;
+
+    const [, startText, endText] = match;
+    if (!startText && !endText) return false;
+
+    let start;
+    let end;
+    if (!startText) {
+        const suffixLength = Number(endText);
+        if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0) return false;
+        start = Math.max(fileSize - suffixLength, 0);
+        end = fileSize - 1;
+    } else {
+        start = Number(startText);
+        end = endText ? Number(endText) : fileSize - 1;
+        if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) ||
+            start < 0 || end < start || start >= fileSize) return false;
+        end = Math.min(end, fileSize - 1);
+    }
+    return { start, end };
+}
+
+function pipeFile(res, filePath, options) {
+    const stream = fs.createReadStream(filePath, options);
+    stream.on('error', error => {
+        if (!res.headersSent) res.status(500).send('Media read failed.');
+        else res.destroy(error);
+    });
+    res.on('close', () => stream.destroy());
+    stream.pipe(res);
+}
 
 /**
  * POST /api/v1/stream/ticket
@@ -16,18 +92,40 @@ const config = require('config');
  */
 router.post('/ticket', auth, async (req, res) => {
     try {
+        const requestedPath = req.body?.path;
+        if (typeof requestedPath !== 'string' || !requestedPath.trim()) {
+            return res.status(400).send('A media path is required.');
+        }
+
+        const requestedOperation = req.body?.operation || 'stream';
+        if (!['stream', 'download'].includes(requestedOperation)) {
+            return res.status(400).send('operation must be stream or download.');
+        }
+
+        const resource = await authorizeVaultPath(req.user, requestedPath);
+        const operations = requestedOperation === 'download'
+            ? ['download']
+            : ['stream', 'subtitle'];
+
         const ticket = jwt.sign(
             {
                 _id: req.user._id,
-                isAdmin: req.user.isAdmin,
                 isStreamTicket: true,
-                path: req.body?.path || '*'
+                tokenType: 'stream',
+                pathDigest: hashVaultPath(resource.vaultPath),
+                operations,
+                resourceType: resource.resourceType,
+                resourceId: resource.resourceId,
+                mediaId: resource.mediaId
             },
             config.get('jwtPrivateKey'),
-            { expiresIn: '2m' }
+            { expiresIn: '2m', issuer: 'cinevault', audience: 'cinevault-stream' }
         );
         res.json({ ticket });
     } catch (err) {
+        if (err instanceof ContentAccessError) {
+            return res.status(err.status).send(err.message);
+        }
         res.status(500).send('Failed to generate stream ticket.');
     }
 });
@@ -37,18 +135,17 @@ router.post('/ticket', auth, async (req, res) => {
  * Returns audio track metadata for a file.
  */
 router.get('/info', auth, async (req, res) => {
-    const vaultPath = req.query.path;
-    if (!vaultPath) return res.status(400).send('path query parameter is required.');
+    if (!req.query.path) return res.status(400).send('path query parameter is required.');
+    const resource = await authorizeRequestPath(req, res);
+    if (!resource) return;
+    const vaultPath = resource.vaultPath;
 
     const library = await getVaultConfig();
     if (!library) return res.status(503).send('Vault not configured.');
 
-    const resolvedVault = path.resolve(library.vaultRootPath);
-    const resolvedFile = path.resolve(path.join(resolvedVault, vaultPath));
-
-    // Path traversal guard
-    if (!resolvedFile.startsWith(resolvedVault)) return res.status(403).send('Access denied.');
-    if (!fs.existsSync(resolvedFile)) return res.status(404).send('File not found.');
+    const mediaFile = await resolveAuthorizedFile(library, vaultPath, res);
+    if (!mediaFile) return;
+    const resolvedFile = mediaFile.path;
 
     try {
         const metadata = await getMediaMetadata(resolvedFile);
@@ -84,18 +181,18 @@ router.get('/info', auth, async (req, res) => {
  * Extracts an internal subtitle stream and converts it to WebVTT on-the-fly.
  */
 router.get('/subtitles/vtt', auth, async (req, res) => {
-    const { path: vaultPath, index, seek } = req.query;
-    if (!vaultPath || index === undefined) return res.status(400).send('path and index required.');
+    const { index, seek } = req.query;
+    if (!req.query.path || index === undefined) return res.status(400).send('path and index required.');
+    const resource = await authorizeRequestPath(req, res);
+    if (!resource) return;
+    const vaultPath = resource.vaultPath;
 
     const library = await getVaultConfig();
     if (!library) return res.status(503).send('Vault not configured.');
 
-    const resolvedVault = path.resolve(library.vaultRootPath);
-    const resolvedFile = path.resolve(path.join(resolvedVault, vaultPath));
-
-    // Path traversal guard
-    if (!resolvedFile.startsWith(resolvedVault)) return res.status(403).send('Access denied.');
-    if (!fs.existsSync(resolvedFile)) return res.status(404).send('File not found.');
+    const mediaFile = await resolveAuthorizedFile(library, vaultPath, res);
+    if (!mediaFile) return;
+    const resolvedFile = mediaFile.path;
 
     const subIndex = parseInt(index, 10);
     const seekTime = parseFloat(seek) || 0;
@@ -125,17 +222,13 @@ router.get('/subtitles/vtt', auth, async (req, res) => {
  * Serves a sidecar subtitle file if one exists next to the media file.
  */
 router.get('/subtitles', auth, async (req, res) => {
-    const vaultPath = req.query.path;
-    if (!vaultPath) return res.status(400).send('path query parameter is required.');
+    if (!req.query.path) return res.status(400).send('path query parameter is required.');
+    const resource = await authorizeRequestPath(req, res);
+    if (!resource) return;
+    const vaultPath = resource.vaultPath;
 
     const library = await getVaultConfig();
     if (!library) return res.status(503).send('Vault not configured.');
-
-    const resolvedVault = path.resolve(library.vaultRootPath);
-    const resolvedFile = path.resolve(path.join(resolvedVault, vaultPath));
-
-    // Path traversal guard
-    if (!resolvedFile.startsWith(resolvedVault)) return res.status(403).send('Access denied.');
 
     const { findSidecarFile } = require('../services/vaultService');
     const subPath = await findSidecarFile(vaultPath);
@@ -157,19 +250,17 @@ router.get('/subtitles', auth, async (req, res) => {
  *                   Used for MP4/WebM that browsers can play natively.
  */
 router.get('/', auth, async (req, res) => {
-    const vaultPath = req.query.path;
-    if (!vaultPath) return res.status(400).send('path query parameter is required.');
+    if (!req.query.path) return res.status(400).send('path query parameter is required.');
+    const resource = await authorizeRequestPath(req, res);
+    if (!resource) return;
+    const vaultPath = resource.vaultPath;
 
     const library = await getVaultConfig();
     if (!library) return res.status(503).send('Vault not configured.');
 
-    const fullPath = path.join(library.vaultRootPath, vaultPath);
-    const resolvedVault = path.resolve(library.vaultRootPath);
-    const resolvedFile = path.resolve(fullPath);
-
-    // Path traversal guard
-    if (!resolvedFile.startsWith(resolvedVault)) return res.status(403).send('Access denied.');
-    if (!fs.existsSync(resolvedFile)) return res.status(404).send('File not found in vault.');
+    const mediaFile = await resolveAuthorizedFile(library, vaultPath, res);
+    if (!mediaFile) return;
+    const resolvedFile = mediaFile.path;
 
     const ext = path.extname(resolvedFile).toLowerCase();
     const forceTranscode = req.query.transcode === 'true';
@@ -246,20 +337,18 @@ router.get('/', auth, async (req, res) => {
     }
 
     // ── MODE 2: Native byte-range streaming ───────────────────────────────
-    const stat = fs.statSync(resolvedFile);
-    const fileSize = stat.size;
+    const fileSize = mediaFile.stats.size;
     const range = req.headers.range;
     const mimeMap = { '.mp4': 'video/mp4', '.webm': 'video/webm', '.m4v': 'video/mp4' };
     const mimeType = mimeMap[ext] || 'video/mp4';
 
     if (range && !isDownload) {
-        const parts = range.replace(/bytes=/, '').split('-')
-        const start = parseInt(parts[0], 10) || 0
-        const end = Math.min(parts[1] ? parseInt(parts[1], 10) : fileSize - 1, fileSize - 1)
-
-        if (isNaN(start) || isNaN(end) || start > end) {
-            return res.status(416).send('Range Not Satisfiable')
+        const parsedRange = parseSingleRange(range, fileSize);
+        if (!parsedRange) {
+            res.setHeader('Content-Range', `bytes */${fileSize}`);
+            return res.status(416).send('Range Not Satisfiable');
         }
+        const { start, end } = parsedRange;
 
         res.writeHead(206, {
             'Content-Range': `bytes ${start}-${end}/${fileSize}`,
@@ -267,7 +356,7 @@ router.get('/', auth, async (req, res) => {
             'Content-Length': end - start + 1,
             'Content-Type': mimeType,
         });
-        fs.createReadStream(resolvedFile, { start, end }).pipe(res);
+        pipeFile(res, resolvedFile, { start, end });
     } else {
         const filename = path.basename(resolvedFile);
         const downloadHeaders = {
@@ -279,8 +368,9 @@ router.get('/', auth, async (req, res) => {
             downloadHeaders['Content-Disposition'] = `attachment; filename="${filename}"`;
         }
         res.writeHead(200, downloadHeaders);
-        fs.createReadStream(resolvedFile).pipe(res);
+        pipeFile(res, resolvedFile);
     }
 });
 
 module.exports = router;
+module.exports.parseSingleRange = parseSingleRange;

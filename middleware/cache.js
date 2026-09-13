@@ -33,7 +33,22 @@ async function initRedis() {
     }
 }
 
-initRedis();
+async function closeRedis() {
+    if (!redisClient) return;
+    try {
+        if (redisClient.isOpen) await redisClient.quit();
+    } finally {
+        redisClient = null;
+        isRedisConnected = false;
+    }
+}
+
+function getRedisStatus() {
+    return {
+        configured: Boolean(process.env.REDIS_URL),
+        ready: isRedisConnected && Boolean(redisClient?.isReady)
+    };
+}
 
 /**
  * Middleware to cache API responses
@@ -51,10 +66,15 @@ function cache(duration = 3600) {
             return next();
         }
 
-        // Create a unique key based on the URL and user ID (if auth is present)
-        // Note: For routes like /api/v1/movies, the response depends on req.genreFilter which is user specific.
-        // So we include user._id in the cache key if it exists.
-        const userPart = req.user ? `_user:${req.user._id}` : '';
+        // Authorization policy is part of the cache identity. If an administrator
+        // changes a user's genre restrictions, the next request must not reuse a
+        // response produced under the older policy.
+        const genrePart = req.user?.allowedGenres?.length
+            ? req.user.allowedGenres.map(String).sort().join(',')
+            : 'unrestricted';
+        const userPart = req.user
+            ? `_user:${req.user._id}:admin:${Boolean(req.user.isAdmin)}:genres:${genrePart}`
+            : '';
         const key = `__express__${req.originalUrl || req.url}${userPart}`;
 
         try {
@@ -109,5 +129,8 @@ async function clearCache(pattern) {
 
 module.exports = {
     cache,
-    clearCache
+    clearCache,
+    initRedis,
+    closeRedis,
+    getRedisStatus
 };

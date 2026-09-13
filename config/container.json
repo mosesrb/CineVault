@@ -1,0 +1,6 @@
+{
+    "name": "CineVault - Container",
+    "jwtPrivateKey": "",
+    "tmdbApiKey": "",
+    "mongoURI": ""
+}

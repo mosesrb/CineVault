@@ -64,8 +64,13 @@ const userSchema = new mongoose.Schema({
 
 userSchema.methods.generateAuthToken = function () {
     const token = jwt.sign(
-        { _id: this._id, isAdmin: this.isAdmin },
-        config.get('jwtPrivateKey')
+        { _id: this._id, tokenType: 'access' },
+        config.get('jwtPrivateKey'),
+        {
+            expiresIn: '72h',
+            issuer: 'cinevault',
+            audience: 'cinevault-api'
+        }
     );
     return token;
 };
@@ -80,7 +85,7 @@ function validateUser(user) {
         isAdmin: Joi.boolean(),
         isApproved: Joi.boolean()
     };
-    return Joi.validate(user, schema);
+    return Joi.object(schema).validate(user);
 }
 
 function validateLogin(user) {
@@ -88,7 +93,7 @@ function validateLogin(user) {
         email: Joi.string().min(5).max(255).email().required(),
         password: Joi.string().min(5).max(255).required()
     };
-    return Joi.validate(user, schema);
+    return Joi.object(schema).validate(user);
 }
 
 function validateProfileUpdate(data) {
@@ -97,7 +102,7 @@ function validateProfileUpdate(data) {
         password: Joi.string().min(5).max(255),
         profilePicUrl: Joi.string().uri().allow('')
     };
-    return Joi.validate(data, schema);
+    return Joi.object(schema).validate(data);
 }
 
 async function hashPassword(password) {

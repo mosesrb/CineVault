@@ -9,7 +9,7 @@ import './Player.css'
 const TRANSCODE_EXTS = new Set(['.mkv', '.avi', '.mov', '.wmv', '.flv', '.ts', '.m2ts'])
 
 function buildStreamUrl(vaultPath, token, seekSeconds = 0, audioIndex = 0) {
-  if (!vaultPath) return null
+  if (!vaultPath || !token) return null
   const ext = '.' + vaultPath.split('.').pop().toLowerCase()
   const needsTranscode = TRANSCODE_EXTS.has(ext)
   const params = new URLSearchParams({ path: vaultPath, token })
@@ -45,6 +45,7 @@ export default function Player() {
   const [activeSubtitle, setActiveSubtitle] = useState('sidecar')
   const [localUrl, setLocalUrl] = useState(null)
   const [streamTicket, setStreamTicket] = useState(null)
+  const [streamTicketError, setStreamTicketError] = useState(false)
 
   const progressTimer = useRef(null)
 
@@ -73,6 +74,9 @@ export default function Player() {
     if (!media) return
     const vaultPath = episode?.vaultPath || media?.vaultPath
     if (!vaultPath) return
+
+    setStreamTicket(null)
+    setStreamTicketError(false)
 
     const mediaToLookup = episode?._id || id
     let objectUrl = null
@@ -121,7 +125,7 @@ export default function Player() {
         }
       })
       .catch(() => {
-        // Fallback: stored token will be used
+        setStreamTicketError(true)
       })
   }, [media, episode, localUrl])
 
@@ -172,7 +176,7 @@ export default function Player() {
     ? `${media.title} — S${episode.season}E${String(episode.episode).padStart(2, '0')} "${episode.title || 'Episode ' + episode.episode}"`
     : media.title
   const vaultPath = episode?.vaultPath || media.vaultPath
-  const effectiveToken = streamTicket || localStorage.getItem('cv_token')
+  const effectiveToken = streamTicket
   const ext = vaultPath ? '.' + vaultPath.split('.').pop().toLowerCase() : ''
   const needsTranscode = TRANSCODE_EXTS.has(ext)
 
@@ -191,9 +195,9 @@ export default function Player() {
   const hasSidecar = episode?.hasSidecarSubtitles || media?.hasSidecarSubtitles
   const serverBase = localStorage.getItem('cv_server_url') || ''
 
-  if (activeSubtitle === 'sidecar' && hasSidecar) {
+  if (effectiveToken && activeSubtitle === 'sidecar' && hasSidecar) {
     subtitlesUrl = `${serverBase}/api/v1/stream/subtitles?path=${encodeURIComponent(vaultPath)}&token=${effectiveToken}`
-  } else if (typeof activeSubtitle === 'number') {
+  } else if (effectiveToken && typeof activeSubtitle === 'number') {
     subtitlesUrl = `${serverBase}/api/v1/stream/subtitles/vtt?path=${encodeURIComponent(vaultPath)}&index=${activeSubtitle}&seek=${seekOffset}&token=${effectiveToken}`
   }
 
@@ -233,6 +237,18 @@ export default function Player() {
             isTheater={isTheater}
             onTheaterToggle={() => setIsTheater(p => !p)}
           />
+        ) : vaultPath && !localUrl ? (
+          <div className="player-no-file">
+            {streamTicketError
+              ? <AlertTriangle className="no-file-icon" size={64} style={{marginBottom:'var(--sp-4)', opacity:0.7}} />
+              : <RefreshCw className="no-file-icon animate-spin" size={64} style={{marginBottom:'var(--sp-4)', opacity:0.7}} />}
+            <h2>{streamTicketError ? 'Secure playback unavailable' : 'Preparing secure playback'}</h2>
+            <p className="text-muted text-sm">
+              {streamTicketError
+                ? 'CineVault could not create a short-lived playback ticket. Please go back and try again.'
+                : 'Requesting a short-lived playback ticket…'}
+            </p>
+          </div>
         ) : (
           <div className="player-no-file">
             <Film className="no-file-icon" size={64} style={{marginBottom:'var(--sp-4)', opacity:0.5}} />

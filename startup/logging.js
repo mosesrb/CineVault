@@ -1,9 +1,11 @@
 require('winston-mongodb');
 const winston = require('winston');
-require('express-async-errors'); // for handling uncaught async exception
 const config = require('config');
+let initialized = false;
 
 module.exports = function(){
+    if (initialized) return;
+    initialized = true;
     
     //logging error in file
     winston.exceptions.handle(
@@ -12,9 +14,11 @@ module.exports = function(){
     )
 
     // we are throwing exception on purpose so winston can catch it.
-    process.on('unhandledRejection', (ex) => {
-        throw ex;
-    });
+    if (!process.listeners('unhandledRejection').some(listener => listener.cineVaultHandler)) {
+        const rejectionHandler = (ex) => { throw ex; };
+        rejectionHandler.cineVaultHandler = true;
+        process.on('unhandledRejection', rejectionHandler);
+    }
 
     winston.configure({
         transports: [
@@ -34,8 +38,7 @@ module.exports = function(){
 
         winston.add(new winston.transports.MongoDB({
             db: logDb,
-            level: 'info',
-            options: { useUnifiedTopology: true }
+            level: 'info'
         }));
     }
 

@@ -14,7 +14,12 @@ const { ensureGenres } = require('../services/genreService');
 const { User } = require('../models/user');
 const { Session } = require('../models/session');
 const { Duplicate } = require('../models/duplicate');
-const { scanDirectory, parseFilename, generateSparseHash } = require('../services/scannerService');
+const { scanDirectoryAsync, parseFilename, generateSparseHash } = require('../services/scannerService');
+const {
+    PathSecurityError,
+    resolveExistingPathWithinRoot,
+    resolveExistingDirectoryWithinRoot
+} = require('../services/pathSecurityService');
 const { fetchMetadata } = require('../services/metadataService');
 
 // ─── SCAN STATUS TRACKER ─────────────────────────────────────
@@ -26,6 +31,15 @@ let activeScan = {
     report: null
 };
 
+function serializeLibraryConfig(library, activeKey) {
+    if (!library) return null;
+    const value = library.toObject ? library.toObject() : { ...library };
+    delete value.tmdbApiKey;
+    delete value.__v;
+    value.hasActiveTmdbKey = Boolean(activeKey);
+    return value;
+}
+
 // ─── GET /api/library/config ─────────────────────────────────
 router.get('/config', [auth, admin], async (req, res) => {
     const config = await getVaultConfig();
@@ -34,12 +48,7 @@ router.get('/config', [auth, admin], async (req, res) => {
     const { getTmdbKey } = require('../services/metadataService');
     const activeKey = await getTmdbKey();
     
-    const configObj = config.toObject ? config.toObject() : { ...config };
-    if (!configObj.tmdbApiKey && activeKey) {
-        configObj.tmdbApiKey = activeKey;
-    }
-    configObj.hasActiveTmdbKey = Boolean(activeKey);
-    res.send(configObj);
+    res.send(serializeLibraryConfig(config, activeKey));
 });
 
 // ─── PUT /api/library/config ─────────────────────────────────
@@ -54,7 +63,9 @@ router.put('/config', [auth, admin], async (req, res) => {
             req.body.inboxPath || '',
             req.body.tmdbApiKey
         );
-        res.send(library);
+        const { getTmdbKey } = require('../services/metadataService');
+        const activeKey = await getTmdbKey();
+        res.send(serializeLibraryConfig(library, activeKey));
     } catch (err) {
         res.status(500).send(`Failed to configure vault: ${err.message}`);
     }
@@ -77,12 +88,24 @@ router.post('/tmdb-key/test', [auth, admin], async (req, res) => {
 router.post('/ingest', [auth, admin], async (req, res) => {
     if (!req.body.sourcePath) return res.status(400).send('sourcePath is required.');
 
-    const fs = require('fs');
-    if (!fs.existsSync(req.body.sourcePath)) {
-        return res.status(400).send('Source path does not exist.');
+    const config = await getVaultConfig();
+    if (!config) return res.status(400).send('Vault is not configured.');
+
+    let source;
+    try {
+        source = await resolveExistingPathWithinRoot(config.vaultRootPath, req.body.sourcePath, {
+            candidateIsAbsolute: true
+        });
+    } catch (error) {
+        if (error instanceof PathSecurityError) {
+            return res.status(error.code === 'PATH_NOT_FOUND' ? 400 : 403)
+                .send(error.code === 'PATH_NOT_FOUND' ? 'Source path does not exist.' : 'Source path must be inside the configured vault.');
+        }
+        throw error;
     }
-    if (fs.statSync(req.body.sourcePath).isDirectory()) {
-        const files = scanDirectory(req.body.sourcePath);
+
+    if (source.stats.isDirectory()) {
+        const files = await scanDirectoryAsync(source.path);
         if (!files || files.length === 0) {
             return res.status(400).send('No valid media files found in directory.');
         }
@@ -186,7 +209,7 @@ router.post('/ingest', [auth, admin], async (req, res) => {
     }
 
     try {
-        const ingestResult = await ingestFile(req.body.sourcePath);
+        const ingestResult = await ingestFile(source.path);
         const parsed = parseFilename(ingestResult.vaultPath || req.body.sourcePath);
 
         if (!parsed) {
@@ -381,8 +404,17 @@ router.post('/scan', [auth, admin], async (req, res) => {
     const hashMode = req.body.hashMode || 'normal';
     let results = [];
     try {
-        results = scanDirectory(scanPath);
+        const approvedScanRoot = await resolveExistingDirectoryWithinRoot(
+            config.vaultRootPath,
+            scanPath,
+            true
+        );
+        results = await scanDirectoryAsync(approvedScanRoot.path);
     } catch (e) {
+        if (e instanceof PathSecurityError) {
+            return res.status(e.code === 'PATH_NOT_FOUND' ? 400 : 403)
+                .send(e.code === 'PATH_NOT_FOUND' ? 'Scan path does not exist.' : 'Scan path must be inside the configured vault.');
+        }
         return res.status(500).send('Error scanning directory: ' + e.message);
     }
 
@@ -700,12 +732,22 @@ router.get('/organize', [auth, admin], async (req, res) => {
 // ─── GET /api/library/stats ───────────────────────────────────
 router.get('/stats', [auth, admin], async (req, res) => {
     const config = await getVaultConfig();
+    const { getTmdbKey } = require('../services/metadataService');
+    const activeKey = config ? await getTmdbKey() : null;
     const totalMovies = await Movie.countDocuments();
     const totalShows = await TVShow.countDocuments();
     const totalEpisodes = await Episode.countDocuments();
     const totalUsers = await User.countDocuments();
     const activeSessions = await Session.countDocuments();
-    res.send({ config, totalMovies, totalShows, totalEpisodes, totalUsers, activeSessions });
+    res.send({
+        config: serializeLibraryConfig(config, activeKey),
+        totalMovies,
+        totalShows,
+        totalEpisodes,
+        totalUsers,
+        activeSessions
+    });
 });
 
 module.exports = router;
+module.exports.serializeLibraryConfig = serializeLibraryConfig;

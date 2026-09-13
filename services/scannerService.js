@@ -153,6 +153,36 @@ function scanDirectory(dirPath) {
     return results;
 }
 
+/**
+ * Asynchronous scanner used by API routes so large libraries do not block the
+ * event loop. Symbolic links/junctions are skipped to preserve root boundaries.
+ */
+async function scanDirectoryAsync(dirPath) {
+    const results = [];
+    let entries;
+    try {
+        entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+    } catch (error) {
+        if (error.code === 'ENOENT') return results;
+        throw error;
+    }
+
+    for (const entry of entries) {
+        if (entry.isSymbolicLink()) continue;
+        const fullPath = path.join(dirPath, entry.name);
+        if (entry.isDirectory()) {
+            results.push(...await scanDirectoryAsync(fullPath));
+        } else if (entry.isFile()) {
+            const parsed = parseFilename(fullPath);
+            if (parsed) {
+                const stat = await fs.promises.stat(fullPath);
+                results.push({ ...parsed, filePath: fullPath, fileSize: stat.size });
+            }
+        }
+    }
+    return results;
+}
+
 // --- Helpers ---
 
 function _cleanTitle(raw) {
@@ -182,4 +212,4 @@ function _extractResolution(name) {
     return '';
 }
 
-module.exports = { parseFilename, scanDirectory, generateSparseHash, generateDeepHash };
+module.exports = { parseFilename, scanDirectory, scanDirectoryAsync, generateSparseHash, generateDeepHash };

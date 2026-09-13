@@ -11,6 +11,13 @@
 const fs = require('fs');
 const path = require('path');
 const { Library } = require('../models/library');
+const {
+    PathSecurityError,
+    isWithinRoot,
+    resolveExistingPathWithinRoot,
+    resolveExistingFileWithinRoot,
+    resolveExistingDirectoryWithinRoot
+} = require('./pathSecurityService');
 
 /**
  * Retrieve the current library config from DB.
@@ -30,21 +37,31 @@ async function setVaultRoot(vaultRootPath, inboxPath = '', tmdbApiKey = undefine
         ? path.resolve(inboxPath)
         : path.join(resolvedVault, 'Inbox');
 
-    // Create directories if they don't exist
-    fs.mkdirSync(resolvedVault, { recursive: true });
-    fs.mkdirSync(resolvedInbox, { recursive: true });
+    if (!isWithinRoot(resolvedVault, resolvedInbox, true)) {
+        throw new PathSecurityError('Inbox path must be inside the configured vault root.');
+    }
+
+    await fs.promises.mkdir(resolvedVault, { recursive: true });
+    await fs.promises.mkdir(resolvedInbox, { recursive: true });
+
+    const canonicalInbox = await resolveExistingDirectoryWithinRoot(
+        resolvedVault,
+        resolvedInbox,
+        true
+    );
+    const canonicalVault = canonicalInbox.root;
 
     // Upsert — only one library document ever
     let library = await Library.findOne();
     if (library) {
-        library.vaultRootPath = resolvedVault;
-        library.inboxPath = resolvedInbox;
+        library.vaultRootPath = canonicalVault;
+        library.inboxPath = canonicalInbox.path;
         if (tmdbApiKey !== undefined) library.tmdbApiKey = tmdbApiKey;
         library.updatedAt = new Date();
     } else {
         library = new Library({
-            vaultRootPath: resolvedVault,
-            inboxPath: resolvedInbox,
+            vaultRootPath: canonicalVault,
+            inboxPath: canonicalInbox.path,
             tmdbApiKey: tmdbApiKey || ''
         });
     }
@@ -69,45 +86,16 @@ async function ingestFile(sourcePath) {
         throw new Error('Vault is not configured. Please set a vault root path first.');
     }
 
-    const resolvedSource = path.resolve(sourcePath);
-    const resolvedVault = path.resolve(library.vaultRootPath);
-    const resolvedInbox = library.inboxPath
-        ? path.resolve(library.inboxPath)
-        : path.join(resolvedVault, 'Inbox');
-
-    if (!fs.existsSync(resolvedSource)) {
-        throw new Error(`Source file does not exist: ${resolvedSource}`);
-    }
-
-    const isAlreadyInVault = resolvedSource.startsWith(resolvedVault);
-
-    if (isAlreadyInVault) {
-        // Already in vault — just return the relative path
-        const relativePath = path.relative(resolvedVault, resolvedSource);
-        return {
-            vaultPath: relativePath,
-            originalPath: resolvedSource,
-            alreadyInVault: true
-        };
-    }
-
-    // Move file into Inbox
-    const fileName = path.basename(resolvedSource);
-    const destPath = path.join(resolvedInbox, fileName);
-
-    // Avoid overwriting if file already exists in inbox
-    const finalDest = _getUniqueDestPath(destPath);
-
-    fs.copyFileSync(resolvedSource, finalDest);
-    fs.unlinkSync(resolvedSource); // delete original after copy
-
-    const relativePath = path.relative(resolvedVault, finalDest);
+    const source = await resolveExistingPathWithinRoot(library.vaultRootPath, sourcePath, {
+        type: 'file',
+        candidateIsAbsolute: true
+    });
+    const relativePath = path.relative(source.root, source.path);
 
     return {
         vaultPath: relativePath,
-        originalPath: resolvedSource,
-        finalPath: finalDest,
-        alreadyInVault: false
+        originalPath: source.path,
+        alreadyInVault: true
     };
 }
 
@@ -151,19 +139,14 @@ async function deleteVaultFile(relativePath) {
     const library = await getVaultConfig();
     if (!library) throw new Error('Vault is not configured.');
 
-    const resolvedVault = path.resolve(library.vaultRootPath);
-    const resolvedPath = path.resolve(resolvedVault, relativePath);
-
-    // Safety check: Ensure the resolved path is still inside the vault root
-    if (!resolvedPath.startsWith(resolvedVault)) {
-        throw new Error('Security Error: Attempted to delete a file outside the vault root.');
-    }
-
-    if (fs.existsSync(resolvedPath)) {
-        fs.unlinkSync(resolvedPath);
+    try {
+        const target = await resolveExistingFileWithinRoot(library.vaultRootPath, relativePath);
+        await fs.promises.unlink(target.path);
         return true;
+    } catch (error) {
+        if (error instanceof PathSecurityError && error.code === 'PATH_NOT_FOUND') return false;
+        throw error;
     }
-    return false;
 }
 
 /**
@@ -174,16 +157,22 @@ async function findSidecarFile(mediaRelativePath, extensions = ['.srt', '.vtt'])
     const config = await getVaultConfig();
     if (!config) return null;
 
-    const resolvedVault = path.resolve(config.vaultRootPath);
-    const baseFullPath = path.resolve(path.join(resolvedVault, mediaRelativePath));
-
-    // Safety check: Ensure baseFullPath is inside resolvedVault
-    if (!baseFullPath.startsWith(resolvedVault)) {
-        return null;
+    let mediaFile;
+    try {
+        mediaFile = await resolveExistingFileWithinRoot(config.vaultRootPath, mediaRelativePath);
+    } catch (error) {
+        if (error instanceof PathSecurityError) return null;
+        throw error;
     }
 
+    const baseFullPath = mediaFile.path;
     const dir = path.dirname(baseFullPath);
-    if (!fs.existsSync(dir)) return null;
+    let entries;
+    try {
+        entries = await fs.promises.readdir(dir);
+    } catch (_) {
+        return null;
+    }
 
     const ext = path.extname(baseFullPath);
     const baseName = path.basename(baseFullPath, ext);
@@ -191,13 +180,31 @@ async function findSidecarFile(mediaRelativePath, extensions = ['.srt', '.vtt'])
     for (const subExt of extensions) {
         // Try exact match: Movie.mkv -> Movie.srt
         const candidate1 = path.join(dir, baseName + subExt);
-        if (fs.existsSync(candidate1)) return candidate1;
+        try {
+            const exact = await resolveExistingPathWithinRoot(config.vaultRootPath, candidate1, {
+                type: 'file',
+                candidateIsAbsolute: true
+            });
+            return exact.path;
+        } catch (error) {
+            if (!(error instanceof PathSecurityError)) throw error;
+        }
 
         // Try language match: Movie.mkv -> Movie.en.srt
         // (Basic check for common naming patterns)
-        const entries = fs.readdirSync(dir);
         const match = entries.find(f => f.startsWith(baseName) && f.endsWith(subExt));
-        if (match) return path.join(dir, match);
+        if (match) {
+            try {
+                const matched = await resolveExistingPathWithinRoot(
+                    config.vaultRootPath,
+                    path.join(dir, match),
+                    { type: 'file', candidateIsAbsolute: true }
+                );
+                return matched.path;
+            } catch (error) {
+                if (!(error instanceof PathSecurityError)) throw error;
+            }
+        }
     }
 
     return null;

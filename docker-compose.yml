@@ -1,27 +1,35 @@
-version: '3.8'
-
 services:
   cinevault:
     build: .
     container_name: cinevault-app
+    init: true
     restart: unless-stopped
+    stop_grace_period: 30s
     ports:
       - "3000:3000"
     environment:
-      - NODE_ENV=production
-      - PORT=3000
-      - delatron_MONGODB_URI=mongodb://mongo:27017/cinevault
-      - REDIS_URL=redis://redis:6379
+      NODE_ENV: production
+      PORT: 3000
+      delatron_MONGODB_URI: mongodb://${MONGO_USERNAME:?Set MONGO_USERNAME}:${MONGO_PASSWORD:?Set MONGO_PASSWORD}@mongo:27017/cinevault?authSource=admin
+      REDIS_URL: redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD}@redis:6379
       # Pass API keys through environment variables if set in .env
-      - delatron_TMDB_API_KEY=${TMDB_API_KEY:-}
-      - delatron_jwtPrivateKey=${JWT_PRIVATE_KEY:-}
+      delatron_TMDB_API_KEY: ${TMDB_API_KEY:-}
+      delatron_jwtPrivateKey: ${JWT_PRIVATE_KEY:?Set JWT_PRIVATE_KEY}
     volumes:
       # Map the user's host media directory to /media inside the container.
       # The user will configure the path inside the app's Admin Settings to be '/media'
       - ${HOST_MEDIA_PATH:-./media}:/media
     depends_on:
-      - mongo
-      - redis
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
     networks:
       - cinevault_net
 
@@ -29,10 +37,17 @@ services:
     image: mongo:6.0
     container_name: cinevault-db
     restart: unless-stopped
-    ports:
-      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USERNAME:?Set MONGO_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:?Set MONGO_PASSWORD}
     volumes:
       - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --username \"$$MONGO_INITDB_ROOT_USERNAME\" --password \"$$MONGO_INITDB_ROOT_PASSWORD\" --authenticationDatabase admin --eval \"quit(db.adminCommand('ping').ok ? 0 : 2)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
     networks:
       - cinevault_net
 
@@ -40,10 +55,17 @@ services:
     image: redis:7-alpine
     container_name: cinevault-redis
     restart: unless-stopped
-    ports:
-      - "6379:6379"
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD}
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?Set REDIS_PASSWORD}"]
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
     networks:
       - cinevault_net
 

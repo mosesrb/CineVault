@@ -1,5 +1,11 @@
 apply plugin: 'com.android.application'
 
+def releaseKeystorePath = System.getenv('CINEVAULT_KEYSTORE_PATH')
+def releaseStorePassword = System.getenv('CINEVAULT_KEYSTORE_PASSWORD')
+def releaseKeyAlias = System.getenv('CINEVAULT_KEY_ALIAS')
+def releaseKeyPassword = System.getenv('CINEVAULT_KEY_PASSWORD')
+def hasReleaseSigning = releaseKeystorePath && releaseStorePassword && releaseKeyAlias && releaseKeyPassword
+
 android {
     namespace = "com.cinevault.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -17,11 +23,13 @@ android {
         }
     }
     signingConfigs {
-        release {
-            storeFile file("release-key.keystore")
-            storePassword "cinevault123"
-            keyAlias "release"
-            keyPassword "cinevault123"
+        if (hasReleaseSigning) {
+            release {
+                storeFile file(releaseKeystorePath)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
         }
     }
 
@@ -29,7 +37,9 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-            signingConfig signingConfigs.release
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 

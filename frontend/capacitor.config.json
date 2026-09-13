@@ -3,10 +3,10 @@
   "appName": "CineVault",
   "webDir": "dist",
   "server": {
-    "androidScheme": "http",
-    "cleartext": true
+    "androidScheme": "https",
+    "cleartext": false
   },
   "android": {
-    "allowMixedContent": true
+    "allowMixedContent": false
   }
 }

@@ -4,7 +4,7 @@ let app;
 
 describe('/api/v1/auth', () => {
     beforeEach(async () => { 
-        app = require('../../index'); 
+        app = require('../../app').createApp();
         await User.deleteMany({});
     });
     afterEach(async () => {

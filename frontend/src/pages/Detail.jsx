@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { getMovie, getTVShow, getSeasonEpisodes, addToWatchlist, getMe, deleteMovie, deleteTVShow, deleteEpisode, resolveUrl } from '../api'
+import { getMovie, getTVShow, getSeasonEpisodes, addToWatchlist, getMe, deleteMovie, deleteTVShow, deleteEpisode, getStreamTicket, resolveUrl } from '../api'
 import { Clapperboard, MonitorPlay, Clock, Star, Play, PlayCircle, Plus, Check, Trash2, Download } from 'lucide-react'
 import DownloadButton from '../components/DownloadButton'
 import ConfirmModal from '../components/ConfirmModal'
@@ -32,6 +32,7 @@ export default function Detail() {
   const [watchlisted, setWatchlisted] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
   const [deleteError, setDeleteError] = useState('')
+  const [downloadError, setDownloadError] = useState('')
   const [viewerOpen, setViewerOpen] = useState(false)
   const [viewerIndex, setViewerIndex] = useState(0)
   const navigate = useNavigate()
@@ -71,6 +72,24 @@ export default function Detail() {
       await addToWatchlist(media._id, normalizedType)
       setWatchlisted(true)
     } catch {}
+  }
+
+  async function handleBrowserDownload(vaultPath) {
+    setDownloadError('')
+    try {
+      const response = await getStreamTicket(vaultPath, 'download')
+      const downloadUrl = buildBrowserDownloadUrl(vaultPath, response.data?.ticket)
+      if (!downloadUrl) throw new Error('A download ticket was not returned.')
+      const link = document.createElement('a')
+      link.href = downloadUrl
+      link.download = ''
+      link.rel = 'noopener'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+    } catch (error) {
+      setDownloadError(error.response?.data || error.message || 'Download could not be started.')
+    }
   }
 
   async function handleConfirmDelete(deleteFile) {
@@ -269,15 +288,17 @@ export default function Detail() {
                 />
               )}
               {/* Web browser direct download — only on non-Capacitor */}
-              {!isCapacitor && isMovie && media.vaultPath && (() => {
-                const token = localStorage.getItem('cv_token')
-                const dlUrl = buildBrowserDownloadUrl(media.vaultPath, token)
-                return dlUrl ? (
-                  <a href={dlUrl} download className="btn btn-ghost btn-lg" title="Download file to disk">
-                    <Download size={20} /> Save File
-                  </a>
-                ) : null
-              })()}
+              {!isCapacitor && isMovie && media.vaultPath && (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-lg"
+                  title="Download file to disk"
+                  onClick={() => handleBrowserDownload(media.vaultPath)}
+                >
+                  <Download size={20} /> Save File
+                </button>
+              )}
+              {downloadError && <span className="text-danger text-sm">{downloadError}</span>}
 
               <button
                 className={`btn btn-ghost btn-lg ${watchlisted ? 'watchlisted' : ''}`}

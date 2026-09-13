@@ -1,6 +1,6 @@
 {
     "name": "",
-    "jwtPrivateKey": "delatron_jwtPrivateKey",
+    "jwtPrivateKey": "",
     "host": {
         "domain": "",
         "dbuser": "",

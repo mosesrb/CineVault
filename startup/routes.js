@@ -15,9 +15,11 @@ const search = require('../routes/search');
 const stream = require('../routes/stream');
 const discover = require('../routes/discover');
 const adminSessions = require('../routes/admin_sessions');
+const { createHealthRouter } = require('./health');
 
 module.exports = function (app) {
     app.use(express.json());
+    app.use('/health', createHealthRouter());
     // 1. Simple Request Logger — MOVE TO TOP to see all preflight (OPTIONS) traffic
     app.use((req, res, next) => {
         if (req.path.startsWith('/api/v1/stream')) {

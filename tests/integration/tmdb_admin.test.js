@@ -12,7 +12,7 @@ jest.setTimeout(15000);
 
 describe('Phase 5: Dynamic TMDB API Key & Settings', () => {
     beforeEach(async () => {
-        app = require('../../index');
+        app = require('../../app').createApp();
         if (mongoose.connection.readyState !== 1) {
             await new Promise(r => mongoose.connection.once('open', r));
         }
@@ -24,7 +24,8 @@ describe('Phase 5: Dynamic TMDB API Key & Settings', () => {
             name: 'Admin Boss',
             email: 'admin_boss@test.com',
             password: 'password123',
-            isAdmin: true
+            isAdmin: true,
+            isApproved: true
         });
         await adminUser.save();
         adminToken = adminUser.generateAuthToken();
@@ -48,10 +49,19 @@ describe('Phase 5: Dynamic TMDB API Key & Settings', () => {
             });
 
         expect(res.status).toBe(200);
-        expect(res.body.tmdbApiKey).toBe('mock_tmdb_key_12345');
+        expect(res.body.tmdbApiKey).toBeUndefined();
+        expect(res.body.hasActiveTmdbKey).toBe(true);
 
         const inDb = await Library.findOne();
         expect(inDb.tmdbApiKey).toBe('mock_tmdb_key_12345');
+
+        const getRes = await request(app)
+            .get('/api/v1/library/config')
+            .set('x-auth-token', adminToken);
+
+        expect(getRes.status).toBe(200);
+        expect(getRes.body.tmdbApiKey).toBeUndefined();
+        expect(getRes.body.hasActiveTmdbKey).toBe(true);
     });
 
     it('should dynamically prioritize database tmdbApiKey over config file', async () => {

@@ -71,7 +71,7 @@ function validateEpisode(ep) {
         stillUrl: Joi.string().allow(''),
         rating: Joi.number().min(0).max(10)
     };
-    return Joi.validate(ep, schema);
+    return Joi.object(schema).validate(ep);
 }
 
 module.exports.Episode = Episode;

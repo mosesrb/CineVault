@@ -37,7 +37,7 @@ function validateGenre(genre) {
         name: Joi.string().min(2).max(50).required(),
         slug: Joi.string().min(2).max(60).lowercase()
     };
-    return Joi.validate(genre, schema);
+    return Joi.object(schema).validate(genre);
 }
 
 module.exports.Genre = Genre;

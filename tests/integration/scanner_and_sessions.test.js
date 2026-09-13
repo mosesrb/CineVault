@@ -3,7 +3,7 @@ const { parseFilename } = require('../../services/scannerService');
 const { ensureGenres } = require('../../services/genreService');
 const { Genre } = require('../../models/genre');
 const { User } = require('../../models/user');
-const { Session } = require('../../models/session');
+const { Session, hashSessionToken } = require('../../models/session');
 let app;
 let adminToken;
 let userToken;
@@ -11,7 +11,7 @@ let adminUser;
 
 describe('Phase 4: Scanner, Genres & Admin Sessions', () => {
     beforeEach(async () => {
-        app = require('../../index');
+        app = require('../../app').createApp();
         await Genre.deleteMany({});
         await User.deleteMany({});
         await Session.deleteMany({});
@@ -20,7 +20,8 @@ describe('Phase 4: Scanner, Genres & Admin Sessions', () => {
             name: 'Admin Boss',
             email: 'admin_boss@test.com',
             password: 'password123',
-            isAdmin: true
+            isAdmin: true,
+            isApproved: true
         });
         await adminUser.save();
         adminToken = adminUser.generateAuthToken();
@@ -30,7 +31,8 @@ describe('Phase 4: Scanner, Genres & Admin Sessions', () => {
             name: 'Regular Joe',
             email: 'joe@test.com',
             password: 'password123',
-            isAdmin: false
+            isAdmin: false,
+            isApproved: true
         });
         await regularUser.save();
         userToken = regularUser.generateAuthToken();
@@ -84,19 +86,26 @@ describe('Phase 4: Scanner, Genres & Admin Sessions', () => {
 
     describe('Admin Sessions REST API', () => {
         it('should revoke a single session using DELETE /:id', async () => {
-            const sessionsBefore = await Session.find();
+            const sessionsBefore = await Session.find().select('+tokenDigest');
             expect(sessionsBefore.length).toBe(2);
 
-            const sessionToDelete = sessionsBefore.find(s => s.token === userToken);
+            const sessionToDelete = sessionsBefore.find(
+                s => s.tokenDigest === hashSessionToken(userToken)
+            );
 
             const res = await request(app)
                 .delete(`/api/v1/admin/sessions/${sessionToDelete._id}`)
                 .set('x-auth-token', adminToken);
 
             expect(res.status).toBe(200);
+            expect(res.body.token).toBeUndefined();
+            expect(res.body.tokenDigest).toBeUndefined();
             const sessionsAfter = await Session.find();
             expect(sessionsAfter.length).toBe(1);
-            expect(sessionsAfter[0].token).toBe(adminToken);
+            const remainingAdmin = await Session.findOne({
+                tokenDigest: hashSessionToken(adminToken)
+            });
+            expect(remainingAdmin).not.toBeNull();
         });
 
         it('should clear other sessions using POST /clear while preserving current admin session with Bearer header', async () => {
@@ -107,9 +116,22 @@ describe('Phase 4: Scanner, Genres & Admin Sessions', () => {
             expect(res.status).toBe(200);
             expect(res.body.count).toBe(1); // Joe's session was deleted
 
-            const remaining = await Session.find();
+            const remaining = await Session.find().select('+tokenDigest');
             expect(remaining.length).toBe(1);
-            expect(remaining[0].token).toBe(adminToken);
+            expect(remaining[0].tokenDigest).toBe(hashSessionToken(adminToken));
+        });
+
+        it('should list session metadata without bearer tokens or token digests', async () => {
+            const res = await request(app)
+                .get('/api/v1/admin/sessions')
+                .set('x-auth-token', adminToken);
+
+            expect(res.status).toBe(200);
+            expect(res.body).toHaveLength(2);
+            for (const session of res.body) {
+                expect(session.token).toBeUndefined();
+                expect(session.tokenDigest).toBeUndefined();
+            }
         });
     });
 });

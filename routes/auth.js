@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcrypt');
 const { User, validateLogin } = require('../models/user');
+const { createSessionForRequest } = require('../services/sessionService');
 
 // POST /api/auth/login
 router.post('/', async (req, res) => {
@@ -38,39 +39,12 @@ router.post('/', async (req, res) => {
 
     const token = user.generateAuthToken();
 
-    // Record session
+    // Record the revocable session before returning its bearer token.
     try {
-        const { Session } = require('../models/session');
-        const ua = req.header('user-agent') || '';
-        
-        let platform = 'Desktop';
-        if (/mobile|android|iphone|ipad/i.test(ua)) platform = 'Mobile';
-        if (/smart-tv|googletv|appletv|hbbtv/i.test(ua)) platform = 'TV';
-
-        let ip = req.headers['x-forwarded-for']?.split(',')[0] || 
-                 req.ip || 
-                 req.socket.remoteAddress || 
-                 '127.0.0.1';
-
-        // Normalize Localhost
-        if (ip === '::1' || ip === '::ffff:127.0.0.1') ip = '127.0.0.1';
-
-        const sessionData = {
-            userId: user._id,
-            token,
-            ip,
-            userAgent: ua,
-            device: {
-                platform,
-                os: ua.match(/\(([^)]+)\)/)?.[1]?.split(';')[0] || 'Unknown'
-            }
-        };
-
-        const session = new Session(sessionData);
-        await session.save();
+        await createSessionForRequest(user, token, req);
     } catch (ex) {
-        // Log details but don't block the login response
-        console.error('[Session Error]', ex.message);
+        console.error(`[Session Error] ${ex.name || 'persistence failure'}`);
+        return res.status(503).send('Login is temporarily unavailable.');
     }
 
     res.send({ 

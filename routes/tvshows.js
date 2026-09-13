@@ -14,6 +14,20 @@ const { ensureGenres } = require('../services/genreService');
 const { fetchMetadata } = require('../services/metadataService');
 const { deleteVaultFile } = require('../services/vaultService');
 const { cache, clearCache } = require('../middleware/cache');
+const { assertMediaAllowed, ContentAccessError } = require('../services/contentPolicyService');
+
+function enforceShowPolicy(req, res, show) {
+    try {
+        assertMediaAllowed(req.user, show);
+        return true;
+    } catch (error) {
+        if (error instanceof ContentAccessError) {
+            res.status(error.status).send(error.message);
+            return false;
+        }
+        throw error;
+    }
+}
 
 // ─── TV SHOWS ─────────────────────────────────────────────────
 
@@ -247,9 +261,10 @@ router.post('/:id/link', [auth, admin, validateObjectId], async (req, res) => {
  * @desc    Get all episodes for a show
  * @access  Private
  */
-router.get('/:id/episodes', [auth, validateObjectId, cache(3600)], async (req, res) => {
+router.get('/:id/episodes', [auth, genreGuard, validateObjectId, cache(3600)], async (req, res) => {
     const show = await TVShow.findById(req.params.id);
     if (!show) return res.status(404).send('TV Show not found.');
+    if (!enforceShowPolicy(req, res, show)) return;
 
     const episodes = await Episode.find({ showId: req.params.id })
         .sort({ season: 1, episode: 1 });
@@ -287,7 +302,11 @@ router.get('/:id/episodes', [auth, validateObjectId, cache(3600)], async (req, r
  * @desc    Get all episodes for a specific season
  * @access  Private
  */
-router.get('/:id/seasons/:season/episodes', [auth, validateObjectId, cache(3600)], async (req, res) => {
+router.get('/:id/seasons/:season/episodes', [auth, genreGuard, validateObjectId, cache(3600)], async (req, res) => {
+    const show = await TVShow.findById(req.params.id);
+    if (!show) return res.status(404).send('TV Show not found.');
+    if (!enforceShowPolicy(req, res, show)) return;
+
     const episodes = await Episode.find({
         showId: req.params.id,
         season: parseInt(req.params.season, 10)

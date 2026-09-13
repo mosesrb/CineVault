@@ -10,7 +10,7 @@ let user;
 
 describe('Phase 3: Database & Performance Optimizations', () => {
     beforeEach(async () => {
-        app = require('../../index');
+        app = require('../../app').createApp();
         await Movie.deleteMany({});
         await TVShow.deleteMany({});
         await Episode.deleteMany({});
@@ -21,7 +21,8 @@ describe('Phase 3: Database & Performance Optimizations', () => {
             name: 'Batch User',
             email: 'batch@test.com',
             password: 'password123',
-            isAdmin: true
+            isAdmin: true,
+            isApproved: true
         });
         await user.save();
         token = user.generateAuthToken();
