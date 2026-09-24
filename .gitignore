@@ -83,3 +83,8 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+
+# Project Directives Clean Split (Private Vault)
+.project/
+docs/internal/
+
