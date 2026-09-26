@@ -27,10 +27,10 @@ describe('Android release transport and signing configuration', () => {
 
         expect(debugManifest).toContain('android:usesCleartextTraffic="true"');
         expect(debugNetworkConfig).toContain('cleartextTrafficPermitted="true"');
-        expect(debugCapacitor.server.androidScheme).toBe('https');
-        expect(debugCapacitor.android.allowMixedContent).toBe(true);
-        expect(activity).toContain('ApplicationInfo.FLAG_DEBUGGABLE');
-        expect(activity).toContain('MIXED_CONTENT_ALWAYS_ALLOW');
+        expect(debugCapacitor.server.androidScheme).toBe('http');
+        expect(debugCapacitor.server.cleartext).toBe(true);
+        expect(debugCapacitor.android.allowMixedContent).toBe(false);
+        expect(activity).not.toContain('MIXED_CONTENT_ALWAYS_ALLOW');
     });
 
     it('loads release signing secrets only from the process environment', () => {
