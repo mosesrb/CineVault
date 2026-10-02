@@ -149,16 +149,6 @@ export default function Player() {
     return () => clearInterval(progressTimer.current)
   }, [media, episode, id, type, epId, seekOffset])
 
-  // ── Keyboard: T = theater ─────────────────────────────────────────────
-  useEffect(() => {
-    const onKey = (e) => {
-      if (e.key.toLowerCase() === 't' && !e.ctrlKey && !e.metaKey)
-        setIsTheater(p => !p)
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
-
   const handleSeek = useCallback((t) => setSeekOffset(Math.floor(t)), [])
   const handleAudioChange = useCallback((idx) => {
     // Snapshot current position before switching track

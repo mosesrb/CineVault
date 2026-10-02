@@ -38,16 +38,22 @@ const IC = {
 
 // ─── popup menu ───────────────────────────────────────────────────────────────
 function MenuPanel({ title, items, activeValue, onSelect, onClose }) {
+  const panelRef = useRef(null)
+  useEffect(() => {
+    const panel = panelRef.current
+    ;(panel?.querySelector('.cp-menu-row--on') || panel?.querySelector('.cp-menu-row'))?.focus()
+  }, [])
   return (
-    <div className="cp-menu" onClick={e => e.stopPropagation()}>
+    <div ref={panelRef} className="cp-menu" role="group" aria-label={title} onClick={e => e.stopPropagation()}>
       <div className="cp-menu-head">
         <span>{title}</span>
-        <button className="cp-menu-x" onClick={onClose}><Icon d={IC.close} size={15} /></button>
+        <button className="cp-menu-x" aria-label={`Close ${title} menu`} onClick={onClose}><Icon d={IC.close} size={15} /></button>
       </div>
       {items.map(item => (
         <button
           key={item.value}
           className={`cp-menu-row${item.value === activeValue ? ' cp-menu-row--on' : ''}`}
+          aria-pressed={item.value === activeValue}
           onClick={() => { onSelect(item.value); onClose() }}
         >
           <span>{item.label}</span>
@@ -70,6 +76,8 @@ export default function CinemaPlayer({
   const wrapperRef = useRef(null)
   const videoRef = useRef(null)
   const barRef = useRef(null)
+  const surfaceRef = useRef(null)
+  const menuOpenerRef = useRef(null)
   const hideTimer = useRef(null)
   const dragging = useRef(false)
 
@@ -112,9 +120,89 @@ export default function CinemaPlayer({
     setShowCtrl(true)
     clearTimeout(hideTimer.current)
     hideTimer.current = setTimeout(() => {
-      if (!dragging.current && !isLongPressActiveRef.current && !accumulatedSeekRef.current) setShowCtrl(false)
+      const focusedControl = wrapperRef.current?.querySelector('.cp-controls')?.contains(document.activeElement)
+      if (!focusedControl && !dragging.current && !isLongPressActiveRef.current && !accumulatedSeekRef.current) setShowCtrl(false)
     }, 3000)
   }, [])
+  const closeMenu = useCallback(() => {
+    setMenu(null)
+    menuOpenerRef.current?.focus()
+    showControls()
+  }, [showControls])
+
+  const openMenu = (event, name) => {
+    event.stopPropagation()
+    if (menu === name) closeMenu()
+    else {
+      menuOpenerRef.current = event.currentTarget
+      setMenu(name)
+      showControls()
+    }
+  }
+
+  // D-pad navigation is local to this player, not inferred from a device UA.
+  // Native button activation remains intact; Enter must not also toggle video.
+  const onPlayerKey = (event) => {
+    const target = event.target
+    const panel = target.closest('.cp-menu')
+    if ((menu || fullscreen) && event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      if (menu) closeMenu()
+      else toggleFs()
+      return
+    }
+    if (target === barRef.current && ['Home', 'End'].includes(event.key)) {
+      event.preventDefault()
+      event.stopPropagation()
+      doSeek(event.key === 'Home' ? 0 : total)
+      showControls()
+      return
+    }
+    if (!event.key.startsWith('Arrow')) return
+    let handled = false
+    if (panel) {
+      const choices = Array.from(panel.querySelectorAll('button:not(:disabled)'))
+      const index = choices.indexOf(target)
+      if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+        choices[Math.max(0, Math.min(choices.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1)))]?.focus()
+      }
+      handled = true // Keep focus in the open menu; do not seek behind it.
+    } else if (target === barRef.current) {
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        doSeek(absTime + (event.key === 'ArrowRight' ? 1 : -1) * (event.shiftKey ? 10 : 5))
+      } else if (event.key === 'ArrowUp') surfaceRef.current?.focus()
+      else wrapperRef.current?.querySelector('.cp-row button')?.focus()
+      handled = true
+    } else if (target.closest('.cp-row') && (target.tagName === 'BUTTON' || target.type === 'range')) {
+      const isVolume = target.type === 'range'
+      // Left/Right on the native range changes volume; Up/Down exits the range.
+      if (isVolume && ['ArrowLeft', 'ArrowRight'].includes(event.key)) return
+      // Skip CSS-hidden controls (including their hidden mobile ancestors).
+      const choices = Array.from(wrapperRef.current.querySelectorAll('.cp-row button:not(:disabled), .cp-row input[type="range"]:not(:disabled)')).filter(control => {
+        for (let node = control; node && node !== wrapperRef.current; node = node.parentElement) {
+          const style = getComputedStyle(node)
+          if (style.display === 'none' || style.visibility === 'hidden') return false
+        }
+        return true
+      })
+      if (!isVolume && event.key === 'ArrowUp') barRef.current?.focus()
+      else if (!isVolume && event.key === 'ArrowDown') surfaceRef.current?.focus()
+      else {
+        const index = choices.indexOf(target)
+        choices[Math.max(0, Math.min(choices.length - 1, index + (['ArrowRight', 'ArrowDown'].includes(event.key) ? 1 : -1)))]?.focus()
+      }
+      handled = true
+    } else if ((target === surfaceRef.current || target === videoRef.current) && event.key === 'ArrowDown') {
+      wrapperRef.current?.querySelector('.cp-row button')?.focus()
+      handled = true
+    }
+    if (handled) {
+      event.preventDefault()
+      event.stopPropagation()
+      showControls()
+    }
+  }
   useEffect(() => () => {
     clearTimeout(hideTimer.current)
     clearTimeout(singleTapTimerRef.current)
@@ -252,10 +340,59 @@ export default function CinemaPlayer({
     return () => clearTimeout(t)
   }, [subsOn, subtitlesUrl, src?.src])
 
+  const toggleFs = useCallback(async () => {
+    const el = wrapperRef.current
+    const isCurrentlyFs = !!(
+      document.fullscreenElement ||
+      document.webkitFullscreenElement ||
+      document.mozFullScreenElement ||
+      document.msFullscreenElement ||
+      fullscreen
+    )
+
+    if (!isCurrentlyFs) {
+      if (el) {
+        try {
+          if (el.requestFullscreen) {
+            await el.requestFullscreen()
+          } else if (el.webkitRequestFullscreen) {
+            await el.webkitRequestFullscreen()
+          } else if (el.mozRequestFullScreen) {
+            await el.mozRequestFullScreen()
+          } else if (el.msRequestFullscreen) {
+            await el.msRequestFullscreen()
+          }
+        } catch {
+          // Native fullscreen rejected or unsupported in WebView — fall back to CSS fullscreen
+        }
+      }
+      setFullscreen(true)
+      handleOrientationLock(true)
+    } else {
+      try {
+        if (document.exitFullscreen && document.fullscreenElement) {
+          await document.exitFullscreen()
+        } else if (document.webkitExitFullscreen && document.webkitFullscreenElement) {
+          await document.webkitExitFullscreen()
+        } else if (document.mozCancelFullScreen && document.mozFullScreenElement) {
+          await document.mozCancelFullScreen()
+        }
+      } catch {
+        // Ignore exit errors
+      }
+      setFullscreen(false)
+      handleOrientationLock(false)
+    }
+  }, [fullscreen, handleOrientationLock])
+
   // ── keyboard shortcuts (5s jumps, 10s shifts, playback) ─────────────
   useEffect(() => {
     const onKey = (e) => {
-      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return
+      if (e.defaultPrevented) return
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+      // Leave native controls and controls outside the player alone.
+      if (e.target.closest('button, input, textarea, select, a, [role="slider"], [contenteditable="true"]')) return
+      if (e.target !== document.body && !wrapperRef.current?.contains(e.target)) return
       const v = videoRef.current; if (!v) return
 
       let handled = true
@@ -279,12 +416,16 @@ export default function CinemaPlayer({
         case 'ArrowUp':
           v.volume = Math.min(1, v.volume + 0.1); setVolume(v.volume); break
         case 'ArrowDown':
-          v.volume = Math.max(0, v.volume - 0.1); setVolume(v.volume); break
+          wrapperRef.current?.querySelector('.cp-row button')?.focus(); break
         case 'm': v.muted = !v.muted; setMuted(v.muted); break
         case 'f': toggleFs(); break
         case 't': onTheaterToggle?.(); break
         case 'c': if (subtitlesUrl) setSubsOn(p => !p); break
-        case 'Escape': setMenu(null); break
+        case 'Escape':
+          if (menu) closeMenu()
+          else if (fullscreen) toggleFs()
+          else handled = false
+          break
         default: handled = false
       }
 
@@ -295,7 +436,7 @@ export default function CinemaPlayer({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [absTime, subtitlesUrl, showControls, onTheaterToggle, doSeek, total])
+  }, [absTime, subtitlesUrl, showControls, onTheaterToggle, doSeek, total, menu, closeMenu, fullscreen, toggleFs])
 
   // ── YouTube Multi-Tap Seek Commit ────────────────────────────────────
   const commitSeek = useCallback((delta) => {
@@ -563,61 +704,18 @@ export default function CinemaPlayer({
   }
 
   // ── Fullscreen toggle with WebView Fallback & Android back support ────
-  const toggleFs = useCallback(async () => {
-    const el = wrapperRef.current
-    const isCurrentlyFs = !!(
-      document.fullscreenElement ||
-      document.webkitFullscreenElement ||
-      document.mozFullScreenElement ||
-      document.msFullscreenElement ||
-      fullscreen
-    )
 
-    if (!isCurrentlyFs) {
-      if (el) {
-        try {
-          if (el.requestFullscreen) {
-            await el.requestFullscreen()
-          } else if (el.webkitRequestFullscreen) {
-            await el.webkitRequestFullscreen()
-          } else if (el.mozRequestFullScreen) {
-            await el.mozRequestFullScreen()
-          } else if (el.msRequestFullscreen) {
-            await el.msRequestFullscreen()
-          }
-        } catch {
-          // Native fullscreen rejected or unsupported in WebView — fall back to CSS fullscreen
-        }
-      }
-      setFullscreen(true)
-      handleOrientationLock(true)
-    } else {
-      try {
-        if (document.exitFullscreen && document.fullscreenElement) {
-          await document.exitFullscreen()
-        } else if (document.webkitExitFullscreen && document.webkitFullscreenElement) {
-          await document.webkitExitFullscreen()
-        } else if (document.mozCancelFullScreen && document.mozFullScreenElement) {
-          await document.mozCancelFullScreen()
-        }
-      } catch {
-        // Ignore exit errors
-      }
-      setFullscreen(false)
-      handleOrientationLock(false)
-    }
-  }, [fullscreen, handleOrientationLock])
-
-  // Android hardware back button handler when in fullscreen mode
+  // Menus consume Back before fullscreen and route navigation.
   useEffect(() => {
-    if (!fullscreen) return
+    if (!fullscreen && !menu) return
     const handleBack = (e) => {
       e.preventDefault?.()
-      toggleFs()
+      if (menu) closeMenu()
+      else toggleFs()
     }
     window.addEventListener('cv_hardware_back', handleBack)
     return () => window.removeEventListener('cv_hardware_back', handleBack)
-  }, [fullscreen, toggleFs])
+  }, [fullscreen, menu, closeMenu, toggleFs])
 
   const togglePip = () => {
     if (document.pictureInPictureElement) document.exitPictureInPicture()
@@ -646,11 +744,14 @@ export default function CinemaPlayer({
     <div
       ref={wrapperRef}
       className={`cp${fullscreen ? ' cp--fs' : ''}${isTheater ? ' cp--theater' : ''}`}
+      onKeyDown={onPlayerKey}
+      onFocus={showControls}
+      onBlur={showControls}
       onMouseMove={showControls}
       onMouseEnter={showControls}
       onMouseLeave={() => {
         stopLongPress()
-        if (playing && !menu) setShowCtrl(false)
+        if (playing && !menu && !wrapperRef.current?.contains(document.activeElement)) setShowCtrl(false)
       }}
       onClick={() => setMenu(null)}
     >
@@ -673,7 +774,11 @@ export default function CinemaPlayer({
 
       {/* ── Dedicated Touch & Gesture Surface ── */}
       <div
+        ref={surfaceRef}
         className="cp-touch-surface"
+        tabIndex={0}
+        role="button"
+        aria-label="Video playback; press Down for controls"
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
         onTouchCancel={handleTouchCancel}
@@ -741,6 +846,13 @@ export default function CinemaPlayer({
         <div
           ref={barRef}
           className="cp-bar"
+          tabIndex={0}
+          role="slider"
+          aria-label="Playback position"
+          aria-valuemin={0}
+          aria-valuemax={total}
+          aria-valuenow={Math.max(0, Math.min(total, absTime))}
+          aria-valuetext={`${fmt(absTime)} of ${fmt(total)}`}
           onMouseDown={onBarMouseDown}
           onMouseMove={onBarMouseMove}
           onMouseLeave={() => setHoverPct(null)}
@@ -808,6 +920,7 @@ export default function CinemaPlayer({
                 onChange={e => setVol(parseFloat(e.target.value))}
                 className="cp-vol-range"
                 aria-label="Volume slider"
+                aria-description="Left and Right adjust volume; Up and Down move to adjacent controls"
               />
             </div>
 
@@ -825,8 +938,9 @@ export default function CinemaPlayer({
               <div className="cp-anchor">
                 <button
                   className={`cp-btn${(subtitlesUrl && subsOn) ? ' cp-btn--on' : ''}`}
-                  onClick={e => { e.stopPropagation(); setMenu(menu === 'sub' ? null : 'sub') }}
+                  onClick={e => openMenu(e, 'sub')}
                   aria-label="Subtitles menu"
+                  aria-expanded={menu === 'sub'}
                 >
                   <Icon d={IC.sub} />
                 </button>
@@ -841,7 +955,7 @@ export default function CinemaPlayer({
                         onSubtitleChange?.(v)
                       }
                     }}
-                    onClose={() => setMenu(null)}
+                    onClose={closeMenu}
                   />
                 )}
               </div>
@@ -851,8 +965,9 @@ export default function CinemaPlayer({
             {audioTracks.length > 0 && (
               <div className="cp-anchor">
                 <button className="cp-btn"
-                  onClick={e => { e.stopPropagation(); setMenu(menu === 'audio' ? null : 'audio') }}
+                  onClick={e => openMenu(e, 'audio')}
                   aria-label="Audio tracks menu"
+                  aria-expanded={menu === 'audio'}
                 >
                   <Icon d={IC.audio} />
                 </button>
@@ -860,7 +975,7 @@ export default function CinemaPlayer({
                   <MenuPanel title="Audio" items={audioItems}
                     activeValue={activeAudio}
                     onSelect={v => onAudioChange?.(v)}
-                    onClose={() => setMenu(null)}
+                    onClose={closeMenu}
                   />
                 )}
               </div>

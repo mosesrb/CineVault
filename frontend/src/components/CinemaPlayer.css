@@ -111,6 +111,19 @@
   touch-action: manipulation;
 }
 
+/* Keep remote/keyboard focus visible, including over decoded video. */
+.cp-touch-surface:focus-visible {
+    outline: 3px solid var(--acc);
+    outline-offset: -4px;
+}
+
+.cp-bar:focus-visible,
+.cp-btn:focus-visible,
+.cp-menu-x:focus-visible {
+    outline: 3px solid var(--acc);
+    outline-offset: 2px;
+}
+
 /* controls overlay */
 .cp-controls {
   position: absolute;

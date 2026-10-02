@@ -47,17 +47,6 @@ function AdminRoute({ children }) {
 
 function AppRoutes() {
   const { user } = useAuth()
-  // TV Remote: Prevent default scroll on arrow keys when inside player or certain views
-  useEffect(() => {
-    const handleTVKeys = (e) => {
-      const isPlayer = window.location.pathname.startsWith('/watch/');
-      const isArrow = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key);
-      if (isPlayer && isArrow) e.preventDefault();
-    };
-    window.addEventListener('keydown', handleTVKeys, { passive: false });
-    return () => window.removeEventListener('keydown', handleTVKeys);
-  }, []);
-
   // ── Network Connectivity & Background Sync ──────────────────────────
   useEffect(() => {
     let checkTimeout = null;
