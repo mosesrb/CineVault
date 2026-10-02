@@ -109,6 +109,35 @@ describe('Security & Path Traversal Guards (/api/v1/stream)', () => {
         expect(res.body.toString()).toContain('fake-mp4-data');
     });
 
+    it('serves authorized sidecar SRT as offset-correct WebVTT', async () => {
+        const sidecar = path.join(testVaultDir, 'test_movie.srt');
+        fs.writeFileSync(sidecar, '1\n00:00:10,000 --> 00:00:30,000\nSynthetic overlap\n\n2\n00:00:30,000 --> 00:01:00,000\nSynthetic next\n');
+        try {
+            const ticket = await request(app).post('/api/v1/stream/ticket')
+                .set('x-auth-token', token).send({ path: 'test_movie.mp4' });
+            const res = await request(app).get(`/api/v1/stream/subtitles?path=test_movie.mp4&seek=18&token=${ticket.body.ticket}`);
+            expect(res.status).toBe(200);
+            expect(res.headers['content-type']).toMatch(/^text\/vtt/);
+            expect(res.text).toMatch(/^WEBVTT/);
+            expect(res.text).toContain('00:00:00.000 --> 00:00:12.000');
+            expect(res.text).toContain('00:00:12.000 --> 00:00:42.000');
+            const denied = await request(app).get('/api/v1/stream/subtitles?path=test_movie.mp4&seek=18');
+            expect(denied.status).toBe(401);
+        } finally { fs.unlinkSync(sidecar); }
+    });
+
+    it.each(['-1', 'NaN', 'Infinity', 'bad'])('rejects invalid subtitle seek %s', async seek => {
+        const res = await request(app).get(`/api/v1/stream/subtitles?path=test_movie.mp4&seek=${seek}`)
+            .set('x-auth-token', token);
+        expect(res.status).toBe(400);
+    });
+
+    it.each(['-1', '1.5', '0;bad', 'NaN'])('rejects invalid embedded subtitle index %s', async index => {
+        const res = await request(app).get(`/api/v1/stream/subtitles/vtt?path=test_movie.mp4&index=${encodeURIComponent(index)}`)
+            .set('x-auth-token', token);
+        expect(res.status).toBe(400);
+    });
+
     it('should reject non-stream endpoints using query token authentication', async () => {
         const res = await request(app)
             .get(`/api/v1/movies?token=${token}`);

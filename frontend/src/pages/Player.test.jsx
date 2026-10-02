@@ -19,10 +19,11 @@ vi.mock('../components/CinemaPlayer', () => ({ default: props => {
   return <button onClick={() => props.onAudioChange(1)}>Select alternate audio</button>
 } }))
 
-const mount = async (vaultPath, saved = 0, localUrl = null) => {
+const mount = async (vaultPath, saved = 0, localUrl = null, extra = {}) => {
   mocks.getMovie.mockResolvedValue({ data: {
     _id: 'synthetic', title: 'Synthetic', vaultPath, duration: 60,
     userProgress: { progressSeconds: saved },
+    ...extra,
   } })
   mocks.local.mockResolvedValue(localUrl)
   render(<MemoryRouter initialEntries={['/watch/movie/synthetic']}>
@@ -63,11 +64,29 @@ describe('Player stream mode matches transport', () => {
     expect(mocks.props.src.src).toContain('transcode=true')
   })
 
+  it('keeps sidecar availability independent of the selected embedded source', async () => {
+    await mount('Inbox/synthetic.mkv', 18, null, { hasSidecarSubtitles: true })
+    expect(mocks.props.hasSidecarSubtitles).toBe(true)
+    expect(mocks.props.subtitlesUrl).toContain('/stream/subtitles?')
+    expect(mocks.props.subtitlesUrl).toContain('seek=18')
+    act(() => mocks.props.onSubtitleChange(0))
+    expect(mocks.props.hasSidecarSubtitles).toBe(true)
+    expect(mocks.props.subtitlesUrl).toContain('/stream/subtitles/vtt?')
+    expect(mocks.props.subtitlesUrl).toContain('index=0&seek=18')
+    act(() => mocks.props.onUserSeek(23))
+    expect(mocks.props.subtitlesUrl).toContain('index=0&seek=23')
+    act(() => mocks.props.onSubtitleChange('sidecar'))
+    expect(mocks.props.subtitlesUrl).toContain('/stream/subtitles?')
+    expect(mocks.props.subtitlesUrl).toContain('seek=23')
+  })
+
   it('keeps offline playback direct even with saved progress or another audio index', async () => {
     await mount('Inbox/synthetic.mkv', 18, 'blob:synthetic-offline')
     await waitFor(() => expect(mocks.props.src.src).toBe('blob:synthetic-offline'))
     expect(mocks.props.isTranscoding).toBe(false)
     expect(mocks.props.audioTracks).toEqual([])
+    expect(mocks.props.hasSidecarSubtitles).toBe(false)
+    expect(mocks.props.subtitlesUrl).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Select alternate audio' }))
     expect(mocks.props.isTranscoding).toBe(false)
     expect(mocks.props.src.src).toBe('blob:synthetic-offline')

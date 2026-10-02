@@ -37,6 +37,76 @@ afterEach(() => {
 })
 
 describe('CinemaPlayer remote focus', () => {
+  it('keeps a reconstructed seek paused and resets the previous local timeline', () => {
+    const onUserSeek = vi.fn()
+    const view = mount({ isTranscoding: true, onUserSeek, seekOffset: 18 })
+    Object.defineProperty(video, 'paused', { configurable: true, value: false })
+    fireEvent.play(video)
+    video.currentTime = 3
+    fireEvent.timeUpdate(video)
+    fireEvent.click(screen.getByRole('button', { name: 'Pause' }))
+    Object.defineProperty(video, 'paused', { configurable: true, value: true })
+    fireEvent.pause(video)
+    fireEvent.click(screen.getByRole('button', { name: 'Jump forward 5 seconds' }))
+    expect(onUserSeek).toHaveBeenCalledWith(26)
+    view.rerender(<CinemaPlayer {...props} isTranscoding onUserSeek={onUserSeek}
+      src={{ src: '/synthetic-seek-26.mp4' }} seekOffset={26} />)
+    expect(video.autoplay).toBe(false)
+    expect(screen.getByRole('slider', { name: 'Playback position' })).toHaveAttribute('aria-valuenow', '26')
+    fireEvent.canPlay(video)
+    expect(play).not.toHaveBeenCalled()
+    // Guard an old queued autoplay event as well as the new source attribute.
+    fireEvent.play(video)
+    expect(pause).toHaveBeenCalledTimes(2)
+    expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }))
+    expect(play).toHaveBeenCalledTimes(1)
+    expect(video.autoplay).toBe(true)
+  })
+
+  it('continues a playing reconstruction despite transport-generated pause events', () => {
+    const view = mount({ isTranscoding: true })
+    Object.defineProperty(video, 'paused', { configurable: true, value: false })
+    fireEvent.play(video)
+    view.rerender(<CinemaPlayer {...props} isTranscoding src={{ src: '/synthetic-seek-5.mp4' }} seekOffset={5} />)
+    Object.defineProperty(video, 'paused', { configurable: true, value: true })
+    fireEvent.pause(video)
+    expect(video.autoplay).toBe(true)
+    fireEvent.canPlay(video)
+    expect(play).toHaveBeenCalledTimes(1)
+    expect(pause).not.toHaveBeenCalled()
+  })
+
+  it('preserves paused intent when selecting alternate audio', () => {
+    const onAudioChange = vi.fn()
+    const view = mount({ onAudioChange })
+    Object.defineProperty(video, 'paused', { configurable: true, value: false })
+    fireEvent.play(video)
+    fireEvent.click(screen.getByRole('button', { name: 'Pause' }))
+    Object.defineProperty(video, 'paused', { configurable: true, value: true })
+    fireEvent.pause(video)
+    fireEvent.click(screen.getByRole('button', { name: 'Audio tracks menu' }))
+    fireEvent.click(screen.getByRole('button', { name: /Alternate/ }))
+    expect(onAudioChange).toHaveBeenCalledWith(1)
+    view.rerender(<CinemaPlayer {...props} onAudioChange={onAudioChange} activeAudio={1}
+      isTranscoding src={{ src: '/synthetic-audio-1.mp4' }} />)
+    fireEvent.canPlay(video)
+    expect(video.autoplay).toBe(false)
+    expect(play).not.toHaveBeenCalled()
+  })
+
+  it('allows replay after an ended stream and tolerates rejected autoplay', async () => {
+    mount()
+    play.mockRejectedValueOnce(new DOMException('Gesture required', 'NotAllowedError'))
+    fireEvent.canPlay(video)
+    await act(async () => {})
+    fireEvent.ended(video)
+    expect(video.autoplay).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Replay' }))
+    expect(video.autoplay).toBe(true)
+    expect(play).toHaveBeenCalledTimes(2)
+  })
+
   it('enters controls, navigates without seeking, then seeks on the progress bar', () => {
     mount()
     const surface = screen.getByRole('button', { name: /Video playback/ })
@@ -193,6 +263,37 @@ describe('CinemaPlayer remote focus', () => {
     fireEvent.click(opener)
     fireEvent.click(screen.getByRole('button', { name: 'Close Subtitles menu' }))
     expect(opener).toHaveFocus()
+  })
+
+  it('keeps External available after switching to embedded subtitles and supports Off', () => {
+    const onSubtitleChange = vi.fn()
+    const tracks = [{ index: 0, title: 'Synthetic captions', language: 'en', codec: 'subrip' }]
+    const view = mount({ hasSidecarSubtitles: true, subtitleTracks: tracks, onSubtitleChange })
+    const textTrack = { mode: 'disabled' }
+    Object.defineProperty(video, 'textTracks', { configurable: true, value: [textTrack] })
+    const opener = screen.getByRole('button', { name: 'Subtitles menu' })
+    fireEvent.click(opener)
+    const external = screen.getByRole('button', { name: 'External' })
+    key(external, 'ArrowDown')
+    const embedded = screen.getByRole('button', { name: 'EN (Synthetic captions)' })
+    expect(embedded).toHaveFocus()
+    fireEvent.click(embedded)
+    expect(onSubtitleChange).toHaveBeenCalledWith(0)
+    view.rerender(<CinemaPlayer {...props} hasSidecarSubtitles subtitleTracks={tracks}
+      activeSubtitle={0} subtitlesUrl="/synthetic-embedded.vtt" onSubtitleChange={onSubtitleChange} />)
+    expect(textTrack.mode).toBe('showing')
+    fireEvent.click(opener)
+    expect(screen.getByRole('button', { name: 'EN (Synthetic captions)' })).toHaveFocus()
+    expect(screen.getByRole('button', { name: 'External' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Off' }))
+    expect(textTrack.mode).toBe('disabled')
+    fireEvent.click(opener)
+    expect(screen.getByRole('button', { name: 'Off' })).toHaveFocus()
+    fireEvent.click(screen.getByRole('button', { name: 'External' }))
+    expect(onSubtitleChange).toHaveBeenLastCalledWith('sidecar')
+    expect(textTrack.mode).toBe('showing')
+    expect(opener).toHaveFocus()
+    expect(play).not.toHaveBeenCalled()
   })
 
   it('keeps focused controls visible beyond the hide timeout and mouse leave', () => {

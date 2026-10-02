@@ -188,7 +188,7 @@ export default function Player() {
   const serverBase = localStorage.getItem('cv_server_url') || ''
 
   if (effectiveToken && activeSubtitle === 'sidecar' && hasSidecar) {
-    subtitlesUrl = `${serverBase}/api/v1/stream/subtitles?path=${encodeURIComponent(vaultPath)}&token=${effectiveToken}`
+    subtitlesUrl = `${serverBase}/api/v1/stream/subtitles?path=${encodeURIComponent(vaultPath)}&seek=${localUrl ? 0 : seekOffset}&token=${effectiveToken}`
   } else if (effectiveToken && typeof activeSubtitle === 'number') {
     subtitlesUrl = `${serverBase}/api/v1/stream/subtitles/vtt?path=${encodeURIComponent(vaultPath)}&index=${activeSubtitle}&seek=${seekOffset}&token=${effectiveToken}`
   }
@@ -219,6 +219,7 @@ export default function Player() {
             seekOffset={seekOffset}
             onUserSeek={handleSeek}
             subtitlesUrl={localUrl ? null : subtitlesUrl}
+            hasSidecarSubtitles={!localUrl && !!hasSidecar}
             isTranscoding={!localUrl && needsTranscode}
             audioTracks={localUrl ? [] : audioTracks}
             activeAudio={activeAudio}

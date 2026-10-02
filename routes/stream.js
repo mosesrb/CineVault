@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const path = require('path');
 const fs = require('fs');
+const { PassThrough } = require('stream');
+const { createSubtitleTimeline } = require('../services/subtitleTimelineService');
 const auth = require('../middleware/auth');
 const { getVaultConfig } = require('../services/vaultService');
 const { createTranscodeStream, createSubtitleStream, getMediaMetadata } = require('../services/transcoderService');
@@ -84,6 +86,36 @@ function pipeFile(res, filePath, options) {
     });
     res.on('close', () => stream.destroy());
     stream.pipe(res);
+}
+
+function subtitleSeek(query) {
+    const value = query.seek === undefined ? 0 : Number(query.seek);
+    return Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function pipeSubtitles(res, source, format, seekSeconds, command) {
+    const timeline = createSubtitleTimeline({ format, seekSeconds });
+    let failed = false;
+    const fail = () => {
+        if (failed || res.destroyed) return;
+        failed = true;
+        source.destroy();
+        timeline.destroy();
+        if (!res.headersSent) res.status(500).send('Subtitle extraction failed.');
+        else res.destroy();
+    };
+    source.on('error', fail);
+    timeline.on('error', fail);
+    command?.on('error', fail);
+    res.on('close', () => {
+        source.destroy();
+        timeline.destroy();
+        if (!res.writableFinished) {
+            try { command?.kill('SIGKILL'); } catch (_) {}
+        }
+    });
+    res.type('text/vtt');
+    source.pipe(timeline).pipe(res);
 }
 
 /**
@@ -181,8 +213,13 @@ router.get('/info', auth, async (req, res) => {
  * Extracts an internal subtitle stream and converts it to WebVTT on-the-fly.
  */
 router.get('/subtitles/vtt', auth, async (req, res) => {
-    const { index, seek } = req.query;
+    const { index } = req.query;
     if (!req.query.path || index === undefined) return res.status(400).send('path and index required.');
+    const subIndex = Number(index);
+    const seekTime = subtitleSeek(req.query);
+    if (!Number.isSafeInteger(subIndex) || subIndex < 0 || seekTime === null) {
+        return res.status(400).send('Invalid subtitle index or seek.');
+    }
     const resource = await authorizeRequestPath(req, res);
     if (!resource) return;
     const vaultPath = resource.vaultPath;
@@ -194,24 +231,11 @@ router.get('/subtitles/vtt', auth, async (req, res) => {
     if (!mediaFile) return;
     const resolvedFile = mediaFile.path;
 
-    const subIndex = parseInt(index, 10);
-    const seekTime = parseFloat(seek) || 0;
-
-    res.setHeader('Content-Type', 'text/vtt');
-    res.setHeader('Access-Control-Allow-Origin', '*'); // Ensure CORS is allowed for track tag
-    
-    // Extract specific subtitle stream and convert to vtt
-    console.log(`[SubExtra] Extracting track ${subIndex} from ${vaultPath} at seek=${seekTime}`);
     try {
-        const command = await createSubtitleStream(resolvedFile, subIndex, seekTime);
-        command.on('error', (err) => {
-            if (!res.headersSent) res.status(500).send('Subtitle extraction failed.');
-        });
-        command.pipe(res, { end: true });
-
-        req.on('close', () => {
-            try { command.kill('SIGKILL'); } catch (_) {}
-        });
+        const command = await createSubtitleStream(resolvedFile, subIndex);
+        const source = new PassThrough();
+        pipeSubtitles(res, source, 'vtt', seekTime, command);
+        command.pipe(source, { end: true });
     } catch (err) {
         if (!res.headersSent) res.status(503).send(err.message);
     }
@@ -223,6 +247,8 @@ router.get('/subtitles/vtt', auth, async (req, res) => {
  */
 router.get('/subtitles', auth, async (req, res) => {
     if (!req.query.path) return res.status(400).send('path query parameter is required.');
+    const seekTime = subtitleSeek(req.query);
+    if (seekTime === null) return res.status(400).send('Invalid subtitle seek.');
     const resource = await authorizeRequestPath(req, res);
     if (!resource) return;
     const vaultPath = resource.vaultPath;
@@ -235,8 +261,7 @@ router.get('/subtitles', auth, async (req, res) => {
     if (!subPath) return res.status(404).send('No sidecar subtitles found.');
 
     const ext = path.extname(subPath).toLowerCase();
-    const mimeMap = { '.srt': 'text/plain', '.vtt': 'text/vtt' };
-    res.sendFile(subPath, { headers: { 'Content-Type': mimeMap[ext] || 'text/plain' } });
+    pipeSubtitles(res, fs.createReadStream(subPath), ext === '.srt' ? 'srt' : 'vtt', seekTime);
 });
 
 /**

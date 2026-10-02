@@ -66,7 +66,7 @@ function MenuPanel({ title, items, activeValue, onSelect, onClose }) {
 
 // ─── main ─────────────────────────────────────────────────────────────────────
 export default function CinemaPlayer({
-  src, title, poster, subtitlesUrl,
+  src, title, poster, subtitlesUrl, hasSidecarSubtitles = !!subtitlesUrl,
   duration = 0, seekOffset = 0,
   onUserSeek, isTranscoding = false,
   audioTracks = [], activeAudio = 0, onAudioChange,
@@ -91,6 +91,8 @@ export default function CinemaPlayer({
   const accumulatedSeekRef = useRef(0)
 
   const [playing, setPlaying] = useState(false)
+  const [autoPlay, setAutoPlay] = useState(true)
+  const playbackWantedRef = useRef(true)
   const [muted, setMuted] = useState(() => localStorage.getItem('cv_mute') === 'true')
   const [volume, setVolume] = useState(() => parseFloat(localStorage.getItem('cv_vol') || '1'))
   const [currentTime, setCurrentTime] = useState(0)
@@ -114,6 +116,24 @@ export default function CinemaPlayer({
   const absTime = scratchedTime !== null ? scratchedTime : (seekOffset + currentTime)
   const playPct = Math.min(100, (absTime / total) * 100)
   const bufPct = Math.min(100, ((seekOffset + buffered) / total) * 100)
+
+  // A source replacement emits pause too. Keep user intent separate from those
+  // transport events so seek/audio reconstruction cannot resume a paused video.
+  const setPlaybackIntent = useCallback((wanted) => {
+    playbackWantedRef.current = wanted
+    setAutoPlay(wanted)
+  }, [])
+  const requestPlayback = useCallback((wanted) => {
+    setPlaybackIntent(wanted)
+    const v = videoRef.current
+    if (!v) return
+    if (wanted) v.play()?.catch(() => {}) // Autoplay rejection still permits manual retry.
+    else v.pause()
+  }, [setPlaybackIntent])
+  const togglePlay = useCallback(() => {
+    const v = videoRef.current
+    if (v) requestPlayback(v.paused)
+  }, [requestPlayback])
 
   // ── hide timer ────────────────────────────────────────────────────────
   const showControls = useCallback(() => {
@@ -259,14 +279,23 @@ export default function CinemaPlayer({
 
   useEffect(() => {
     const v = videoRef.current; if (!v) return
+    setCurrentTime(0)
+    setBuffered(0)
+    setEnded(false)
     const onPlay = () => { 
+      if (!playbackWantedRef.current) { v.pause(); return }
       setPlaying(true); 
       setEnded(false); 
       setHasStarted(true);
       showControls();
     }
     const onPause = () => { setPlaying(false); setShowCtrl(true) }
-    const onEnd = () => { setPlaying(false); setEnded(true); setShowCtrl(true) }
+    const onEnd = () => { setPlaybackIntent(false); setPlaying(false); setEnded(true); setShowCtrl(true) }
+    const onCanPlay = () => {
+      if (playbackWantedRef.current) {
+        if (v.paused) v.play()?.catch(() => {})
+      } else if (!v.paused) v.pause()
+    }
     const onTime = () => {
       setCurrentTime(v.currentTime)
       if (v.buffered.length) setBuffered(v.buffered.end(v.buffered.length - 1))
@@ -285,6 +314,7 @@ export default function CinemaPlayer({
     v.addEventListener('play', onPlay); v.addEventListener('pause', onPause)
     v.addEventListener('ended', onEnd); v.addEventListener('timeupdate', onTime)
     v.addEventListener('progress', onTime)
+    v.addEventListener('canplay', onCanPlay)
     
     const onLoaded = () => {
       if (!isTranscoding && seekOffset > 0 && v.currentTime === 0) {
@@ -318,6 +348,7 @@ export default function CinemaPlayer({
       v.removeEventListener('play', onPlay); v.removeEventListener('pause', onPause)
       v.removeEventListener('ended', onEnd); v.removeEventListener('timeupdate', onTime)
       v.removeEventListener('progress', onTime)
+      v.removeEventListener('canplay', onCanPlay)
       v.removeEventListener('loadedmetadata', onLoaded)
       v.removeEventListener('error', onError)
       document.removeEventListener('fullscreenchange', onFsChg)
@@ -325,7 +356,7 @@ export default function CinemaPlayer({
       document.removeEventListener('mozfullscreenchange', onFsChg)
       document.removeEventListener('MSFullscreenChange', onFsChg)
     }
-  }, [src?.src, showControls, isTranscoding, seekOffset, handleOrientationLock])
+  }, [src?.src, showControls, isTranscoding, seekOffset, handleOrientationLock, setPlaybackIntent])
 
   // ── subtitle mode sync ────────────────────────────────────────────────
   useEffect(() => {
@@ -398,7 +429,7 @@ export default function CinemaPlayer({
       let handled = true
       switch (e.key) {
         case ' ': case 'k': case 'Enter':
-          v.paused ? v.play() : v.pause(); break
+          togglePlay(); break
         case 'ArrowRight':
           // 5s standard jump, 10s with Shift
           doSeek(Math.min(total, absTime + (e.shiftKey ? 10 : 5)))
@@ -436,7 +467,7 @@ export default function CinemaPlayer({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [absTime, subtitlesUrl, showControls, onTheaterToggle, doSeek, total, menu, closeMenu, fullscreen, toggleFs])
+  }, [absTime, subtitlesUrl, showControls, onTheaterToggle, doSeek, total, menu, closeMenu, fullscreen, toggleFs, togglePlay])
 
   // ── YouTube Multi-Tap Seek Commit ────────────────────────────────────
   const commitSeek = useCallback((delta) => {
@@ -466,7 +497,7 @@ export default function CinemaPlayer({
         setSpeedBoost('2x')
         if (videoRef.current) {
           videoRef.current.playbackRate = 2.0
-          if (videoRef.current.paused) videoRef.current.play()
+          if (videoRef.current.paused) requestPlayback(true)
         }
       } else {
         // Rapid 2x Rewind
@@ -483,7 +514,7 @@ export default function CinemaPlayer({
         }, 200)
       }
     }, 400)
-  }, [])
+  }, [requestPlayback])
 
   const stopLongPress = useCallback(() => {
     clearTimeout(longPressTimerRef.current)
@@ -494,11 +525,11 @@ export default function CinemaPlayer({
       setSpeedBoost(null)
       if (videoRef.current) {
         videoRef.current.playbackRate = 1.0
-        if (videoRef.current.paused && !ended) videoRef.current.play()
+        if (videoRef.current.paused && !ended) requestPlayback(true)
       }
       showControls()
     }
-  }, [ended, showControls])
+  }, [ended, showControls, requestPlayback])
 
   // ── Touch and Gesture References ──────────────────────────────────────
   const lastTouchRef = useRef({ time: 0, x: 0, y: 0 })
@@ -685,7 +716,6 @@ export default function CinemaPlayer({
   }
 
   // ── player actions ────────────────────────────────────────────────────
-  const togglePlay = () => { const v = videoRef.current; v?.paused ? v.play() : v?.pause() }
   const toggleMute = () => {
     const v = videoRef.current; if (!v) return
     const next = !v.muted
@@ -730,12 +760,12 @@ export default function CinemaPlayer({
 
   const subItems = useMemo(() => [
     { value: 'off', label: 'Off' },
-    ...(subtitlesUrl && activeSubtitle === 'sidecar' ? [{ value: 'sidecar', label: 'External' }] : []),
+    ...(hasSidecarSubtitles ? [{ value: 'sidecar', label: 'External' }] : []),
     ...subtitleTracks.map(t => ({
       value: t.index,
       label: `${t.language.toUpperCase()} (${t.title || t.codec})`
     }))
-  ], [subtitlesUrl, activeSubtitle, subtitleTracks])
+  ], [hasSidecarSubtitles, subtitleTracks])
 
   const activeSubValue = (!subtitlesUrl || !subsOn) ? 'off' : activeSubtitle
   const ctrlVisible = (showCtrl || !playing || !!menu) && !seekHud
@@ -761,7 +791,7 @@ export default function CinemaPlayer({
         src={src?.src}
         poster={hasStarted ? null : poster}
         className="cp-video"
-        playsInline autoPlay
+        playsInline autoPlay={autoPlay}
         crossOrigin="anonymous"
         onLoadedMetadata={(e) => {
           if (duration <= 0 && e.target.duration > 0 && e.target.duration !== Infinity) {
@@ -826,7 +856,7 @@ export default function CinemaPlayer({
 
       {/* ended overlay */}
       {ended && (
-        <div className="cp-ended" onClick={() => { videoRef.current?.play() }}>
+        <div className="cp-ended" onClick={() => requestPlayback(true)}>
           <button className="cp-ended-btn">
             <Icon d={IC.replay} size={36} />
             <span>Replay</span>
@@ -934,7 +964,7 @@ export default function CinemaPlayer({
               </div>
             )}
             {/* subtitles */}
-            {(subtitlesUrl || subtitleTracks.length > 0) && (
+            {(hasSidecarSubtitles || subtitlesUrl || subtitleTracks.length > 0) && (
               <div className="cp-anchor">
                 <button
                   className={`cp-btn${(subtitlesUrl && subsOn) ? ' cp-btn--on' : ''}`}

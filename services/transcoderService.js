@@ -169,9 +169,8 @@ async function createHlsStream(filePath, outputDir) {
     return limitedCommand;
 }
 
-async function createSubtitleStream(filePath, subIndex, seekTime = 0) {
+async function createSubtitleStream(filePath, subIndex) {
     const command = ffmpeg(filePath)
-        .inputOptions(seekTime > 0 ? [`-ss ${seekTime}`] : [])
         .outputOptions([
             '-vn', '-an',
             `-map 0:s:${subIndex}`,
