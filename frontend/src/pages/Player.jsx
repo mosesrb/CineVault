@@ -168,7 +168,9 @@ export default function Player() {
   const vaultPath = episode?.vaultPath || media.vaultPath
   const effectiveToken = streamTicket
   const ext = vaultPath ? '.' + vaultPath.split('.').pop().toLowerCase() : ''
-  const needsTranscode = TRANSCODE_EXTS.has(ext)
+  // Match buildStreamUrl: resume and alternate audio also produce fragmented MP4.
+  // Those streams seek by reconstruction, not by changing video.currentTime.
+  const needsTranscode = TRANSCODE_EXTS.has(ext) || seekOffset > 0 || activeAudio > 0
 
   const duration = media.duration
     || (media.runtime ? media.runtime * 60 : 0) // Movie runtime is usually minutes (TMDB)
