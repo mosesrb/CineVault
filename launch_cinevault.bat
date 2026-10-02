@@ -1,6 +1,7 @@
 @echo off
 setlocal
 title CineVault Launcher
+cd /d "%~dp0"
 
 echo ========================================
 echo       CINEVAULT ONE-CLICK LAUNCH
@@ -21,12 +22,12 @@ set /p buildapk="Build and sync Android App? (y/n): "
 if /i "%buildapk%"=="y" (
     echo.
     echo [INFO] Building Frontend and syncing with Capacitor...
-    cd /d "e:\MachineApps\delatron\frontend"
+    cd /d "%~dp0frontend"
     call npm run build
     call npx cap sync
     echo [INFO] Opening Android Studio...
     start cmd /c "npx cap open android"
-    cd /d "e:\MachineApps\delatron"
+    cd /d "%~dp0"
 )
 
 :: Auto-detect Local IP for easier setup on Android
@@ -38,10 +39,10 @@ echo.
 echo [INFO] Starting CineVault Fullstack...
 echo [INFO] Local:   http://localhost:3000
 echo [INFO] Network: http://%MYIP%:3000  (Enter this in Android Profile)
-echo [INFO] Web App: http://localhost:5173
+echo [INFO] Web App: http://localhost:5180
 echo.
 
-cd /d "e:\MachineApps\delatron"
-npm run fullstack
+cd /d "%~dp0"
+call npm run fullstack
 
 pause

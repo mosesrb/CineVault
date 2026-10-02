@@ -9,9 +9,12 @@
   },
   "packageManager": "npm@11.19.1",
   "scripts": {
+    "prestart": "node scripts/ensure_local_mongodb.js",
     "start": "node index.js",
+    "predev": "node scripts/ensure_local_mongodb.js",
     "dev": "nodemon index.js",
     "frontend": "npm run dev --prefix frontend",
+    "prefullstack": "node scripts/ensure_local_mongodb.js",
     "fullstack": "concurrently \"npm run dev\" \"npm run frontend\"",
     "backup:mongo": "node scripts/backup_mongodb.js",
     "copy:mongo": "node scripts/copy_mongodb_database.js",

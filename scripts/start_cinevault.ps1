@@ -1,3 +1,5 @@
+param([switch]$DatabaseOnly)
+
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -8,11 +10,15 @@ $mongoExecutable = 'C:\Program Files\MongoDB\Server\5.0\bin\mongod.exe'
 $nodeExecutable = 'C:\Program Files\nodejs\node.exe'
 
 New-Item -ItemType Directory -Path $mongoRuntime -Force | Out-Null
+New-Item -ItemType Directory -Path (Join-Path $mongoRuntime 'data') -Force | Out-Null
 
 if (-not (Get-NetTCPConnection -LocalPort 27018 -State Listen -ErrorAction SilentlyContinue)) {
+    if (-not (Test-Path -LiteralPath $mongoExecutable)) {
+        throw "CineVault MongoDB executable is missing: $mongoExecutable"
+    }
     $mongoProcess = Start-Process `
         -FilePath $mongoExecutable `
-        -ArgumentList @('--config', $mongoConfig) `
+        -ArgumentList @('--config', ('"{0}"' -f $mongoConfig)) `
         -WindowStyle Hidden `
         -PassThru
 
@@ -25,7 +31,12 @@ if (-not (Get-NetTCPConnection -LocalPort 27018 -State Listen -ErrorAction Silen
         }
         if ($mongoProcess.HasExited) { break }
     }
-    if (-not $mongoReady) { throw 'CineVault MongoDB did not start.' }
+    if (-not $mongoReady) { throw "CineVault MongoDB did not start. Check $mongoRuntime\mongod.log." }
+}
+
+if ($DatabaseOnly) {
+    Write-Output 'CineVault authenticated MongoDB is listening on 127.0.0.1:27018.'
+    return
 }
 
 if (-not (Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue)) {

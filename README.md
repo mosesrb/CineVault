@@ -1,7 +1,7 @@
 # CineVault
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Node.js](https://img.shields.io/badge/Node.js-v18%2B-green.svg)](https://nodejs.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-v24-green.svg)](https://nodejs.org/)
 [![React](https://img.shields.io/badge/React-v18.3-61dafb.svg)](https://react.dev/)
 [![Capacitor](https://img.shields.io/badge/Capacitor-Android-1192e8.svg)](https://capacitorjs.com/)
 
@@ -46,7 +46,7 @@ CineVault consists of an Express/Node.js backend and a React/Capacitor frontend.
 
 ### Prerequisites
 
-- **Node.js** v18.0.0 or higher
+- **Node.js** v24 and **npm** v11
 - **MongoDB** v5.0+ running locally or via Docker
 - **FFmpeg** installed and accessible in your system `PATH`
 
@@ -85,7 +85,11 @@ delatron_TMDB_API_KEY=your_tmdb_api_key
 npm run fullstack
 ```
 
-The web application will be available at `http://localhost:3000` (API running on `http://localhost:5000`).
+The development web application is available at `http://localhost:5180`; the backend API and built web application use `http://localhost:3000`.
+
+On the configured Windows deployment, `launch_cinevault.bat`, `npm run fullstack`, `npm run dev`, and `npm start` start the dedicated authenticated CineVault MongoDB on `127.0.0.1:27018` before starting the backend. The separate MongoDB service on port 27017 is not used for this deployment. Existing database files and credentials are preserved. Other operating systems and remote/custom database targets must start their configured database separately.
+
+If startup reports `ECONNREFUSED 127.0.0.1:27018`, inspect `runtime/mongodb/mongod.log` and rerun the launcher. The database can also be started by itself with `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start_cinevault.ps1 -DatabaseOnly`. Confirm `http://localhost:3000/health/ready` reports `ready` before signing in. On Android, select the PC's LAN address (for example `http://192.168.0.100:3000`) in the login screen's Server Settings; `localhost` refers to the phone.
 
 ---
 
