@@ -91,6 +91,12 @@ On the configured Windows deployment, `launch_cinevault.bat`, `npm run fullstack
 
 If startup reports `ECONNREFUSED 127.0.0.1:27018`, inspect `runtime/mongodb/mongod.log` and rerun the launcher. The database can also be started by itself with `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start_cinevault.ps1 -DatabaseOnly`. Confirm `http://localhost:3000/health/ready` reports `ready` before signing in. On Android, select the PC's LAN address (for example `http://192.168.0.100:3000`) in the login screen's Server Settings; `localhost` refers to the phone.
 
+### Temporary free HTTPS testing
+
+With CineVault ready on port 3000, run `node scripts/localtunnel_bridge.js` on the server PC, then `npx --yes localtunnel@2.0.2 --port 3002 --local-host 127.0.0.1` in a second terminal. Use the printed HTTPS address in CineVault. Both processes must stay running; stop both after testing. No companion application is required on viewers' devices.
+
+The loopback-only bridge delays connecting to CineVault until request bytes arrive. This avoids Node sending idle 408 responses into LocalTunnel's pre-opened connection pool without disabling HTTP timeouts or authentication. LocalTunnel may display a hosting notice; this temporary adapter is not production supervision, discovery, failover or a guarantee of public-provider availability. Do not expose the Vite development server or publish a tunnel without the server owner's approval.
+
 ---
 
 ## Docker Deployment

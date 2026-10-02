@@ -261,17 +261,17 @@ export default function Detail() {
 
             <div className="detail-actions">
               {isMovie && media.userProgress && !media.userProgress.completed && media.userProgress.progressSeconds > 0 ? (
-                <Link to={`/watch/movie/${media._id}`} className="btn btn-primary btn-lg">
+                <Link to={`/watch/movie/${media._id}`} className="btn btn-primary btn-lg detail-play">
                   <Play size={20} fill="currentColor" /> Resume Movie
                 </Link>
               ) : isTV && media.resumePoint ? (
-                <Link to={`/watch/tvshow/${media._id}?ep=${media.resumePoint.episodeId}`} className="btn btn-primary btn-lg">
+                <Link to={`/watch/tvshow/${media._id}?ep=${media.resumePoint.episodeId}`} className="btn btn-primary btn-lg detail-play">
                   <Play size={20} fill="currentColor" /> Resume S{media.resumePoint.season}:E{media.resumePoint.episode}
                 </Link>
               ) : (
                 <Link 
                   to={isMovie ? `/watch/movie/${media._id}` : (episodes[0] ? `/watch/tvshow/${media._id}?ep=${episodes[0]._id}` : '#')} 
-                  className="btn btn-primary btn-lg"
+                  className="btn btn-primary btn-lg detail-play"
                   onClick={e => { if (isTV && !episodes[0]) e.preventDefault(); }}
                 >
                   <Play size={20} fill="currentColor" /> Play

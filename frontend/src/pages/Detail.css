@@ -236,6 +236,30 @@
   border-color: var(--success) !important;
 }
 
+/* Keep the primary action above MobileNav even with a long title/description.
+   Other actions remain in flow; desktop and TV keep the normal action row. */
+@media (max-width: 640px) {
+  .detail-content.animate-fadeUp {
+    /* A retained transform would anchor fixed Play to the scrolling content. */
+    animation-name: fadeIn;
+  }
+
+  .detail-page {
+    padding-bottom: calc(64px + var(--safe-bottom));
+  }
+
+  .detail-actions .detail-play {
+    position: fixed;
+    bottom: calc(64px + var(--safe-bottom) + var(--sp-3));
+    left: var(--sp-4);
+    right: var(--sp-4);
+    width: auto;
+    max-width: none;
+    z-index: 1001;
+    box-shadow: var(--shadow-lg);
+  }
+}
+
 /* Cast */
 .cast-section {
   touch-action: pan-y;
