@@ -2,7 +2,7 @@ import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/re
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { vi, beforeEach, afterEach, describe, it, expect } from 'vitest'
 import Detail from './Detail'
-import { getMovie, getTVShow, getMe, getSeasonEpisodes, getStreamTicket } from '../api'
+import { getMovie, getTVShow, getMe, getSeasonEpisodes, getStreamTicket, deleteMovie } from '../api'
 
 vi.mock('../api', () => ({
   getMovie: vi.fn(), getTVShow: vi.fn(), getMe: vi.fn(), getSeasonEpisodes: vi.fn(),
@@ -11,7 +11,6 @@ vi.mock('../api', () => ({
 }))
 vi.mock('../components/DownloadButton', () => ({ default: () => null }))
 vi.mock('../components/ImageViewerModal', () => ({ default: () => null }))
-vi.mock('../components/ConfirmModal', () => ({ default: () => null }))
 
 describe('detail primary playback action', () => {
   const media = { _id: 'qa-1', title: 'Synthetic QA movie', genres: [] }
@@ -36,6 +35,60 @@ describe('detail primary playback action', () => {
     expect(play).toHaveClass('detail-play')
     expect(play).toHaveAttribute('href', href)
     expect(screen.getByRole('button', { name: 'Watchlist' })).not.toHaveClass('detail-play')
+  })
+})
+
+describe('detail remote dialogs', () => {
+  const media = { _id: 'qa-1', title: 'Synthetic QA movie', genres: [], trailerUrl: 'https://youtu.be/abcdefghijk' }
+  beforeEach(() => {
+    vi.clearAllMocks()
+    getMovie.mockResolvedValue({ data: media })
+    getMe.mockResolvedValue({ data: { watchlist: [], isAdmin: true } })
+  })
+  afterEach(cleanup)
+  const openDetail = () => render(<MemoryRouter initialEntries={['/detail/movie/qa-1']}>
+    <Routes><Route path="/detail/:type/:id" element={<Detail />} /></Routes>
+  </MemoryRouter>)
+
+  it('renders only one delete dialog, focuses Cancel, and Back cancels without deletion', async () => {
+    openDetail()
+    const opener = await screen.findByRole('button', { name: 'Admin Delete' })
+    opener.focus()
+    fireEvent.click(opener)
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
+    expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus()
+    const back = new CustomEvent('cv_hardware_back', { cancelable: true })
+    fireEvent(window, back)
+    expect(back.defaultPrevented).toBe(true)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(opener).toHaveFocus()
+    expect(deleteMovie).not.toHaveBeenCalled()
+  })
+
+  it.each(['Escape', 'hardware Back'])('closes trailer with %s and restores its opener', async key => {
+    openDetail()
+    const opener = await screen.findByRole('button', { name: 'Trailer' })
+    opener.focus()
+    fireEvent.click(opener)
+    expect(screen.getByRole('dialog', { name: 'Trailer' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Close Trailer' })).toHaveFocus()
+    if (key === 'Escape') fireEvent.keyDown(window, { key })
+    else fireEvent(window, new CustomEvent('cv_hardware_back', { cancelable: true }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(opener).toHaveFocus()
+  })
+
+  it('keeps D-pad focus on host Close instead of trapping remote keys inside the trailer iframe', async () => {
+    openDetail()
+    fireEvent.click(await screen.findByRole('button', { name: 'Trailer' }))
+    const close = screen.getByRole('button', { name: 'Close Trailer' })
+    fireEvent.keyDown(close, { key: 'ArrowUp' })
+    expect(close).toHaveFocus()
+    fireEvent.keyDown(close, { key: 'ArrowDown' })
+    expect(close).toHaveFocus()
+    // Keyboard/pointer iframe interaction remains available, but host Escape
+    // cannot intercept cross-origin frame keys. Native Back is the exit there.
+    expect(screen.getByTitle('Trailer').tabIndex).toBe(0)
   })
 })
 

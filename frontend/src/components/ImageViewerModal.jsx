@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { ChevronLeft, ChevronRight, X, Image as ImageIcon } from 'lucide-react'
 import { resolveUrl } from '../api'
+import useModalFocus from '../hooks/useModalFocus'
 import './ImageViewerModal.css'
 
 export default function ImageViewerModal({
@@ -15,6 +16,9 @@ export default function ImageViewerModal({
   const [touchEnd, setTouchEnd] = useState(null)
   const openedAtRef = useRef(0)
   const thumbListRef = useRef(null)
+  const dialogRef = useRef(null)
+  const closeRef = useRef(null)
+  useModalFocus({ open: isOpen && images.length > 0, containerRef: dialogRef, initialFocusRef: closeRef, onClose, arrows: false })
 
   // Reset current index when initialIndex changes or modal opens
   useEffect(() => {
@@ -23,18 +27,6 @@ export default function ImageViewerModal({
       openedAtRef.current = Date.now()
     }
   }, [isOpen, initialIndex, images.length])
-
-  // Android hardware back button handler
-  useEffect(() => {
-    const handleHardwareBack = (e) => {
-      if (isOpen) {
-        e.preventDefault()
-        onClose?.()
-      }
-    }
-    window.addEventListener('cv_hardware_back', handleHardwareBack)
-    return () => window.removeEventListener('cv_hardware_back', handleHardwareBack)
-  }, [isOpen, onClose])
 
   // Lock body scroll when open
   useEffect(() => {
@@ -84,7 +76,6 @@ export default function ImageViewerModal({
           e.preventDefault()
           goPrev()
           break
-        case 'Escape':
         case 'Backspace':
           e.preventDefault()
           onClose?.()
@@ -137,6 +128,7 @@ export default function ImageViewerModal({
 
   return (
     <div
+      ref={dialogRef}
       className="iv-overlay"
       onClick={handleBackdropClick}
       role="dialog"
@@ -155,6 +147,7 @@ export default function ImageViewerModal({
 
         <div className="iv-actions">
           <button
+            ref={closeRef}
             className="iv-btn iv-close-btn"
             onClick={onClose}
             title="Close (Esc)"

@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { getMovie, getTVShow, getSeasonEpisodes, addToWatchlist, getMe, deleteMovie, deleteTVShow, deleteEpisode, getStreamTicket, resolveUrl } from '../api'
 import { Clapperboard, MonitorPlay, Clock, Star, Play, PlayCircle, Plus, Check, Trash2, Download } from 'lucide-react'
 import DownloadButton from '../components/DownloadButton'
 import ConfirmModal from '../components/ConfirmModal'
 import ImageViewerModal from '../components/ImageViewerModal'
+import useModalFocus from '../hooks/useModalFocus'
 import './Detail.css'
 
 // Web-only file download (browser's native Save As)
@@ -36,6 +37,9 @@ export default function Detail() {
   const [viewerOpen, setViewerOpen] = useState(false)
   const [viewerIndex, setViewerIndex] = useState(0)
   const navigate = useNavigate()
+  const trailerRef = useRef(null)
+  const trailerCloseRef = useRef(null)
+  useModalFocus({ open: showTrailer, containerRef: trailerRef, initialFocusRef: trailerCloseRef, onClose: () => setShowTrailer(false) })
 
   useEffect(() => {
     setLoading(true)
@@ -184,7 +188,7 @@ export default function Detail() {
 
       {/* Trailer Modal */}
       {showTrailer && youtubeId && (
-        <div className="trailer-overlay" onClick={() => setShowTrailer(false)}>
+        <div ref={trailerRef} className="trailer-overlay" role="dialog" aria-modal="true" aria-label="Trailer" onClick={() => setShowTrailer(false)}>
           <div className="trailer-container" onClick={e => e.stopPropagation()}>
             <div className="trailer-aspect">
               <iframe
@@ -197,7 +201,7 @@ export default function Detail() {
             </div>
           </div>
           <div className="trailer-actions">
-            <button className="trailer-close-pill" onClick={() => setShowTrailer(false)}>
+            <button ref={trailerCloseRef} className="trailer-close-pill" onClick={() => setShowTrailer(false)}>
               Close Trailer
             </button>
           </div>
@@ -325,43 +329,6 @@ export default function Detail() {
                 </button>
               )}
             </div>
-
-            {/* DELETE MODAL */}
-            {showDeleteModal && (
-              <div style={{
-                position:'fixed', inset:0, background:'rgba(0,0,0,0.9)', zIndex:2000,
-                display:'flex', alignItems:'center', justifyContent:'center', padding:'var(--sp-4)', backdropFilter:'blur(5px)'
-              }}>
-                <div className="card" style={{maxWidth:450, width:'100%', textAlign:'center', border:'1px solid var(--border)'}}>
-                  <h2 style={{fontSize:'var(--fs-xl)', fontWeight:800, marginBottom:'var(--sp-2)', display:'flex', alignItems:'center', justifyContent:'center', gap:'8px'}}>
-                    <Trash2 size={24} /> {deletingEpisode ? 'Delete Episode' : 'Delete Media'}
-                  </h2>
-                  <p className="text-muted text-sm" style={{marginBottom:'var(--sp-8)'}}>
-                    How would you like to remove <strong>{deletingEpisode ? deletingEpisode.title || `Episode ${deletingEpisode.episode}` : media.title}</strong>?
-                  </p>
-                  
-                  <div style={{display:'flex', flexDirection:'column', gap:'var(--sp-3)'}}>
-                    <button className="btn btn-ghost" onClick={() => handleConfirmDelete(false)} style={{justifyContent:'center', padding:'var(--sp-4)'}}>
-                      <div>
-                        <div style={{fontWeight:700}}>Remove Record Only</div>
-                        <div style={{fontSize:10, opacity:0.6}}>Keep physical file on disk</div>
-                      </div>
-                    </button>
-                    
-                    <button className="btn btn-danger" onClick={() => handleConfirmDelete(true)} style={{justifyContent:'center', padding:'var(--sp-4)', background:'rgba(255,59,48,0.15)', border:'1px solid var(--danger)'}}>
-                      <div>
-                        <div style={{fontWeight:700}}>🔥 Delete Physical File & Record</div>
-                        <div style={{fontSize:10, opacity:0.8}}>Permanently reclaim space</div>
-                      </div>
-                    </button>
-
-                    <button className="btn btn-icon" style={{marginTop:'var(--sp-4)'}} onClick={() => { setShowDeleteModal(false); setDeletingEpisode(null); }}>
-                       Cancel
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
 
             {/* Cast */}
             {media.cast?.length > 0 && (
