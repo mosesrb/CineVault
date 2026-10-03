@@ -1,10 +1,10 @@
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Player from './Player'
 
-const mocks = vi.hoisted(() => ({ getMovie: vi.fn(), getTVShow: vi.fn(), getEpisodes: vi.fn(), progress: vi.fn(), local: vi.fn(), ticket: vi.fn(), props: null }))
+const mocks = vi.hoisted(() => ({ getMovie: vi.fn(), getTVShow: vi.fn(), getEpisodes: vi.fn(), progress: vi.fn(), local: vi.fn(), info: vi.fn(), ticket: vi.fn(), props: null }))
 const realSetInterval = globalThis.setInterval.bind(globalThis)
 const captureProgressTimer = () => {
   let tick
@@ -17,7 +17,7 @@ const captureProgressTimer = () => {
 vi.mock('../api', () => ({
   getMovie: mocks.getMovie,
   getTVShow: mocks.getTVShow, getEpisodes: mocks.getEpisodes, saveProgress: mocks.progress,
-  getStreamInfo: vi.fn().mockResolvedValue({ data: {} }),
+  getStreamInfo: mocks.info,
   getStreamTicket: mocks.ticket,
 }))
 vi.mock('../services/OfflineStorageService', () => ({
@@ -43,11 +43,141 @@ const mount = async (vaultPath, saved = 0, localUrl = null, extra = {}) => {
 }
 beforeEach(() => {
   mocks.props = null; localStorage.clear()
+  mocks.getMovie.mockReset(); mocks.getTVShow.mockReset(); mocks.getEpisodes.mockReset()
+  mocks.local.mockReset().mockResolvedValue(null)
   mocks.progress.mockResolvedValue({})
+  mocks.info.mockResolvedValue({ data: {} })
   let request = 0
   mocks.ticket.mockReset().mockImplementation(async () => ({ data: { ticket: `synthetic-ticket-${++request}` } }))
 })
 afterEach(() => { cleanup(); document.querySelectorAll('video').forEach(v => v.remove()); vi.clearAllMocks(); vi.restoreAllMocks() })
+
+function NextTitle() {
+  const navigate = useNavigate()
+  return <button onClick={() => navigate('/watch/movie/second')}>Next synthetic title</button>
+}
+const routePlayer = (entry = '/watch/movie/first', controls = <NextTitle />) => render(<MemoryRouter initialEntries={[entry]}>
+  {controls}<Routes><Route path="/watch/:type/:id" element={<Player />} /></Routes>
+</MemoryRouter>)
+const syntheticMedia = id => ({ data: { _id: id, title: `Synthetic ${id}`, vaultPath: `Inbox/${id}.mp4`, duration: 60 } })
+
+describe('Player asynchronous source lifecycle', () => {
+  it('checks local storage before making any streaming requests', async () => {
+    let resolve
+    mocks.getMovie.mockResolvedValue(syntheticMedia('first'))
+    mocks.local.mockImplementationOnce(() => new Promise(r => { resolve = r }))
+    routePlayer()
+    await waitFor(() => expect(mocks.local).toHaveBeenCalledWith('first'))
+    expect(mocks.ticket).not.toHaveBeenCalled()
+    expect(mocks.info).not.toHaveBeenCalled()
+    await act(async () => resolve('blob:synthetic-first'))
+    expect(mocks.props.src.src).toBe('blob:synthetic-first')
+    expect(mocks.ticket).not.toHaveBeenCalled()
+    expect(mocks.info).not.toHaveBeenCalled()
+  })
+
+  it('falls back to authorized streaming when the local lookup rejects', async () => {
+    mocks.getMovie.mockResolvedValue(syntheticMedia('first'))
+    mocks.local.mockRejectedValueOnce(new Error('synthetic-private-path'))
+    routePlayer()
+    await screen.findByRole('button', { name: 'Select alternate audio' })
+    expect(mocks.ticket).toHaveBeenCalledTimes(1)
+    expect(mocks.props.src.src).toContain('/api/v1/stream?')
+    expect(document.body).not.toHaveTextContent('synthetic-private-path')
+  })
+
+  it('revokes a blob which resolves after the player unmounts', async () => {
+    let resolve
+    const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    mocks.getMovie.mockResolvedValue(syntheticMedia('first'))
+    mocks.local.mockImplementationOnce(() => new Promise(r => { resolve = r }))
+    const view = routePlayer()
+    await waitFor(() => expect(mocks.local).toHaveBeenCalledWith('first'))
+    view.unmount()
+    await act(async () => resolve('blob:synthetic-abandoned'))
+    expect(revoke).toHaveBeenCalledExactlyOnceWith('blob:synthetic-abandoned')
+  })
+
+  it('never lets an old local result overwrite the next title', async () => {
+    let resolve
+    const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    mocks.getMovie.mockImplementation(async id => syntheticMedia(id))
+    mocks.local.mockImplementationOnce(() => new Promise(r => { resolve = r })).mockResolvedValueOnce('blob:synthetic-second')
+    routePlayer()
+    await waitFor(() => expect(mocks.local).toHaveBeenCalledWith('first'))
+    fireEvent.click(screen.getByRole('button', { name: 'Next synthetic title' }))
+    await waitFor(() => expect(mocks.props?.src.src).toBe('blob:synthetic-second'))
+    await act(async () => resolve('blob:synthetic-first'))
+    expect(mocks.props.src.src).toBe('blob:synthetic-second')
+    expect(revoke).toHaveBeenCalledWith('blob:synthetic-first')
+  })
+
+  it('does not retain a downloaded source or saved offset for a new streamed title', async () => {
+    const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    mocks.getMovie.mockImplementation(async id => ({ data: { ...syntheticMedia(id).data, userProgress: { progressSeconds: id === 'first' ? 18 : 0 } } }))
+    mocks.local.mockResolvedValueOnce('blob:synthetic-first').mockResolvedValueOnce(null)
+    routePlayer()
+    await waitFor(() => expect(mocks.props?.src.src).toBe('blob:synthetic-first'))
+    fireEvent.click(screen.getByRole('button', { name: 'Next synthetic title' }))
+    await waitFor(() => expect(mocks.props?.src.src).toContain('second.mp4'))
+    expect(mocks.props.initialTime).toBe(0)
+    expect(mocks.props.seekOffset).toBe(0)
+    expect(revoke).toHaveBeenCalledWith('blob:synthetic-first')
+  })
+
+  it('discards old metadata responses after navigation', async () => {
+    let resolve
+    mocks.getMovie.mockImplementationOnce(() => new Promise(r => { resolve = r })).mockResolvedValueOnce(syntheticMedia('second'))
+    mocks.local.mockResolvedValue(null)
+    routePlayer()
+    fireEvent.click(screen.getByRole('button', { name: 'Next synthetic title' }))
+    await waitFor(() => expect(mocks.props?.src.src).toContain('second.mp4'))
+    await act(async () => resolve(syntheticMedia('first')))
+    expect(mocks.props.src.src).toContain('second.mp4')
+    expect(mocks.local).not.toHaveBeenCalledWith('first')
+  })
+
+  it('handles metadata failure without exposing the response or an unhandled rejection', async () => {
+    mocks.getMovie.mockRejectedValueOnce(new Error('synthetic-private-detail'))
+    routePlayer()
+    await screen.findByText('Unable to load content')
+    expect(document.body).not.toHaveTextContent('synthetic-private-detail')
+    expect(mocks.local).not.toHaveBeenCalled()
+    expect(mocks.ticket).not.toHaveBeenCalled()
+  })
+
+  it('handles episode metadata failure before exposing any playback source', async () => {
+    mocks.getTVShow.mockResolvedValue({ data: { _id: 'show', title: 'Synthetic show' } })
+    mocks.getEpisodes.mockRejectedValueOnce(new Error('synthetic-private-episode'))
+    routePlayer('/watch/tvshow/show?ep=first')
+    await screen.findByText('Unable to load content')
+    expect(document.body).not.toHaveTextContent('synthetic-private-episode')
+    expect(mocks.local).not.toHaveBeenCalled()
+    expect(mocks.info).not.toHaveBeenCalled()
+    expect(mocks.ticket).not.toHaveBeenCalled()
+  })
+
+  it.each(['resolve', 'reject'])('discards an old episode metadata %s after the episode query changes', async mode => {
+    let resolve, reject
+    function NextEpisode() {
+      const navigate = useNavigate()
+      return <button onClick={() => navigate('/watch/tvshow/show?ep=second')}>Next synthetic episode</button>
+    }
+    mocks.getTVShow.mockResolvedValue({ data: { _id: 'show', title: 'Synthetic show' } })
+    mocks.getEpisodes.mockImplementationOnce(() => new Promise((r, j) => { resolve = r; reject = j }))
+      .mockResolvedValueOnce({ data: [{ _id: 'second', vaultPath: 'Inbox/second.mp4', duration: 60 }] })
+    routePlayer('/watch/tvshow/show?ep=first', <NextEpisode />)
+    await waitFor(() => expect(mocks.getEpisodes).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getByRole('button', { name: 'Next synthetic episode' }))
+    await waitFor(() => expect(mocks.props?.src.src).toContain('second.mp4'))
+    await act(async () => mode === 'resolve'
+      ? resolve({ data: [{ _id: 'first', vaultPath: 'Inbox/first.mp4' }] })
+      : reject(new Error('synthetic-old-episode')))
+    expect(mocks.props.src.src).toContain('second.mp4')
+    expect(mocks.local).not.toHaveBeenCalledWith('first')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+})
 
 describe('Player stream mode matches transport', () => {
   it('keeps fresh MP4 direct and marks alternate audio as transcoding', async () => {

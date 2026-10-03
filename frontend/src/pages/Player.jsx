@@ -30,6 +30,14 @@ function buildStreamUrl(vaultPath, token, seekSeconds = 0, audioIndex = 0, revis
 
 export default function Player() {
   const { type, id } = useParams()
+  const [searchParams] = useSearchParams()
+  // A different title/episode owns a different playback session. Never carry
+  // local sources, resume positions or pending user intents across routes.
+  return <PlayerSession key={JSON.stringify([type, id, searchParams.get('ep')])} />
+}
+
+function PlayerSession() {
+  const { type, id } = useParams()
   const isMovie = type === 'movie'
   const isTV = type === 'tvshow' || type === 'tv' || type === 'show'
 
@@ -40,6 +48,7 @@ export default function Player() {
   const [media, setMedia] = useState(null)
   const [episode, setEpisode] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [metadataError, setMetadataError] = useState(false)
   const [isTheater, setIsTheater] = useState(false)
   const [seekOffset, setSeekOffset] = useState(0)
   const [directPosition, setDirectPosition] = useState(0)
@@ -49,6 +58,7 @@ export default function Player() {
   const [subtitleTracks, setSubtitleTracks] = useState([])
   const [activeSubtitle, setActiveSubtitle] = useState('sidecar')
   const [localUrl, setLocalUrl] = useState(null)
+  const [localLookupDone, setLocalLookupDone] = useState(false)
   const [streamTicket, setStreamTicket] = useState(null)
   const [subtitleTicket, setSubtitleTicket] = useState(null)
   const [streamTicketError, setStreamTicketError] = useState(false)
@@ -70,14 +80,23 @@ export default function Player() {
 
   // ── Load media ─────────────────────────────────────────────────────────
   useEffect(() => {
-    const fetcher = isMovie ? getMovie(id) : getTVShow(id)
-    fetcher.then(async res => {
-      setMedia(res.data)
-      if (isTV && epId) {
-        const eps = await getEpisodes(id)
-        setEpisode(eps.data.find(e => e._id === epId) || null)
+    let cancelled = false
+    const load = async () => {
+      try {
+        const res = await (isMovie ? getMovie(id) : getTVShow(id))
+        if (cancelled) return
+        const eps = isTV && epId ? await getEpisodes(id) : null
+        if (cancelled) return
+        setEpisode(eps?.data.find(e => e._id === epId) || null)
+        setMedia(res.data)
+      } catch {
+        if (!cancelled) setMetadataError(true)
+      } finally {
+        if (!cancelled) setLoading(false)
       }
-    }).finally(() => setLoading(false))
+    }
+    load()
+    return () => { cancelled = true }
   }, [id, type, epId, isMovie, isTV])
 
   // ── Set resume offset once media loads ────────────────────────────────
@@ -101,26 +120,37 @@ export default function Player() {
 
     const mediaToLookup = episode?._id || id
     let objectUrl = null
+    let cancelled = false
+    const revokeBlob = url => {
+      if (url?.startsWith('blob:')) URL.revokeObjectURL(url)
+    }
 
-    OfflineStorageService.getLocalUrl(mediaToLookup).then(url => {
-      if (url) {
-        console.log('[Player] Found local file! Bypassing streaming server.')
+    const lookup = async () => {
+      try {
+        const url = await OfflineStorageService.getLocalUrl(mediaToLookup)
+        if (cancelled) { revokeBlob(url); return }
         objectUrl = url
-        setLocalUrl(url)
+        setLocalUrl(url || null)
+      } catch {
+        // A storage failure is not authorization: fall back through normal
+        // short-lived streaming tickets, without disclosing local paths.
+        if (!cancelled) setLocalUrl(null)
+      } finally {
+        if (!cancelled) setLocalLookupDone(true)
       }
-    })
+    }
+    setLocalLookupDone(false)
+    lookup()
 
     return () => {
-      if (objectUrl && objectUrl.startsWith('blob:')) {
-        console.log('[Player] Revoking ObjectURL:', objectUrl)
-        URL.revokeObjectURL(objectUrl)
-      }
+      cancelled = true
+      revokeBlob(objectUrl)
     }
   }, [media, episode, id])
 
   // ── Load audio/subtitle tracks (streaming only) ───────────────────────
   useEffect(() => {
-    if (!media || localUrl) return  // skip if playing offline local file
+    if (!media || !localLookupDone || localUrl) return
     const vaultPath = episode?.vaultPath || media?.vaultPath
     if (!vaultPath) return
     let cancelled = false
@@ -153,7 +183,7 @@ export default function Player() {
         if (!cancelled && request === streamRequest.current) setStreamTicketError(true)
       })
     return () => { cancelled = true; cancelPendingRequests() }
-  }, [media, episode, localUrl, cancelPendingRequests])
+  }, [media, episode, localUrl, localLookupDone, cancelPendingRequests])
 
   // ── Progress tracking ─────────────────────────────────────────────────
   useEffect(() => {
@@ -233,6 +263,7 @@ export default function Player() {
 
   // ─────────────────────────────────────────────────────────────────────
   if (loading) return <div className="loading-center player-loading"><RefreshCw className="animate-spin" size={48} /></div>
+  if (metadataError) return <div className="page-content"><p role="alert">Unable to load content</p><p>Go back and try again when the server is available.</p></div>
   if (!media) return <div className="page-content"><p>Content not found.</p></div>
 
   const title = type === 'tvshow' && episode
