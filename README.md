@@ -89,6 +89,14 @@ The development web application is available at `http://localhost:5180`; the bac
 
 On the configured Windows deployment, `launch_cinevault.bat`, `npm run fullstack`, `npm run dev`, and `npm start` start the dedicated authenticated CineVault MongoDB on `127.0.0.1:27018` before starting the backend. The separate MongoDB service on port 27017 is not used for this deployment. Existing database files and credentials are preserved. Other operating systems and remote/custom database targets must start their configured database separately.
 
+`npm run dev` uses Node 24's built-in watch mode, with console output preserved.
+It restarts the backend when the entry point or a loaded JavaScript module changes,
+including after a startup error. No separate watcher installation is needed.
+Changes to `.env`, dynamically read configuration, or newly added modules not yet
+loaded require a manual restart. Frontend hot reload remains managed by Vite;
+production `npm start` does not watch files. Database preflight still runs before
+the development watcher starts, not on every source-code restart.
+
 If startup reports `ECONNREFUSED 127.0.0.1:27018`, inspect `runtime/mongodb/mongod.log` and rerun the launcher. The database can also be started by itself with `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start_cinevault.ps1 -DatabaseOnly`. Confirm `http://localhost:3000/health/ready` reports `ready` before signing in. On Android, select the PC's LAN address (for example `http://192.168.0.100:3000`) in the login screen's Server Settings; `localhost` refers to the phone.
 
 ### Temporary free HTTPS testing

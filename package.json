@@ -12,7 +12,7 @@
     "prestart": "node scripts/ensure_local_mongodb.js",
     "start": "node index.js",
     "predev": "node scripts/ensure_local_mongodb.js",
-    "dev": "nodemon index.js",
+    "dev": "node --watch --watch-preserve-output index.js",
     "frontend": "npm run dev --prefix frontend",
     "prefullstack": "node scripts/ensure_local_mongodb.js",
     "fullstack": "concurrently \"npm run dev\" \"npm run frontend\"",
@@ -60,7 +60,6 @@
     "eslint-plugin-react-hooks": "7.1.1",
     "globals": "16.4.0",
     "jest": "30.5.1",
-    "nodemon": "3.1.14",
     "supertest": "7.2.2"
   },
   "directories": {
