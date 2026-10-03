@@ -108,6 +108,10 @@ export default function CinemaPlayer({
   const [scratchedTime, setScratchedTime] = useState(null)
   const [hasStarted, setHasStarted] = useState(false)
 
+  useEffect(() => {
+    if (ended) wrapperRef.current?.querySelector('.cp-ended-btn')?.focus()
+  }, [ended])
+
   // Speed and YouTube Gesture HUD states
   const [speedBoost, setSpeedBoost] = useState(null) // '2x' | 'rewind' | null
   const [seekHud, setSeekHud] = useState(null) // { side: 'left'|'right', seconds: number, animKey: number }
@@ -132,8 +136,19 @@ export default function CinemaPlayer({
   }, [setPlaybackIntent])
   const togglePlay = useCallback(() => {
     const v = videoRef.current
-    if (v) requestPlayback(v.paused)
-  }, [requestPlayback])
+    if (!v) return
+    if (v.ended && isTranscoding && onUserSeek) {
+      setPlaybackIntent(true)
+      onUserSeek(0)
+    } else requestPlayback(v.paused)
+  }, [requestPlayback, isTranscoding, onUserSeek, setPlaybackIntent])
+  const replay = useCallback(() => {
+    const v = videoRef.current
+    if (!v) return
+    setPlaybackIntent(true)
+    if (isTranscoding && onUserSeek) onUserSeek(0)
+    else { v.currentTime = 0; requestPlayback(true) }
+  }, [isTranscoding, onUserSeek, requestPlayback, setPlaybackIntent])
 
   // ── hide timer ────────────────────────────────────────────────────────
   const showControls = useCallback(() => {
@@ -234,17 +249,16 @@ export default function CinemaPlayer({
   const doSeek = useCallback((targetAbsolute) => {
     const v = videoRef.current; if (!v) return
     const clipped = Math.max(0, Math.min(targetAbsolute, total))
-    const delta = clipped - absTime
-
-    const isSignificantSeek = Math.abs(delta) > 2
-
-    if (isTranscoding && onUserSeek && isSignificantSeek) {
-      onUserSeek(clipped)
+    // A fragmented response represents only its reconstructed segment. Even a
+    // small seek may lie outside it; never native-seek that transport.
+    if (isTranscoding && onUserSeek) {
+      // The server seeks in whole seconds. Exact EOF has no frame to decode.
+      onUserSeek(Math.min(clipped, Math.max(0, total - 1)))
     } else {
       const localTarget = clipped - seekOffset
       v.currentTime = Math.max(0, localTarget)
     }
-  }, [absTime, total, isTranscoding, onUserSeek, seekOffset])
+  }, [total, isTranscoding, onUserSeek, seekOffset])
 
   // ── orientation lock helper for Android/Mobile ────────────────────────
   const handleOrientationLock = useCallback(async (isFs) => {
@@ -282,6 +296,7 @@ export default function CinemaPlayer({
     setCurrentTime(0)
     setBuffered(0)
     setEnded(false)
+    let previewPrimed = false
     const onPlay = () => { 
       if (!playbackWantedRef.current) { v.pause(); return }
       setPlaying(true); 
@@ -294,7 +309,15 @@ export default function CinemaPlayer({
     const onCanPlay = () => {
       if (playbackWantedRef.current) {
         if (v.paused) v.play()?.catch(() => {})
-      } else if (!v.paused) v.pause()
+      } else {
+        if (!v.paused) v.pause()
+        // Android WebView can decode the first frame but leave a reconstructed
+        // paused source black. One tiny buffered seek paints it without play().
+        if (!previewPrimed && isTranscoding && v.currentTime === 0 && v.readyState >= 2) {
+          previewPrimed = true
+          try { v.currentTime = 0.001 } catch { /* A non-seekable stream can still be resumed manually. */ }
+        }
+      }
     }
     const onTime = () => {
       setCurrentTime(v.currentTime)
@@ -333,8 +356,8 @@ export default function CinemaPlayer({
       const err = e.target.error;
       console.error('[CinemaPlayer] VIDEO ERROR:', {
         code: err?.code,
-        message: err?.message,
-        src: v.src
+        // Browser error messages/source URLs may contain scoped playback tickets.
+        readyState: v.readyState
       });
     };
     v.addEventListener('error', onError);
@@ -856,7 +879,7 @@ export default function CinemaPlayer({
 
       {/* ended overlay */}
       {ended && (
-        <div className="cp-ended" onClick={() => requestPlayback(true)}>
+        <div className="cp-ended" onClick={replay}>
           <button className="cp-ended-btn">
             <Icon d={IC.replay} size={36} />
             <span>Replay</span>
@@ -980,9 +1003,11 @@ export default function CinemaPlayer({
                     onSelect={v => {
                       if (v === 'off') {
                         setSubsOn(false)
-                      } else {
-                        setSubsOn(true)
                         onSubtitleChange?.(v)
+                      } else {
+                        const change = onSubtitleChange?.(v)
+                        if (change?.then) change.then(applied => { if (applied) setSubsOn(true) }).catch(() => {})
+                        else setSubsOn(true)
                       }
                     }}
                     onClose={closeMenu}

@@ -107,6 +107,64 @@ describe('CinemaPlayer remote focus', () => {
     expect(play).toHaveBeenCalledTimes(2)
   })
 
+  it('paints a paused reconstructed first frame once without starting playback', () => {
+    const view = mount({ isTranscoding: true })
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }))
+    Object.defineProperty(video, 'paused', { configurable: true, value: false })
+    fireEvent.play(video)
+    fireEvent.click(screen.getByRole('button', { name: 'Pause' }))
+    Object.defineProperty(video, 'paused', { configurable: true, value: true })
+    view.rerender(<CinemaPlayer {...props} isTranscoding src={{ src: '/paused-seek.mp4' }} seekOffset={13} />)
+    Object.defineProperty(video, 'readyState', { configurable: true, value: 4 })
+    play.mockClear()
+    fireEvent.canPlay(video)
+    expect(video.currentTime).toBe(0.001)
+    expect(video.autoplay).toBe(false)
+    expect(play).not.toHaveBeenCalled()
+    video.currentTime = 0
+    fireEvent.canPlay(video)
+    expect(video.currentTime).toBe(0)
+    view.rerender(<CinemaPlayer {...props} isTranscoding src={{ src: '/another-paused-seek.mp4' }} seekOffset={18} />)
+    fireEvent.canPlay(video)
+    expect(video.currentTime).toBe(0.001)
+  })
+
+  it('reconstructs even a small fragmented seek outside the current segment', () => {
+    const onUserSeek = vi.fn()
+    mount({ isTranscoding: true, onUserSeek, seekOffset: 18 })
+    const bar = screen.getByRole('slider', { name: 'Playback position' })
+    // A click at absolute17 is only one second back but lies before this segment.
+    vi.spyOn(bar, 'getBoundingClientRect').mockReturnValue({ left: 0, width: 60 })
+    fireEvent.mouseDown(bar, { clientX: 17 })
+    fireEvent.mouseUp(document, { clientX: 17 })
+    expect(onUserSeek).toHaveBeenCalledWith(17)
+    expect(video.currentTime).toBe(0)
+  })
+
+  it('replays a fragmented response from title zero, not its previous offset', () => {
+    const onUserSeek = vi.fn()
+    mount({ isTranscoding: true, onUserSeek, seekOffset: 59 })
+    fireEvent.ended(video)
+    expect(screen.getByRole('button', { name: 'Replay' })).toHaveFocus()
+    fireEvent.click(screen.getByRole('button', { name: 'Replay' }))
+    expect(onUserSeek).toHaveBeenCalledWith(0)
+    expect(video.autoplay).toBe(true)
+    expect(play).not.toHaveBeenCalled()
+    Object.defineProperty(video, 'ended', { configurable: true, value: true })
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }))
+    expect(onUserSeek).toHaveBeenCalledTimes(2)
+    expect(play).not.toHaveBeenCalled()
+  })
+
+  it('does not log ticket-bearing media URLs or browser error messages', () => {
+    mount({ src: { src: '/stream?token=synthetic-sensitive' } })
+    Object.defineProperty(video, 'error', { configurable: true, value: { code: 2, message: 'synthetic-sensitive' } })
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    fireEvent.error(video)
+    expect(log).toHaveBeenCalledWith('[CinemaPlayer] VIDEO ERROR:', { code: 2, readyState: 0 })
+    expect(JSON.stringify(log.mock.calls)).not.toContain('synthetic-sensitive')
+  })
+
   it('enters controls, navigates without seeking, then seeks on the progress bar', () => {
     mount()
     const surface = screen.getByRole('button', { name: /Video playback/ })
@@ -226,7 +284,7 @@ describe('CinemaPlayer remote focus', () => {
     focus(bar)
     key(bar, 'Home')
     key(bar, 'End')
-    expect(onUserSeek.mock.calls).toEqual([[0], [60]])
+    expect(onUserSeek.mock.calls).toEqual([[0], [59]])
     expect(video.currentTime).toBe(0)
   })
 
@@ -286,6 +344,7 @@ describe('CinemaPlayer remote focus', () => {
     expect(screen.getByRole('button', { name: 'EN (Synthetic captions)' })).toHaveFocus()
     expect(screen.getByRole('button', { name: 'External' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Off' }))
+    expect(onSubtitleChange).toHaveBeenLastCalledWith('off')
     expect(textTrack.mode).toBe('disabled')
     fireEvent.click(opener)
     expect(screen.getByRole('button', { name: 'Off' })).toHaveFocus()

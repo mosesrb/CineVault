@@ -45,9 +45,18 @@ export default function Player() {
   const [activeSubtitle, setActiveSubtitle] = useState('sidecar')
   const [localUrl, setLocalUrl] = useState(null)
   const [streamTicket, setStreamTicket] = useState(null)
+  const [subtitleTicket, setSubtitleTicket] = useState(null)
   const [streamTicketError, setStreamTicketError] = useState(false)
+  const [playbackRequestError, setPlaybackRequestError] = useState(false)
 
   const progressTimer = useRef(null)
+  const streamRequest = useRef(0)
+  const subtitleRequest = useRef(0)
+  const requestedAudio = useRef(0)
+  const cancelPendingRequests = useCallback(() => {
+    ++streamRequest.current
+    ++subtitleRequest.current
+  }, [])
 
   // ── Load media ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -76,7 +85,9 @@ export default function Player() {
     if (!vaultPath) return
 
     setStreamTicket(null)
+    setSubtitleTicket(null)
     setStreamTicketError(false)
+    setPlaybackRequestError(false)
 
     const mediaToLookup = episode?._id || id
     let objectUrl = null
@@ -102,9 +113,12 @@ export default function Player() {
     if (!media || localUrl) return  // skip if playing offline local file
     const vaultPath = episode?.vaultPath || media?.vaultPath
     if (!vaultPath) return
+    let cancelled = false
+    const request = ++streamRequest.current
 
     getStreamInfo(vaultPath)
       .then(res => {
+        if (cancelled) return
         if (res.data?.audioTracks?.length > 0) {
           console.log('[Player] Audio tracks found:', res.data.audioTracks)
           setAudioTracks(res.data.audioTracks)
@@ -120,14 +134,16 @@ export default function Player() {
 
     getStreamTicket(vaultPath)
       .then(res => {
-        if (res.data?.ticket) {
-          setStreamTicket(res.data.ticket)
-        }
+        if (cancelled || request !== streamRequest.current) return
+        if (!res.data?.ticket) throw new Error('Missing playback ticket')
+        setStreamTicket(res.data.ticket)
+        setSubtitleTicket(res.data.ticket)
       })
       .catch(() => {
-        setStreamTicketError(true)
+        if (!cancelled && request === streamRequest.current) setStreamTicketError(true)
       })
-  }, [media, episode, localUrl])
+    return () => { cancelled = true; cancelPendingRequests() }
+  }, [media, episode, localUrl, cancelPendingRequests])
 
   // ── Progress tracking ─────────────────────────────────────────────────
   useEffect(() => {
@@ -149,14 +165,55 @@ export default function Player() {
     return () => clearInterval(progressTimer.current)
   }, [media, episode, id, type, epId, seekOffset])
 
-  const handleSeek = useCallback((t) => setSeekOffset(Math.floor(t)), [])
+  // Tickets authorize individual requests, not an indefinitely reusable player
+  // URL. Reconstruct only after obtaining a fresh scoped ticket; latest intent wins.
+  const reconstruct = useCallback(async (offset, audioIndex) => {
+    const vaultPath = episode?.vaultPath || media?.vaultPath
+    if (localUrl || !vaultPath) return
+    const request = ++streamRequest.current
+    requestedAudio.current = audioIndex
+    ++subtitleRequest.current
+    setPlaybackRequestError(false)
+    try {
+      const res = await getStreamTicket(vaultPath)
+      if (request !== streamRequest.current) return
+      if (!res.data?.ticket) throw new Error('Missing playback ticket')
+      setSeekOffset(Math.floor(offset))
+      setActiveAudio(audioIndex)
+      setStreamTicket(res.data.ticket)
+      setSubtitleTicket(res.data.ticket)
+    } catch {
+      if (request === streamRequest.current) {
+        requestedAudio.current = activeAudio
+        setPlaybackRequestError(true)
+      }
+    }
+  }, [media, episode, localUrl, activeAudio])
+  const handleSeek = useCallback(t => reconstruct(t, requestedAudio.current), [reconstruct])
   const handleAudioChange = useCallback((idx) => {
     // Snapshot current position before switching track
     const video = document.querySelector('video')
     const currentAbs = Math.floor(seekOffset + (video?.currentTime || 0))
-    setSeekOffset(currentAbs)
-    setActiveAudio(idx)
-  }, [seekOffset])
+    reconstruct(currentAbs, idx)
+  }, [seekOffset, reconstruct])
+  const handleSubtitleChange = useCallback(async (selection) => {
+    const request = ++subtitleRequest.current
+    if (selection === 'off') { setActiveSubtitle(selection); return true }
+    const vaultPath = episode?.vaultPath || media?.vaultPath
+    if (localUrl || !vaultPath) return false
+    setPlaybackRequestError(false)
+    try {
+      const res = await getStreamTicket(vaultPath)
+      if (request !== subtitleRequest.current) return false
+      if (!res.data?.ticket) throw new Error('Missing playback ticket')
+      setSubtitleTicket(res.data.ticket)
+      setActiveSubtitle(selection)
+      return true
+    } catch {
+      if (request === subtitleRequest.current) setPlaybackRequestError(true)
+      return false
+    }
+  }, [media, episode, localUrl])
 
   // ─────────────────────────────────────────────────────────────────────
   if (loading) return <div className="loading-center player-loading"><RefreshCw className="animate-spin" size={48} /></div>
@@ -187,10 +244,10 @@ export default function Player() {
   const hasSidecar = episode?.hasSidecarSubtitles || media?.hasSidecarSubtitles
   const serverBase = localStorage.getItem('cv_server_url') || ''
 
-  if (effectiveToken && activeSubtitle === 'sidecar' && hasSidecar) {
-    subtitlesUrl = `${serverBase}/api/v1/stream/subtitles?path=${encodeURIComponent(vaultPath)}&seek=${localUrl ? 0 : seekOffset}&token=${effectiveToken}`
-  } else if (effectiveToken && typeof activeSubtitle === 'number') {
-    subtitlesUrl = `${serverBase}/api/v1/stream/subtitles/vtt?path=${encodeURIComponent(vaultPath)}&index=${activeSubtitle}&seek=${seekOffset}&token=${effectiveToken}`
+  if (subtitleTicket && activeSubtitle === 'sidecar' && hasSidecar) {
+    subtitlesUrl = `${serverBase}/api/v1/stream/subtitles?path=${encodeURIComponent(vaultPath)}&seek=${localUrl ? 0 : seekOffset}&token=${subtitleTicket}`
+  } else if (subtitleTicket && typeof activeSubtitle === 'number') {
+    subtitlesUrl = `${serverBase}/api/v1/stream/subtitles/vtt?path=${encodeURIComponent(vaultPath)}&index=${activeSubtitle}&seek=${seekOffset}&token=${subtitleTicket}`
   }
 
   const mimeType = needsTranscode ? 'video/mp4' : (ext === '.webm' ? 'video/webm' : 'video/mp4')
@@ -209,6 +266,7 @@ export default function Player() {
 
       {/* Player stage */}
       <div className="player-stage">
+        {playbackRequestError && <p role="alert">Could not authorize the playback change. Your previous selection is unchanged; please try the control again.</p>}
         {streamUrl ? (
           <CinemaPlayer
             key={`player-${!!localUrl}`}
@@ -226,7 +284,7 @@ export default function Player() {
             onAudioChange={handleAudioChange}
             subtitleTracks={localUrl ? [] : subtitleTracks}
             activeSubtitle={activeSubtitle}
-            onSubtitleChange={setActiveSubtitle}
+            onSubtitleChange={handleSubtitleChange}
             isTheater={isTheater}
             onTheaterToggle={() => setIsTheater(p => !p)}
           />
