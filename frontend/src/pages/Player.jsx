@@ -8,11 +8,14 @@ import './Player.css'
 
 const TRANSCODE_EXTS = new Set(['.mkv', '.avi', '.mov', '.wmv', '.flv', '.ts', '.m2ts'])
 
-function buildStreamUrl(vaultPath, token, seekSeconds = 0, audioIndex = 0) {
+function buildStreamUrl(vaultPath, token, seekSeconds = 0, audioIndex = 0, revision = 0) {
   if (!vaultPath || !token) return null
   const ext = '.' + vaultPath.split('.').pop().toLowerCase()
   const needsTranscode = TRANSCODE_EXTS.has(ext)
   const params = new URLSearchParams({ path: vaultPath, token })
+  // Same-second JWT issuance can return an identical ticket. A verified new
+  // user request still needs a fresh media load (including title-zero replay).
+  if (revision > 0) params.set('request', String(revision))
   // We MUST transcode if: format is incompatible OR user is seeking OR switching audio
   if (needsTranscode || seekSeconds > 0 || audioIndex > 0) {
     params.set('transcode', 'true')
@@ -39,6 +42,8 @@ export default function Player() {
   const [loading, setLoading] = useState(true)
   const [isTheater, setIsTheater] = useState(false)
   const [seekOffset, setSeekOffset] = useState(0)
+  const [directPosition, setDirectPosition] = useState(0)
+  const [sourceRevision, setSourceRevision] = useState(0)
   const [audioTracks, setAudioTracks] = useState([])
   const [activeAudio, setActiveAudio] = useState(0)
   const [subtitleTracks, setSubtitleTracks] = useState([])
@@ -57,6 +62,11 @@ export default function Player() {
     ++streamRequest.current
     ++subtitleRequest.current
   }, [])
+
+  // Full-title duration, never the remaining fragmented response duration.
+  const duration = episode
+    ? (episode.duration || episode.runtime || 0)
+    : (media?.duration || (media?.runtime ? media.runtime * 60 : 0))
 
   // ── Load media ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -151,19 +161,21 @@ export default function Player() {
     progressTimer.current = setInterval(() => {
       const video = document.querySelector('video')
       if (!video || video.paused) return
-      const absolutePos = Math.floor(seekOffset + video.currentTime)
+      const transportOffset = localUrl ? 0 : seekOffset
+      const absolutePos = Math.floor(transportOffset + video.currentTime)
+      const totalDuration = duration || (Number.isFinite(video.duration) ? transportOffset + video.duration : 0)
       if (absolutePos > 0) {
         saveProgress({
           mediaId: id,
           mediaType: type,
           episodeId: epId,
           progressSeconds: absolutePos,
-          completed: video.duration > 0 && ((seekOffset + video.currentTime) / video.duration) > 0.95
+          completed: totalDuration > 0 && ((transportOffset + video.currentTime) / totalDuration) > 0.95
         }).catch(console.error)
       }
     }, 10000)
     return () => clearInterval(progressTimer.current)
-  }, [media, episode, id, type, epId, seekOffset])
+  }, [media, episode, id, type, epId, seekOffset, localUrl, duration])
 
   // Tickets authorize individual requests, not an indefinitely reusable player
   // URL. Reconstruct only after obtaining a fresh scoped ticket; latest intent wins.
@@ -178,24 +190,28 @@ export default function Player() {
       const res = await getStreamTicket(vaultPath)
       if (request !== streamRequest.current) return
       if (!res.data?.ticket) throw new Error('Missing playback ticket')
-      setSeekOffset(Math.floor(offset))
+      const ext = '.' + vaultPath.split('.').pop().toLowerCase()
+      const fragmented = TRANSCODE_EXTS.has(ext) || seekOffset > 0 || audioIndex > 0
+      setSeekOffset(fragmented ? Math.floor(offset) : 0)
+      setDirectPosition(fragmented ? 0 : Math.floor(offset))
       setActiveAudio(audioIndex)
       setStreamTicket(res.data.ticket)
       setSubtitleTicket(res.data.ticket)
+      setSourceRevision(request)
     } catch {
       if (request === streamRequest.current) {
         requestedAudio.current = activeAudio
         setPlaybackRequestError(true)
       }
     }
-  }, [media, episode, localUrl, activeAudio])
+  }, [media, episode, localUrl, activeAudio, seekOffset])
   const handleSeek = useCallback(t => reconstruct(t, requestedAudio.current), [reconstruct])
   const handleAudioChange = useCallback((idx) => {
     // Snapshot current position before switching track
     const video = document.querySelector('video')
-    const currentAbs = Math.floor(seekOffset + (video?.currentTime || 0))
+    const currentAbs = Math.floor((localUrl ? 0 : seekOffset) + (video?.currentTime || 0))
     reconstruct(currentAbs, idx)
-  }, [seekOffset, reconstruct])
+  }, [seekOffset, localUrl, reconstruct])
   const handleSubtitleChange = useCallback(async (selection) => {
     const request = ++subtitleRequest.current
     if (selection === 'off') { setActiveSubtitle(selection); return true }
@@ -229,16 +245,11 @@ export default function Player() {
   // Those streams seek by reconstruction, not by changing video.currentTime.
   const needsTranscode = TRANSCODE_EXTS.has(ext) || seekOffset > 0 || activeAudio > 0
 
-  const duration = media.duration
-    || (media.runtime ? media.runtime * 60 : 0) // Movie runtime is usually minutes (TMDB)
-    || (episode?.runtime ? episode.runtime : 0) // Episode runtime is stored as total seconds
-    || 0
-
   const posterImage = type === 'tvshow'
     ? (episode?.stillUrl || media?.backdropUrl || media?.posterUrl)
     : (media?.backdropUrl || media?.posterUrl)
 
-  const streamUrl = localUrl || buildStreamUrl(vaultPath, effectiveToken, seekOffset, activeAudio)
+  const streamUrl = localUrl || buildStreamUrl(vaultPath, effectiveToken, seekOffset, activeAudio, sourceRevision)
 
   let subtitlesUrl = null
   const hasSidecar = episode?.hasSidecarSubtitles || media?.hasSidecarSubtitles
@@ -274,8 +285,9 @@ export default function Player() {
             title={title}
             poster={posterImage}
             duration={duration}
-            seekOffset={seekOffset}
-            onUserSeek={handleSeek}
+            seekOffset={localUrl ? 0 : seekOffset}
+            initialTime={localUrl ? seekOffset : (needsTranscode ? 0 : directPosition)}
+            onUserSeek={localUrl ? undefined : handleSeek}
             subtitlesUrl={localUrl ? null : subtitlesUrl}
             hasSidecarSubtitles={!localUrl && !!hasSidecar}
             isTranscoding={!localUrl && needsTranscode}

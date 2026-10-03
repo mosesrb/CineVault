@@ -67,7 +67,7 @@ function MenuPanel({ title, items, activeValue, onSelect, onClose }) {
 // ─── main ─────────────────────────────────────────────────────────────────────
 export default function CinemaPlayer({
   src, title, poster, subtitlesUrl, hasSidecarSubtitles = !!subtitlesUrl,
-  duration = 0, seekOffset = 0,
+  duration = 0, seekOffset = 0, initialTime = 0,
   onUserSeek, isTranscoding = false,
   audioTracks = [], activeAudio = 0, onAudioChange,
   subtitleTracks = [], activeSubtitle = 'sidecar', onSubtitleChange,
@@ -84,6 +84,8 @@ export default function CinemaPlayer({
   // Gestures & Speed Refs
   const longPressTimerRef = useRef(null)
   const rewindIntervalRef = useRef(null)
+  const rewindTargetRef = useRef(null)
+  const longPressPlaybackWantedRef = useRef(false)
   const isLongPressActiveRef = useRef(false)
   const lastTapRef = useRef({ time: 0, x: 0, side: null })
   const singleTapTimerRef = useRef(null)
@@ -137,18 +139,18 @@ export default function CinemaPlayer({
   const togglePlay = useCallback(() => {
     const v = videoRef.current
     if (!v) return
-    if (v.ended && isTranscoding && onUserSeek) {
+    if (v.ended && onUserSeek) {
       setPlaybackIntent(true)
       onUserSeek(0)
     } else requestPlayback(v.paused)
-  }, [requestPlayback, isTranscoding, onUserSeek, setPlaybackIntent])
+  }, [requestPlayback, onUserSeek, setPlaybackIntent])
   const replay = useCallback(() => {
     const v = videoRef.current
     if (!v) return
     setPlaybackIntent(true)
-    if (isTranscoding && onUserSeek) onUserSeek(0)
+    if (onUserSeek) onUserSeek(0)
     else { v.currentTime = 0; requestPlayback(true) }
-  }, [isTranscoding, onUserSeek, requestPlayback, setPlaybackIntent])
+  }, [onUserSeek, requestPlayback, setPlaybackIntent])
 
   // ── hide timer ────────────────────────────────────────────────────────
   const showControls = useCallback(() => {
@@ -242,6 +244,7 @@ export default function CinemaPlayer({
     clearTimeout(hideTimer.current)
     clearTimeout(singleTapTimerRef.current)
     clearTimeout(seekCommitTimerRef.current)
+    clearTimeout(longPressTimerRef.current)
     clearInterval(rewindIntervalRef.current)
   }, [])
 
@@ -249,16 +252,16 @@ export default function CinemaPlayer({
   const doSeek = useCallback((targetAbsolute) => {
     const v = videoRef.current; if (!v) return
     const clipped = Math.max(0, Math.min(targetAbsolute, total))
-    // A fragmented response represents only its reconstructed segment. Even a
-    // small seek may lie outside it; never native-seek that transport.
-    if (isTranscoding && onUserSeek) {
+    // Online seeks must renew request authorization even for direct MP4 ranges.
+    // Offline/standalone sources without a callback retain native seeking.
+    if (onUserSeek) {
       // The server seeks in whole seconds. Exact EOF has no frame to decode.
       onUserSeek(Math.min(clipped, Math.max(0, total - 1)))
     } else {
       const localTarget = clipped - seekOffset
       v.currentTime = Math.max(0, localTarget)
     }
-  }, [total, isTranscoding, onUserSeek, seekOffset])
+  }, [total, onUserSeek, seekOffset])
 
   // ── orientation lock helper for Android/Mobile ────────────────────────
   const handleOrientationLock = useCallback(async (isFs) => {
@@ -297,6 +300,11 @@ export default function CinemaPlayer({
     setBuffered(0)
     setEnded(false)
     let previewPrimed = false
+    let initialPositionApplied = initialTime <= 0 || isTranscoding
+    const applyInitialPosition = () => {
+      if (initialPositionApplied || v.readyState < 1) return
+      try { v.currentTime = initialTime; initialPositionApplied = true } catch { /* Retry on canplay. */ }
+    }
     const onPlay = () => { 
       if (!playbackWantedRef.current) { v.pause(); return }
       setPlaying(true); 
@@ -307,6 +315,7 @@ export default function CinemaPlayer({
     const onPause = () => { setPlaying(false); setShowCtrl(true) }
     const onEnd = () => { setPlaybackIntent(false); setPlaying(false); setEnded(true); setShowCtrl(true) }
     const onCanPlay = () => {
+      applyInitialPosition()
       if (playbackWantedRef.current) {
         if (v.paused) v.play()?.catch(() => {})
       } else {
@@ -339,17 +348,7 @@ export default function CinemaPlayer({
     v.addEventListener('progress', onTime)
     v.addEventListener('canplay', onCanPlay)
     
-    const onLoaded = () => {
-      if (!isTranscoding && seekOffset > 0 && v.currentTime === 0) {
-        if (v.readyState >= 2) {
-           v.currentTime = seekOffset;
-        } else {
-           v.addEventListener('canplay', () => {
-             v.currentTime = seekOffset;
-           }, { once: true });
-        }
-      }
-    };
+    const onLoaded = applyInitialPosition
     v.addEventListener('loadedmetadata', onLoaded);
 
     const onError = (e) => {
@@ -379,7 +378,7 @@ export default function CinemaPlayer({
       document.removeEventListener('mozfullscreenchange', onFsChg)
       document.removeEventListener('MSFullscreenChange', onFsChg)
     }
-  }, [src?.src, showControls, isTranscoding, seekOffset, handleOrientationLock, setPlaybackIntent])
+  }, [src?.src, showControls, isTranscoding, seekOffset, initialTime, handleOrientationLock, setPlaybackIntent])
 
   // ── subtitle mode sync ────────────────────────────────────────────────
   useEffect(() => {
@@ -510,9 +509,11 @@ export default function CinemaPlayer({
     clearTimeout(longPressTimerRef.current)
     clearInterval(rewindIntervalRef.current)
     isLongPressActiveRef.current = false
+    rewindTargetRef.current = null
 
     longPressTimerRef.current = setTimeout(() => {
       isLongPressActiveRef.current = true
+      longPressPlaybackWantedRef.current = playbackWantedRef.current
       setShowCtrl(false)
 
       if (isRightSide) {
@@ -525,19 +526,22 @@ export default function CinemaPlayer({
       } else {
         // Rapid 2x Rewind
         setSpeedBoost('rewind')
+        rewindTargetRef.current = seekOffset + (videoRef.current?.currentTime || 0)
         if (videoRef.current && !videoRef.current.paused) videoRef.current.pause()
         
         rewindIntervalRef.current = setInterval(() => {
           if (videoRef.current) {
-            const current = videoRef.current.currentTime
-            const next = Math.max(0, current - 2.5)
-            videoRef.current.currentTime = next
-            setCurrentTime(next)
+            const next = Math.max(0, rewindTargetRef.current - 2.5)
+            rewindTargetRef.current = next
+            // Online: accumulate one title-relative request on release, not
+            // expired native ranges or a ticket/FFmpeg request every200ms.
+            if (!onUserSeek) videoRef.current.currentTime = next - seekOffset
+            setCurrentTime(next - seekOffset)
           }
         }, 200)
       }
     }, 400)
-  }, [requestPlayback])
+  }, [requestPlayback, seekOffset, onUserSeek])
 
   const stopLongPress = useCallback(() => {
     clearTimeout(longPressTimerRef.current)
@@ -548,11 +552,18 @@ export default function CinemaPlayer({
       setSpeedBoost(null)
       if (videoRef.current) {
         videoRef.current.playbackRate = 1.0
-        if (videoRef.current.paused && !ended) requestPlayback(true)
+        const wanted = longPressPlaybackWantedRef.current && !ended
+        if (rewindTargetRef.current !== null && onUserSeek) {
+          // The scrub position is only a preview until authorization succeeds.
+          setCurrentTime(videoRef.current.currentTime)
+          setPlaybackIntent(wanted)
+          doSeek(rewindTargetRef.current)
+        } else requestPlayback(wanted)
       }
+      rewindTargetRef.current = null
       showControls()
     }
-  }, [ended, showControls, requestPlayback])
+  }, [ended, showControls, requestPlayback, setPlaybackIntent, doSeek, onUserSeek])
 
   // ── Touch and Gesture References ──────────────────────────────────────
   const lastTouchRef = useRef({ time: 0, x: 0, y: 0 })

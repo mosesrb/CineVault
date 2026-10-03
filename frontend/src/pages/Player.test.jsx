@@ -4,10 +4,19 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Player from './Player'
 
-const mocks = vi.hoisted(() => ({ getMovie: vi.fn(), local: vi.fn(), ticket: vi.fn(), props: null }))
+const mocks = vi.hoisted(() => ({ getMovie: vi.fn(), getTVShow: vi.fn(), getEpisodes: vi.fn(), progress: vi.fn(), local: vi.fn(), ticket: vi.fn(), props: null }))
+const realSetInterval = globalThis.setInterval.bind(globalThis)
+const captureProgressTimer = () => {
+  let tick
+  vi.spyOn(globalThis, 'setInterval').mockImplementation((fn, ms, ...args) => {
+    if (ms === 10000) { tick = fn; return 0 }
+    return realSetInterval(fn, ms, ...args)
+  })
+  return () => tick()
+}
 vi.mock('../api', () => ({
   getMovie: mocks.getMovie,
-  getTVShow: vi.fn(), getEpisodes: vi.fn(), saveProgress: vi.fn().mockResolvedValue({}),
+  getTVShow: mocks.getTVShow, getEpisodes: mocks.getEpisodes, saveProgress: mocks.progress,
   getStreamInfo: vi.fn().mockResolvedValue({ data: {} }),
   getStreamTicket: mocks.ticket,
 }))
@@ -34,10 +43,11 @@ const mount = async (vaultPath, saved = 0, localUrl = null, extra = {}) => {
 }
 beforeEach(() => {
   mocks.props = null; localStorage.clear()
+  mocks.progress.mockResolvedValue({})
   let request = 0
   mocks.ticket.mockReset().mockImplementation(async () => ({ data: { ticket: `synthetic-ticket-${++request}` } }))
 })
-afterEach(() => { cleanup(); vi.clearAllMocks() })
+afterEach(() => { cleanup(); document.querySelectorAll('video').forEach(v => v.remove()); vi.clearAllMocks(); vi.restoreAllMocks() })
 
 describe('Player stream mode matches transport', () => {
   it('keeps fresh MP4 direct and marks alternate audio as transcoding', async () => {
@@ -91,9 +101,84 @@ describe('Player stream mode matches transport', () => {
     expect(mocks.props.audioTracks).toEqual([])
     expect(mocks.props.hasSidecarSubtitles).toBe(false)
     expect(mocks.props.subtitlesUrl).toBeNull()
+    expect(mocks.props.seekOffset).toBe(0)
+    expect(mocks.props.initialTime).toBe(18)
+    expect(mocks.props.onUserSeek).toBeUndefined()
     fireEvent.click(screen.getByRole('button', { name: 'Select alternate audio' }))
     expect(mocks.props.isTranscoding).toBe(false)
     expect(mocks.props.src.src).toBe('blob:synthetic-offline')
+  })
+
+  it('renews direct MP4 seeks without introducing a transcoded offset', async () => {
+    await mount('Inbox/synthetic.mp4')
+    await act(async () => mocks.props.onUserSeek(45))
+    expect(mocks.ticket).toHaveBeenCalledTimes(2)
+    expect(mocks.props.isTranscoding).toBe(false)
+    expect(mocks.props.seekOffset).toBe(0)
+    expect(mocks.props.initialTime).toBe(45)
+    expect(mocks.props.src.src).not.toContain('transcode=true')
+    expect(mocks.props.src.src).toContain('synthetic-ticket-2')
+  })
+
+  it('reloads a direct title-zero replay even if same-second ticket issuance is identical', async () => {
+    mocks.ticket.mockResolvedValue({ data: { ticket: 'synthetic-same-second-ticket' } })
+    await mount('Inbox/synthetic.mp4')
+    const first = mocks.props.src.src
+    await act(async () => mocks.props.onUserSeek(0))
+    const second = mocks.props.src.src
+    expect(second).not.toBe(first)
+    await act(async () => mocks.props.onUserSeek(0))
+    expect(mocks.props.src.src).not.toBe(second)
+    expect(mocks.props.initialTime).toBe(0)
+    expect(mocks.props.isTranscoding).toBe(false)
+  })
+
+  it.each([[1, false], [18, true]])('uses full-title duration for resumed progress at segment second %s', async (time, completed) => {
+    const tick = captureProgressTimer()
+    await mount('Inbox/synthetic.mkv', 40)
+    const video = document.createElement('video')
+    Object.defineProperties(video, { paused: { value: false }, duration: { value: 20 }, currentTime: { value: time } })
+    document.body.appendChild(video)
+    act(() => tick())
+    expect(mocks.progress).toHaveBeenLastCalledWith(expect.objectContaining({ progressSeconds: 40 + time, completed }))
+  })
+
+  it('uses segment offset plus duration when full-title metadata is unavailable', async () => {
+    const tick = captureProgressTimer()
+    await mount('Inbox/synthetic.mkv', 40, null, { duration: 0 })
+    const video = document.createElement('video')
+    Object.defineProperties(video, { paused: { value: false }, duration: { value: 20 }, currentTime: { value: 1 } })
+    document.body.appendChild(video)
+    act(() => tick())
+    expect(mocks.progress).toHaveBeenLastCalledWith(expect.objectContaining({ progressSeconds: 41, completed: false }))
+  })
+
+  it('does not add the saved offline resume position to the native file timeline', async () => {
+    const tick = captureProgressTimer()
+    await mount('Inbox/synthetic.mp4', 18, 'blob:synthetic-offline')
+    await waitFor(() => expect(mocks.props.src.src).toBe('blob:synthetic-offline'))
+    const video = document.createElement('video')
+    Object.defineProperties(video, { paused: { value: false }, duration: { value: 60 }, currentTime: { value: 18 } })
+    document.body.appendChild(video)
+    act(() => tick())
+    expect(mocks.progress).toHaveBeenLastCalledWith(expect.objectContaining({ progressSeconds: 18, completed: false }))
+  })
+
+  it('uses episode seconds rather than parent show runtime for completion', async () => {
+    const tick = captureProgressTimer()
+    mocks.getTVShow.mockResolvedValue({ data: { _id: 'synthetic-show', title: 'Synthetic show', runtime: 90 } })
+    mocks.getEpisodes.mockResolvedValue({ data: [{ _id: 'ep-1', vaultPath: 'Inbox/episode.mkv', runtime: 60, userProgress: { progressSeconds: 40 } }] })
+    mocks.local.mockResolvedValue(null)
+    render(<MemoryRouter initialEntries={['/watch/tvshow/synthetic-show?ep=ep-1']}>
+      <Routes><Route path="/watch/:type/:id" element={<Player />} /></Routes>
+    </MemoryRouter>)
+    await waitFor(() => expect(mocks.props?.seekOffset).toBe(40))
+    expect(mocks.props.duration).toBe(60)
+    const video = document.createElement('video')
+    Object.defineProperties(video, { paused: { value: false }, duration: { value: 20 }, currentTime: { value: 18 } })
+    document.body.appendChild(video)
+    act(() => tick())
+    expect(mocks.progress).toHaveBeenLastCalledWith(expect.objectContaining({ episodeId: 'ep-1', progressSeconds: 58, completed: true }))
   })
 
   it('gets a new scoped ticket before changing seek/audio and even replaying offset zero', async () => {

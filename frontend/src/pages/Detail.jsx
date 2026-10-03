@@ -525,15 +525,17 @@ export default function Detail() {
                       />
                     )}
                     {/* Web browser download per episode */}
-                    {!isCapacitor && ep.vaultPath && (() => {
-                      const token = localStorage.getItem('cv_token')
-                      const dlUrl = buildBrowserDownloadUrl(ep.vaultPath, token)
-                      return dlUrl ? (
-                        <a href={dlUrl} download className="btn btn-ghost btn-sm" title="Download episode">
-                          <Download size={14} />
-                        </a>
-                      ) : null
-                    })()}
+                    {!isCapacitor && ep.vaultPath && (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        title="Download episode"
+                        aria-label={`Download episode ${ep.episode}`}
+                        onClick={() => handleBrowserDownload(ep.vaultPath)}
+                      >
+                        <Download size={14} />
+                      </button>
+                    )}
 
                     <Link to={`/watch/tvshow/${media._id}?ep=${ep._id}`} className="ep-play"><Play size={14} fill="currentColor"/></Link>
                   </div>
