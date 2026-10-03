@@ -36,6 +36,237 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
+describe('CinemaPlayer touch gestures', () => {
+  const surfaceFor = extra => {
+    const view = mount(extra)
+    vi.spyOn(view.container.querySelector('.cp'), 'getBoundingClientRect')
+      .mockReturnValue({ left: 0, width: 100 })
+    return { view, surface: screen.getByRole('button', { name: /Video playback/ }) }
+  }
+  const tap = (surface, x) => {
+    fireEvent.touchStart(surface, { touches: [{ clientX: x, clientY: 20 }] })
+    act(() => vi.advanceTimersByTime(50))
+    fireEvent.touchEnd(surface, { changedTouches: [{ clientX: x, clientY: 20 }] })
+  }
+
+  it.each([2, 3, 4])('commits %s right-side taps once after the debounce and ignores ghost mouse events', count => {
+    vi.useFakeTimers()
+    vi.setSystemTime(10000)
+    const onUserSeek = vi.fn()
+    const { surface } = surfaceFor({ isTranscoding: true, seekOffset: 40, onUserSeek })
+    video.currentTime = 2
+    fireEvent.timeUpdate(video)
+    for (let i = 0; i < count; i++) {
+      tap(surface, 95)
+      // Browsers can emit compatibility mouse events after a touch.
+      fireEvent.mouseDown(surface, { clientX: 95 })
+      fireEvent.mouseUp(surface, { clientX: 95 })
+      fireEvent.click(surface, { clientX: 95 })
+      if (i < count - 1) act(() => vi.advanceTimersByTime(100))
+    }
+    expect(screen.getByText(`${(count - 1) * 5} seconds`)).toBeInTheDocument()
+    act(() => vi.advanceTimersByTime(699))
+    expect(onUserSeek).not.toHaveBeenCalled()
+    act(() => vi.advanceTimersByTime(1))
+    expect(onUserSeek).toHaveBeenCalledExactlyOnceWith(42 + (count - 1) * 5)
+    expect(video.currentTime).toBe(2)
+    expect(screen.queryByText(`${(count - 1) * 5} seconds`)).not.toBeInTheDocument()
+  })
+
+  it('accumulates touch rewind across a fragmented boundary without native seeking', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(10000)
+    const onUserSeek = vi.fn()
+    const { surface } = surfaceFor({ isTranscoding: true, seekOffset: 40, onUserSeek })
+    video.currentTime = 2
+    fireEvent.timeUpdate(video)
+    for (let i = 0; i < 3; i++) {
+      tap(surface, 5)
+      if (i < 2) act(() => vi.advanceTimersByTime(100))
+    }
+    act(() => vi.advanceTimersByTime(700))
+    expect(onUserSeek).toHaveBeenCalledExactlyOnceWith(32)
+    expect(video.currentTime).toBe(2)
+  })
+
+  it('keeps callback-free local/blob multi-tap seeking native', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(10000)
+    const { surface } = surfaceFor({ src: { src: 'blob:synthetic-offline' } })
+    video.currentTime = 18
+    fireEvent.timeUpdate(video)
+    for (let i = 0; i < 3; i++) {
+      tap(surface, 95)
+      if (i < 2) act(() => vi.advanceTimersByTime(100))
+    }
+    expect(video.currentTime).toBe(18)
+    act(() => vi.advanceTimersByTime(700))
+    expect(video.currentTime).toBe(28)
+    fireEvent.timeUpdate(video)
+    expect(screen.getByRole('slider', { name: 'Playback position' })).toHaveAttribute('aria-valuenow', '28')
+    expect(play).not.toHaveBeenCalled()
+  })
+
+  it('does not treat short swipes or cancelled touches as taps', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(10000)
+    const onUserSeek = vi.fn()
+    const { surface } = surfaceFor({ onUserSeek })
+    for (let i = 0; i < 2; i++) {
+      fireEvent.touchStart(surface, { touches: [{ clientX: 65, clientY: 20 }] })
+      act(() => vi.advanceTimersByTime(50))
+      fireEvent.touchEnd(surface, { changedTouches: [{ clientX: 95, clientY: 20 }] })
+    }
+    fireEvent.touchStart(surface, { touches: [{ clientX: 95, clientY: 20 }] })
+    fireEvent.touchCancel(surface)
+    tap(surface, 95) // Still a first valid tap, not a double-tap.
+    act(() => vi.advanceTimersByTime(800))
+    expect(onUserSeek).not.toHaveBeenCalled()
+    expect(video.playbackRate).toBe(1)
+    expect(screen.queryByText('5 seconds')).not.toBeInTheDocument()
+  })
+
+  it.each(['release', 'cancel'])('restores paused intent and normal speed after a right hold %s', finish => {
+    vi.useFakeTimers()
+    vi.setSystemTime(10000)
+    const onUserSeek = vi.fn()
+    const { surface } = surfaceFor({ onUserSeek })
+    Object.defineProperty(video, 'paused', { configurable: true, value: false })
+    fireEvent.play(video)
+    fireEvent.click(screen.getByRole('button', { name: 'Pause' }))
+    Object.defineProperty(video, 'paused', { configurable: true, value: true })
+    fireEvent.pause(video)
+    play.mockClear()
+    pause.mockClear()
+    fireEvent.touchStart(surface, { touches: [{ clientX: 95, clientY: 20 }] })
+    act(() => vi.advanceTimersByTime(400))
+    expect(video.playbackRate).toBe(2)
+    expect(video.autoplay).toBe(true)
+    expect(play).toHaveBeenCalledTimes(1)
+    if (finish === 'cancel') fireEvent.touchCancel(surface)
+    else fireEvent.touchEnd(surface, { changedTouches: [{ clientX: 95, clientY: 20 }] })
+    expect(video.playbackRate).toBe(1)
+    expect(video.autoplay).toBe(false)
+    expect(pause).toHaveBeenCalledTimes(1)
+    act(() => vi.advanceTimersByTime(1000))
+    expect(onUserSeek).not.toHaveBeenCalled()
+    expect(play).toHaveBeenCalledTimes(1)
+  })
+
+  it('clears a pending multi-tap commit when the player unmounts', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(10000)
+    const onUserSeek = vi.fn()
+    const { surface, view } = surfaceFor({ onUserSeek })
+    tap(surface, 95)
+    act(() => vi.advanceTimersByTime(100))
+    tap(surface, 95)
+    expect(vi.getTimerCount()).toBeGreaterThan(0)
+    view.unmount()
+    act(() => vi.advanceTimersByTime(1000))
+    expect(onUserSeek).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it.each(['release', 'cancel'])('ignores compatibility mouse events after a long hold %s', finish => {
+    vi.useFakeTimers()
+    vi.setSystemTime(10000)
+    const onUserSeek = vi.fn()
+    const { surface } = surfaceFor({ onUserSeek })
+    fireEvent.touchStart(surface, { touches: [{ clientX: 95, clientY: 20 }] })
+    act(() => vi.advanceTimersByTime(450))
+    if (finish === 'cancel') fireEvent.touchCancel(surface)
+    else fireEvent.touchEnd(surface, { changedTouches: [{ clientX: 95, clientY: 20 }] })
+    fireEvent.mouseDown(surface, { clientX: 95 })
+    fireEvent.mouseUp(surface, { clientX: 95 })
+    fireEvent.click(surface, { clientX: 95 })
+    act(() => vi.advanceTimersByTime(100))
+    tap(surface, 95) // First real tap after the hold, not a double-tap.
+    act(() => vi.advanceTimersByTime(800))
+    expect(onUserSeek).not.toHaveBeenCalled()
+    expect(video.playbackRate).toBe(1)
+  })
+
+  it('ignores compatibility clicks after rejected swipes', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(10000)
+    const onUserSeek = vi.fn()
+    const { surface } = surfaceFor({ onUserSeek })
+    for (let i = 0; i < 2; i++) {
+      fireEvent.touchStart(surface, { touches: [{ clientX: 65, clientY: 20 }] })
+      act(() => vi.advanceTimersByTime(50))
+      fireEvent.touchEnd(surface, { changedTouches: [{ clientX: 95, clientY: 20 }] })
+      fireEvent.click(surface, { clientX: 95 })
+    }
+    act(() => vi.advanceTimersByTime(800))
+    expect(onUserSeek).not.toHaveBeenCalled()
+    expect(screen.queryByText('5 seconds')).not.toBeInTheDocument()
+  })
+
+  it.each([5, 95])('cancels a pending hold when a swipe moves away from x=%s, even if it returns', x => {
+    vi.useFakeTimers()
+    vi.setSystemTime(10000)
+    const onUserSeek = vi.fn()
+    const { surface } = surfaceFor({ onUserSeek })
+    video.currentTime = 18
+    fireEvent.timeUpdate(video)
+    fireEvent.touchStart(surface, { touches: [{ clientX: x, clientY: 20 }] })
+    act(() => vi.advanceTimersByTime(100))
+    fireEvent.touchMove(surface, { touches: [{ clientX: 50, clientY: 20 }] })
+    fireEvent.touchMove(surface, { touches: [{ clientX: x, clientY: 20 }] })
+    act(() => vi.advanceTimersByTime(500))
+    fireEvent.touchEnd(surface, { changedTouches: [{ clientX: x, clientY: 20 }] })
+    act(() => vi.advanceTimersByTime(800))
+    expect(video.playbackRate).toBe(1)
+    expect(video.currentTime).toBe(18)
+    expect(play).not.toHaveBeenCalled()
+    expect(onUserSeek).not.toHaveBeenCalled()
+  })
+
+  it('restores paused intent when movement cancels an already active speed boost', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(10000)
+    const onUserSeek = vi.fn()
+    const { surface } = surfaceFor({ onUserSeek })
+    Object.defineProperty(video, 'paused', { configurable: true, value: false })
+    fireEvent.play(video)
+    fireEvent.click(screen.getByRole('button', { name: 'Pause' }))
+    Object.defineProperty(video, 'paused', { configurable: true, value: true })
+    fireEvent.pause(video)
+    play.mockClear()
+    pause.mockClear()
+    fireEvent.touchStart(surface, { touches: [{ clientX: 95, clientY: 20 }] })
+    act(() => vi.advanceTimersByTime(400))
+    expect(video.playbackRate).toBe(2)
+    fireEvent.touchMove(surface, { touches: [{ clientX: 50, clientY: 20 }] })
+    expect(video.playbackRate).toBe(1)
+    expect(video.autoplay).toBe(false)
+    expect(pause).toHaveBeenCalledTimes(1)
+    fireEvent.touchEnd(surface, { changedTouches: [{ clientX: 95, clientY: 20 }] })
+    act(() => vi.advanceTimersByTime(800))
+    expect(play).toHaveBeenCalledTimes(1)
+    expect(onUserSeek).not.toHaveBeenCalled()
+  })
+
+  it('clears an active rewind interval on unmount without committing a seek', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(10000)
+    const onUserSeek = vi.fn()
+    const { surface, view } = surfaceFor({ onUserSeek })
+    video.currentTime = 18
+    fireEvent.timeUpdate(video)
+    fireEvent.touchStart(surface, { touches: [{ clientX: 5, clientY: 20 }] })
+    act(() => vi.advanceTimersByTime(600))
+    expect(screen.getByRole('slider', { name: 'Playback position' })).toHaveAttribute('aria-valuenow', '15.5')
+    expect(video.currentTime).toBe(18)
+    view.unmount()
+    act(() => vi.advanceTimersByTime(1000))
+    expect(onUserSeek).not.toHaveBeenCalled()
+    expect(video.currentTime).toBe(18)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+})
+
 describe('CinemaPlayer remote focus', () => {
   it('restores the real timeline when an online rewind is pending or not applied', async () => {
     vi.useFakeTimers()

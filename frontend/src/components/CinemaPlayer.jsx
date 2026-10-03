@@ -567,7 +567,8 @@ export default function CinemaPlayer({
 
   // ── Touch and Gesture References ──────────────────────────────────────
   const lastTouchRef = useRef({ time: 0, x: 0, y: 0 })
-  const lastProcessedTouchTimeRef = useRef(0)
+  const touchMovedRef = useRef(false)
+  const lastCompletedTouchTimeRef = useRef(0)
 
   // ── YouTube-Style Multi-Tap Screen Tap Handler ───────────────────────
   const processTapAt = useCallback((clientX) => {
@@ -652,13 +653,26 @@ export default function CinemaPlayer({
     if (e.touches && e.touches[0]) {
       const touch = e.touches[0]
       lastTouchRef.current = { time: Date.now(), x: touch.clientX, y: touch.clientY }
+      touchMovedRef.current = false
       startLongPress(touch.clientX)
     }
   }
 
+  const handleTouchMove = (e) => {
+    const touch = e.touches?.[0]
+    if (!touch || touchMovedRef.current) return
+    const start = lastTouchRef.current
+    if (Math.hypot(touch.clientX - start.x, touch.clientY - start.y) >= 25) {
+      touchMovedRef.current = true // Returning to the start does not make a swipe a tap.
+      stopLongPress()
+    }
+  }
+
   const handleTouchEnd = (e) => {
+    // Compatibility mouse events can follow any touch, not just accepted taps.
+    lastCompletedTouchTimeRef.current = Date.now()
     stopLongPress()
-    if (e.changedTouches && e.changedTouches[0]) {
+    if (!touchMovedRef.current && e.changedTouches && e.changedTouches[0]) {
       const touch = e.changedTouches[0]
       const start = lastTouchRef.current
       const dist = Math.hypot(touch.clientX - start.x, touch.clientY - start.y)
@@ -666,18 +680,19 @@ export default function CinemaPlayer({
 
       // If it wasn't a drag/swipe (<25px) and didn't trigger long press (<400ms)
       if (dist < 25 && duration < 400) {
-        lastProcessedTouchTimeRef.current = Date.now()
         processTapAt(touch.clientX)
       }
     }
   }
 
   const handleTouchCancel = () => {
+    lastCompletedTouchTimeRef.current = Date.now()
+    touchMovedRef.current = true
     stopLongPress()
   }
 
   const handleMouseDown = (e) => {
-    if (Date.now() - lastProcessedTouchTimeRef.current < 500) return
+    if (Date.now() - lastCompletedTouchTimeRef.current < 500) return
     startLongPress(e.clientX)
   }
 
@@ -686,7 +701,7 @@ export default function CinemaPlayer({
   }
 
   const handleSurfaceClick = (e) => {
-    if (Date.now() - lastProcessedTouchTimeRef.current < 500) {
+    if (Date.now() - lastCompletedTouchTimeRef.current < 500) {
       return
     }
     processTapAt(e.clientX)
@@ -844,6 +859,7 @@ export default function CinemaPlayer({
         role="button"
         aria-label="Video playback; press Down for controls"
         onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         onTouchCancel={handleTouchCancel}
         onMouseDown={handleMouseDown}
