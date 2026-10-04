@@ -6,6 +6,8 @@ import { search as searchApi } from '../api'
 import { OfflineStorageService } from '../services/OfflineStorageService'
 import { DownloadCloud, Play, Trash2, X } from 'lucide-react'
 import ConfirmModal from './ConfirmModal'
+import DownloadPlayLink from './DownloadPlayLink'
+import { getDownloadPlaybackHint } from '../utils/downloadPlayback'
 import BrandIcon from './BrandIcon'
 import { openLegalModal } from './LegalViewerModal'
 import './Navbar.css'
@@ -338,7 +340,7 @@ export default function Navbar() {
                                 <span className="download-item-pct">{activeProgress}%</span>
                               </div>
                             ) : (
-                              <span className="download-item-meta">{d.type === 'tvshow' || d.type === 'episode' ? 'Episode' : 'Movie'} • Ready</span>
+                              <span className="download-item-meta">{getDownloadPlaybackHint(d) || `${d.type === 'episode' ? 'Episode' : 'Movie'} • Ready`}</span>
                             )}
                           </div>
                           <div className="download-item-actions">
@@ -348,9 +350,9 @@ export default function Navbar() {
                               </button>
                             ) : (
                               <>
-                                <Link to={`/watch/${d.type}/${d.id}`} className="download-action-btn play" onClick={() => setMenuOpen(false)}>
+                                <DownloadPlayLink record={d} className="download-action-btn play" onClick={() => setMenuOpen(false)}>
                                   <Play size={12} fill="currentColor" />
-                                </Link>
+                                </DownloadPlayLink>
                                 <button className="download-action-btn delete" onClick={(e) => handleDeleteDownload(e, d.id)} title="Delete">
                                   <Trash2 size={14} />
                                 </button>

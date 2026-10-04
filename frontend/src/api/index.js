@@ -104,6 +104,10 @@ api.interceptors.response.use(
 
 export default api
 
+// Bound bootstrap/playback metadata only. Long-running mutation jobs retain
+// their existing timeout; network timeouts use the existing, TTL-limited cache.
+const metadataOptions = { timeout: 10000 }
+
 // ── Auth ──────────────────────────────────────────────────────
 export const login = (email, password) =>
   api.post('/auth', { email, password })
@@ -113,7 +117,7 @@ export const register = (name, email, password) =>
 
 // ── Movies ────────────────────────────────────────────────────
 export const getMovies = (params = {}) => api.get('/movies', { params })
-export const getMovie  = id => api.get(`/movies/${id}`)
+export const getMovie  = id => api.get(`/movies/${id}`, metadataOptions)
 export const createMovie = data => api.post('/movies', data)
 export const updateMovie = (id, data) => api.put(`/movies/${id}`, data)
 export const deleteMovie = (id, deleteFile = false) => api.delete(`/movies/${id}`, { params: { deleteFile } })
@@ -124,16 +128,16 @@ export const getMovieConflicts = () => api.get('/movies/conflicts')
 
 // ── TV Shows ──────────────────────────────────────────────────
 export const getTVShows   = (params = {}) => api.get('/tvshows', { params })
-export const getTVShow    = id => api.get(`/tvshows/${id}`)
+export const getTVShow    = id => api.get(`/tvshows/${id}`, metadataOptions)
 export const createTVShow = data => api.post('/tvshows', data)
 export const updateTVShow = (id, data) => api.put(`/tvshows/${id}`, data)
 export const deleteTVShow = (id, deleteFile = false) => api.delete(`/tvshows/${id}`, { params: { deleteFile } })
 export const syncShowMeta = id => api.post(`/tvshows/${id}/sync`)
 export const linkTVShowToTMDB = (id, tmdbId) => api.post(`/tvshows/${id}/link`, { tmdbId })
 export const getTVShowConflicts = () => api.get('/tvshows/conflicts')
-export const getEpisodes  = (showId, params = {}) => api.get(`/tvshows/${showId}/episodes`, { params })
+export const getEpisodes  = (showId, params = {}) => api.get(`/tvshows/${showId}/episodes`, { ...metadataOptions, params })
 export const getSeasonEpisodes = (showId, season) =>
-  api.get(`/tvshows/${showId}/seasons/${season}/episodes`)
+  api.get(`/tvshows/${showId}/seasons/${season}/episodes`, metadataOptions)
 export const createEpisode = (showId, data) => api.post(`/tvshows/${showId}/episodes`, data)
 export const updateEpisode = (showId, epId, data) => api.put(`/tvshows/${showId}/episodes/${epId}`, data)
 export const deleteEpisode = (showId, epId, deleteFile = false) => api.delete(`/tvshows/${showId}/episodes/${epId}`, { params: { deleteFile } })
@@ -166,7 +170,7 @@ export const getDuplicates      = () => api.get('/library/duplicates')
 export const cleanupDuplicates  = () => api.post('/library/duplicates/cleanup')
 
 // ── Users ─────────────────────────────────────────────────────
-export const getMe            = () => api.get('/users/me')
+export const getMe            = () => api.get('/users/me', metadataOptions)
 export const updateProfile    = data => api.put('/users/me/profile', data)
 export const getWatchlist     = () => api.get('/users/me/watchlist')
 export const addToWatchlist   = (mediaId, mediaType) =>

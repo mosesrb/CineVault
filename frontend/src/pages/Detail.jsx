@@ -34,6 +34,8 @@ export default function Detail() {
   const [isAdmin, setIsAdmin] = useState(false)
   const [deleteError, setDeleteError] = useState('')
   const [downloadError, setDownloadError] = useState('')
+  const [metadataError, setMetadataError] = useState('')
+  const [episodeError, setEpisodeError] = useState('')
   const [viewerOpen, setViewerOpen] = useState(false)
   const [viewerIndex, setViewerIndex] = useState(0)
   const navigate = useNavigate()
@@ -42,27 +44,42 @@ export default function Detail() {
   useModalFocus({ open: showTrailer, containerRef: trailerRef, initialFocusRef: trailerCloseRef, onClose: () => setShowTrailer(false) })
 
   useEffect(() => {
+    let current = true
     setLoading(true)
+    setMedia(null)
+    setEpisodes([])
+    setActiveSeason(1)
+    setMetadataError('')
+    setEpisodeError('')
     const fetcher = isMovie ? getMovie(id) : getTVShow(id)
     
     Promise.all([
       fetcher,
       getMe().catch(() => ({ data: { watchlist: [] } }))
     ]).then(([mediaRes, userRes]) => {
+      if (!current) return
       setMedia(mediaRes.data)
       const inWatchlist = userRes.data.watchlist?.some(w => w.mediaId === id)
       setWatchlisted(inWatchlist)
       setIsAdmin(userRes.data.isAdmin || false)
-      
-      if (isTV) {
-        getSeasonEpisodes(id, 1).then(r => setEpisodes(r.data))
-      }
-    }).finally(() => setLoading(false))
+    }).catch(() => {
+      if (current) setMetadataError('Unable to load this title. Check your connection and try again.')
+    }).finally(() => { if (current) setLoading(false) })
+    return () => { current = false }
   }, [id, type, isMovie, isTV])
 
   useEffect(() => {
-    if (isTV && media)
-      getSeasonEpisodes(id, activeSeason).then(r => setEpisodes(r.data))
+    let current = true
+    if (isTV && media?._id === id) {
+      setEpisodes([])
+      setEpisodeError('')
+      getSeasonEpisodes(id, activeSeason).then(r => {
+        if (current) setEpisodes(r.data)
+      }).catch(() => {
+        if (current) setEpisodeError('Unable to load episodes. Check your connection and try again.')
+      })
+    }
+    return () => { current = false }
   }, [activeSeason, isTV, id, media])
 
   // Lock scrolling when trailer is open
@@ -122,7 +139,7 @@ export default function Detail() {
   };
 
   if (loading) return <div className="loading-center" style={{minHeight:'100vh'}}><div className="spinner"/></div>
-  if (!media)  return <div className="page-content"><p>Content not found.</p></div>
+  if (!media)  return <div className="page-content"><p role={metadataError ? 'alert' : undefined}>{metadataError || 'Content not found.'}</p></div>
 
   const seasons = media.totalSeasons
     ? Array.from({ length: media.totalSeasons }, (_, i) => i + 1)
@@ -453,7 +470,8 @@ export default function Detail() {
               ))}
             </div>
             <div className="episodes-list">
-              {episodes.length === 0 && <p className="text-muted text-sm">No episodes added yet.</p>}
+              {episodeError && <p role="alert" className="text-muted text-sm">{episodeError}</p>}
+              {!episodeError && episodes.length === 0 && <p className="text-muted text-sm">No episodes added yet.</p>}
               {episodes.map(ep => (
                 <div
                   key={ep._id}
@@ -488,7 +506,7 @@ export default function Detail() {
                         mediaId={ep._id}
                         url={ep.vaultPath ? resolveUrl(`/api/v1/stream?path=${encodeURIComponent(ep.vaultPath)}&download=true`) : null}
                         type="episode"
-                        metadata={{ title: ep.title || `Episode ${ep.episode}`, posterUrl: media.posterUrl }}
+                        metadata={{ title: ep.title || `Episode ${ep.episode}`, posterUrl: media.posterUrl, showId: media._id }}
                       />
                     )}
                     {/* Web browser download per episode */}

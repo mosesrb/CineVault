@@ -7,6 +7,8 @@ import MediaCard from '../components/MediaCard'
 import { OfflineCacheService } from '../services/OfflineCacheService'
 import { OfflineStorageService } from '../services/OfflineStorageService'
 import ConfirmModal from '../components/ConfirmModal'
+import DownloadPlayLink from '../components/DownloadPlayLink'
+import { getDownloadPlaybackHint } from '../utils/downloadPlayback'
 import { Link } from 'react-router-dom'
 import './Profile.css'
 
@@ -28,6 +30,7 @@ export default function Profile() {
   const [watchlist, setWatchlist] = useState([])
   const [wLoading, setWLoading]   = useState(false)
   const [hLoading, setHLoading]   = useState(false)
+  const [historyError, setHistoryError] = useState('')
   const [downloads, setDownloads] = useState([])
   const [dLoading, setDLoading]   = useState(false)
   const [deleteConfirmId, setDeleteConfirmId] = useState(null)
@@ -48,13 +51,17 @@ export default function Profile() {
   const [localIps, setLocalIps]       = useState([])
 
   useEffect(() => {
+    let current = true
     if (activeTab === 'watchlist') {
       setWLoading(true)
       getWatchlist().then(r => setWatchlist(r.data)).finally(() => setWLoading(false))
     }
     if (activeTab === 'history') {
       setHLoading(true)
-      getMe().then(r => setUser(r.data)).finally(() => setHLoading(false))
+      setHistoryError('')
+      getMe().then(r => { if (current) setUser(r.data) }).catch(() => {
+        if (current) setHistoryError('Unable to refresh history. Check your connection and try again.')
+      }).finally(() => { if (current) setHLoading(false) })
     }
     if (activeTab === 'downloads') {
       fetchDownloads()
@@ -62,8 +69,9 @@ export default function Profile() {
       // Listen for global download changes to refresh list in real-time
       const handleGlobalSync = () => fetchDownloads();
       window.addEventListener('cv_download_change', handleGlobalSync);
-      return () => window.removeEventListener('cv_download_change', handleGlobalSync);
+      return () => { current = false; window.removeEventListener('cv_download_change', handleGlobalSync) };
     }
+    return () => { current = false }
   }, [activeTab])
 
   async function fetchDownloads() {
@@ -360,6 +368,7 @@ export default function Profile() {
         {/* History Tab */}
         {activeTab === 'history' && (
           <div className="animate-fadeUp">
+            {historyError && <p role="alert">{historyError}</p>}
             <h2 className="section-heading" style={{marginBottom:'var(--sp-5)'}}>Watch History</h2>
             {hLoading 
               ? <div className="loading-center"><div className="spinner"/></div>
@@ -415,17 +424,18 @@ export default function Profile() {
                       <div key={d.id} className="download-card card glass">
                          <div className="download-card-poster">
                            {d.metadata?.posterUrl ? <img src={resolveUrl(d.metadata.posterUrl)} alt=""/> : <div className="poster-placeholder" />}
-                           <Link to={`/watch/${d.type}/${d.id}`} className="play-overlay">
+                           <DownloadPlayLink record={d} className="play-overlay">
                              <Play size={48} fill="currentColor" />
-                           </Link>
+                           </DownloadPlayLink>
                          </div>
                          <div className="download-card-body">
                            <h3 className="download-card-title truncate">{d.metadata?.title || 'Unknown Title'}</h3>
-                           <p className="download-card-meta">{d.type === 'tvshow' ? 'Series' : 'Movie'} • {new Date(d.timestamp).toLocaleDateString()}</p>
+                           <p className="download-card-meta">{d.type === 'episode' ? 'Episode' : 'Movie'} • {new Date(d.timestamp).toLocaleDateString()}</p>
+                           {getDownloadPlaybackHint(d) && <p className="text-muted text-sm">{getDownloadPlaybackHint(d)}</p>}
                            <div className="download-card-actions">
-                              <Link to={`/watch/${d.type}/${d.id}`} className="btn btn-primary btn-sm btn-icon-only">
+                              <DownloadPlayLink record={d} className="btn btn-primary btn-sm btn-icon-only">
                                 <Play size={16} fill="currentColor" />
-                              </Link>
+                              </DownloadPlayLink>
                               <button 
                                 className="btn btn-ghost btn-sm btn-icon-only text-danger" 
                                 onClick={() => handleDeleteDownload(d.id)}
