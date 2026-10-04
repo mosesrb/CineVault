@@ -27,10 +27,23 @@ still use TLS and a trusted expected identity; signed challenges remain future w
 
 ## SQL security boundary
 
-`migrations/20261004000100_control_plane_foundation.sql` creates the four tables
+`migrations/20261004161756_control_plane_foundation.sql` creates the four tables
 with RLS and explicit grants in one transaction. It intentionally fails if an
 object already exists; migration tracking, schema inventory and review precede
 any deployment, rather than overwriting an existing installation.
+
+The additive `20261004161817_control_plane_hardening.sql` indexes the owner foreign
+key and revokes PUBLIC/anon/authenticated execution of an existing
+`public.rls_auto_enable()` event-trigger function. It leaves its body, owner and
+trigger unchanged; projects without this optional helper are supported. An
+unexpected function return type stops deployment for inspection.
+
+The owner-approved hosted deployment used MCP migration tracking, which assigned
+versions `20261004161756` and `20261004161817`. Filenames now match that observed
+history; foundation SQL is unchanged from its original `20261004000100` version.
+The hardening file was generated with pinned CLI2.119.0 before deployment, then
+renamed from `20261004161210` to the actual hosted version. Do not reapply either
+file to this project; verify remote migration history before any future CLI push.
 
 - Profiles: authenticated users read their own profile, including blocked status.
 - Memberships: unblocked users read only their own assignments; disabled users can
@@ -53,6 +66,12 @@ No auth.users trigger, initial administrator, actual account, server registratio
 or user cutover is created. Missing profiles/subjects cannot discover anything.
 Supabase free-tier inactivity handling remains future work: real registration/
 heartbeat and normal recovery, never synthetic traffic to avoid pausing.
+
+Before deployment, verify `cinevault_private` is excluded from the effective Data
+API exposed schemas; an empty database role-setting query is not proof. Signed-out
+`anon` and anonymously signed-in Auth users are different: the latter use the
+`authenticated` role. Provisioning must decide eligibility explicitly; this
+foundation does not create profiles or memberships automatically.
 
 ## Tests
 

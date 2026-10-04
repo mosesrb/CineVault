@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { PGlite } = require('@electric-sql/pglite');
+const hardening = fs.readFileSync(path.join(__dirname, '../migrations/20261004161817_control_plane_hardening.sql'), 'utf8');
 
 const ids = {
     owner: '00000000-0000-4000-8000-000000000001',
@@ -21,7 +22,8 @@ async function createFixture() {
     const db = await PGlite.create();
     try {
         await db.exec(fs.readFileSync(path.join(__dirname, 'bootstrap.sql'), 'utf8'));
-        await db.exec(fs.readFileSync(path.join(__dirname, '../migrations/20261004000100_control_plane_foundation.sql'), 'utf8'));
+        await db.exec(fs.readFileSync(path.join(__dirname, '../migrations/20261004161756_control_plane_foundation.sql'), 'utf8'));
+        await db.exec(hardening);
         for (const key of ['owner', 'member', 'other', 'blocked', 'disabled', 'localOnly', 'missing']) {
             await db.query('insert into auth.users(id) values ($1)', [ids[key]]);
             if (key !== 'missing') await db.query('insert into public.profiles(id,blocked) values ($1,$2)', [ids[key], key === 'blocked']);
@@ -126,5 +128,69 @@ test('control-plane authorization matrix on disposable PostgreSQL', async t => {
                 await assert.rejects(()=>db.query(`update public.server_endpoints set status='ONLINE',verified_at=null where server_id=$1`,[ids.server]),{code:'23514'});
             });
         });
+    } finally { await db.close(); }
+});
+
+test('hardening preserves automatic RLS while removing public execution', async t => {
+    const db = await PGlite.create();
+    try {
+        await db.exec(fs.readFileSync(path.join(__dirname, 'bootstrap.sql'), 'utf8'));
+        await db.exec(`create function public.rls_auto_enable() returns event_trigger
+            language plpgsql security definer set search_path = pg_catalog as $$
+            declare cmd record;
+            begin
+                for cmd in select * from pg_event_trigger_ddl_commands()
+                    where command_tag in ('CREATE TABLE','CREATE TABLE AS','SELECT INTO')
+                    and object_type in ('table','partitioned table')
+                loop
+                    if cmd.schema_name = 'public' then
+                        execute format('alter table %s enable row level security',cmd.object_identity);
+                    end if;
+                end loop;
+            end; $$;
+            grant execute on function public.rls_auto_enable() to anon, authenticated;
+            create event trigger ensure_rls on ddl_command_end
+                when tag in ('CREATE TABLE','CREATE TABLE AS','SELECT INTO')
+                execute function public.rls_auto_enable();`);
+        await db.exec(fs.readFileSync(path.join(__dirname, '../migrations/20261004161756_control_plane_foundation.sql'), 'utf8'));
+        const snapshot = async () => (await db.query(`select pg_get_functiondef(p.oid) as definition,
+            p.proowner, e.evtname, e.evtenabled, e.evtevent, e.evttags
+            from pg_proc p join pg_event_trigger e on e.evtfoid=p.oid
+            where p.oid='public.rls_auto_enable()'::regprocedure`)).rows;
+        const before = await snapshot();
+        await db.exec(hardening);
+        await t.test('function body, owner and event trigger are unchanged', async () => {
+            assert.deepEqual(await snapshot(), before);
+        });
+        await t.test('anon/authenticated cannot execute; owner retains execution', async () => {
+            const row = (await db.query(`select
+                has_function_privilege('anon','public.rls_auto_enable()','EXECUTE') as anon,
+                has_function_privilege('authenticated','public.rls_auto_enable()','EXECUTE') as authenticated,
+                has_function_privilege(current_user,'public.rls_auto_enable()','EXECUTE') as owner`)).rows[0];
+            assert.deepEqual(row, {anon:false,authenticated:false,owner:true});
+        });
+        await t.test('automatic RLS still runs on new public tables', async () => {
+            await db.exec('create table public.synthetic_rls_probe(id integer)');
+            assert.equal((await db.query(`select relrowsecurity from pg_class
+                where oid='public.synthetic_rls_probe'::regclass`)).rows[0].relrowsecurity, true);
+        });
+        await t.test('owner foreign key is indexed', async () => {
+            assert.equal((await db.query(`select count(*)::integer as n from pg_indexes
+                where schemaname='public' and tablename='servers'
+                and indexname='servers_owner_user_id_idx'`)).rows[0].n, 1);
+        });
+    } finally { await db.close(); }
+});
+
+test('hardening fails atomically for an unexpected same-name function', async () => {
+    const db = await PGlite.create();
+    try {
+        await db.exec(fs.readFileSync(path.join(__dirname, 'bootstrap.sql'), 'utf8'));
+        await db.exec(fs.readFileSync(path.join(__dirname, '../migrations/20261004161756_control_plane_foundation.sql'), 'utf8'));
+        await db.exec('create function public.rls_auto_enable() returns integer language sql as $$ select 1 $$');
+        await assert.rejects(() => db.exec(hardening), /Unexpected automatic-RLS helper type/);
+        await db.exec('rollback');
+        assert.equal((await db.query(`select to_regclass('public.servers_owner_user_id_idx') as idx`)).rows[0].idx, null);
+        assert.equal((await db.query(`select has_function_privilege('anon','public.rls_auto_enable()','EXECUTE') as allowed`)).rows[0].allowed, true);
     } finally { await db.close(); }
 });
