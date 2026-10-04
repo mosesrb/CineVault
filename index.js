@@ -6,6 +6,7 @@ const winston = require('winston');
 const { createApp } = require('./app');
 const { connectDatabase, disconnectDatabase } = require('./startup/dbconnection');
 const { initRedis, closeRedis } = require('./middleware/cache');
+const { ensureServerIdentity } = require('./services/serverIdentityService');
 
 let server = null;
 let stopping = null;
@@ -24,14 +25,21 @@ async function startServer() {
     if (server) return server;
 
     const app = createApp();
-    await connectDatabase();
-    await initRedis();
+    try {
+        await connectDatabase();
+        await ensureServerIdentity();
+        await initRedis();
 
-    const port = process.env.PORT || 3000;
-    server = await new Promise((resolve, reject) => {
-        const listener = app.listen(port, () => resolve(listener));
-        listener.once('error', reject);
-    });
+        const port = process.env.PORT || 3000;
+        server = await new Promise((resolve, reject) => {
+            const listener = app.listen(port, () => resolve(listener));
+            listener.once('error', reject);
+        });
+    } catch (error) {
+        // Identity validation must not leave a failed startup holding dependencies.
+        await Promise.allSettled([closeRedis(), disconnectDatabase()]);
+        throw error;
+    }
 
     const boundPort = server.address().port;
     winston.info('CineVault Server is running!');

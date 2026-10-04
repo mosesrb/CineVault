@@ -14,6 +14,7 @@ const library = require('../routes/library');
 const search = require('../routes/search');
 const stream = require('../routes/stream');
 const discover = require('../routes/discover');
+const identity = require('../routes/identity');
 const adminSessions = require('../routes/admin_sessions');
 const { createHealthRouter } = require('./health');
 
@@ -107,6 +108,7 @@ module.exports = function (app) {
     app.use(['/api/v1/library', '/api/library'], apiLimiter, library);
     app.use(['/api/v1/search', '/api/search'], apiLimiter, search);
     app.use(['/api/v1/discover', '/api/discover'], apiLimiter, discover);
+    app.use(['/api/v1/identity', '/api/identity'], apiLimiter, identity);
     app.use(['/api/v1/stream', '/api/stream'], stream); // Streaming might need custom limits
     app.use(['/api/v1/admin/sessions', '/api/admin/sessions'], apiLimiter, adminSessions);
 

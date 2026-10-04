@@ -25,7 +25,8 @@ module.exports = [
             'services/**/*.js',
             'startup/**/*.js',
             'scripts/**/*.js',
-            'tests/**/*.js'
+            'tests/**/*.js',
+            'supabase/tests/**/*.js'
         ],
         languageOptions: {
             ecmaVersion: 'latest',

@@ -39,6 +39,9 @@ jobs:
     - name: Install Frontend Dependencies
       run: npm ci --prefix frontend
 
+    - name: Install Isolated Control-plane Test Dependencies
+      run: npm ci --prefix supabase/tests --ignore-scripts
+
     - name: Audit Dependencies
       run: npm run audit
 
@@ -47,6 +50,9 @@ jobs:
 
     - name: Run Frontend Tests (Vitest)
       run: npm test --prefix frontend
+
+    - name: Test Control-plane RLS on Disposable PostgreSQL
+      run: npm run test:control-plane
 
     - name: Build Frontend
       run: npm run build --prefix frontend
