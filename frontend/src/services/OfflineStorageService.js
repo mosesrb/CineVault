@@ -9,9 +9,10 @@ const DOWNLOADS_STORE = 'downloads';
 // Simple in-memory lock for current download and subscribers
 let activeDownloadId = null;
 let activeProgress = 0;
-let currentTaskIdentity = null;
-let activeProgressListener = null; // Track listener globally to allow immediate manual removal
-let activeSecondaryListener = null;
+let activeTask = null;
+// A retired native transfer may still write its file. Allow other items, but
+// keep same-ID retry/deletion blocked until its exact-file cleanup settles.
+const retiredTasks = new Map();
 const subscribers = new Map(); // id -> Set of callbacks
 
 const dbPromise = openDB(DB_NAME, DB_VERSION, {
@@ -30,16 +31,60 @@ const dbPromise = openDB(DB_NAME, DB_VERSION, {
   },
 });
 
-// Proactive check for pending downloads on startup
-dbPromise.then(async (db) => {
+// A persisted record is not a live native operation after a WebView restart.
+// Keep its filename for a guarded retry/cleanup; never infer completion from 100%.
+const ready = dbPromise.then(async (db) => {
   const all = await db.getAll(DOWNLOADS_STORE);
-  const pending = all.find(d => d.status === 'pending');
-  if (pending) {
-    activeDownloadId = pending.id;
-    activeProgress = pending.progress || 0;
-    console.log('[Offline] Adopted pending download on startup:', activeDownloadId);
+  for (const record of all) {
+    if (record.status === 'pending') {
+      await db.put(DOWNLOADS_STORE, { ...record, status: 'interrupted' });
+    }
   }
+  return db;
 });
+
+const isCurrent = task => activeTask === task && !task.cancelled;
+const notify = (id, status) => window.dispatchEvent(new CustomEvent('cv_download_change', { detail: { id, status } }));
+const ownsPath = record => typeof record.path === 'string' &&
+  /^[a-zA-Z0-9-]+$/.test(record.id) && ['movie', 'episode', 'tvshow'].includes(record.type) &&
+  record.path.startsWith(`${record.type}_${record.id}_`) &&
+  /^(movie|episode|tvshow)_[a-zA-Z0-9-]+_[a-zA-Z0-9-]+\.mp4$/.test(record.path);
+
+async function removeListeners(task) {
+  const handles = task.listeners.splice(0);
+  await Promise.all(handles.map(async handle => {
+    try { await handle.remove(); } catch { /* Already detached; identity still isolates callbacks. */ }
+  }));
+}
+
+// Compare and mutate in one IndexedDB transaction so an old attempt cannot
+// replace/delete a newer same-ID record across awaited native work.
+async function mutateRecord(db, id, predicate, replacement) {
+  const tx = db.transaction(DOWNLOADS_STORE, 'readwrite');
+  const record = await tx.store.get(id);
+  const matched = predicate(record);
+  if (matched) {
+    if (replacement) await tx.store.put(replacement);
+    else await tx.store.delete(id);
+  }
+  await tx.done;
+  return matched;
+}
+
+async function cleanFile(record) {
+  if (!record.path) return;
+  if (!ownsPath(record)) throw new Error('This download needs manual recovery before retrying.');
+  try {
+    await Filesystem.deleteFile({ path: record.path, directory: Directory.Data });
+  } catch {
+    // Distinguish a genuinely absent file from a storage/deletion failure.
+    try { await Filesystem.stat({ path: record.path, directory: Directory.Data }); }
+    catch (error) {
+      if (error?.code === 'OS-PLUG-FILE-0008') return;
+    }
+    throw new Error('Unable to remove the local download. Please retry.');
+  }
+}
 
 export const OfflineStorageService = {
   /**
@@ -66,7 +111,7 @@ export const OfflineStorageService = {
    * Check if a specific media item is already downloaded and valid.
    */
   async getDownloadRecord(id) {
-    const db = await dbPromise;
+    const db = await ready;
     return db.get(DOWNLOADS_STORE, id);
   },
 
@@ -103,246 +148,143 @@ export const OfflineStorageService = {
     }
   },
 
-  /**
-   * Get all completed downloads.
-   * Includes resilience: if an item is stuck at 100% pending, treat it as completed.
-   */
+  /** Get only committed downloads, never byte-progress guesses. */
   async getAllDownloads() {
-    const db = await dbPromise;
-    const all = await db.getAll(DOWNLOADS_STORE);
-    return all.filter(d => 
-      d.status === 'completed' || 
-      (d.status === 'pending' && d.progress >= 100 && d.id !== activeDownloadId)
-    );
+    const db = await ready;
+    return (await db.getAll(DOWNLOADS_STORE)).filter(record => record.status === 'completed');
   },
 
-  /**
-   * Starts a download using Capacitor Filesystem.
-   * Only one download allowed at a time.
-   */
+  /** One foreground task; cancellation retires identity, not native network I/O. */
   async downloadMedia(mediaId, url, type, metadata, token) {
-    if (activeDownloadId && activeDownloadId !== mediaId) {
-      throw new Error('A download is already in progress. Please wait.');
+    if (activeTask) throw new Error('A download is already in progress. Please wait.');
+    if (retiredTasks.has(mediaId)) throw new Error('The cancelled transfer is still finishing. Please retry shortly.');
+    if (!Capacitor.isNativePlatform()) {
+      throw new Error('Offline downloads are supported in the Android app, not this browser.');
     }
-
-    // Ensure URL is absolute for Capacitor
-    let finalUrl = url;
-    if (url.startsWith('/')) {
-      const savedUrl = localStorage.getItem('cv_server_url');
-      if (savedUrl) console.log('[Offline] Using custom server URL:', savedUrl);
-      const origin = savedUrl || window.location.origin;
-      finalUrl = `${origin}${url}`;
+    if (!/^[a-zA-Z0-9-]+$/.test(mediaId) || !['movie', 'episode', 'tvshow'].includes(type)) {
+      throw new Error('Invalid download item.');
     }
-    console.log('[Offline] Download URL resolved:', finalUrl);
-
-    // Check permissions first (UI should handle explanation)
-    const perms = await this.requestPermissions();
-    if (!perms) throw new Error('Storage permission is required to download media.');
-
-    // Set active status immediately
+    const task = { kind: 'download', id: mediaId, identity: crypto.randomUUID(), cancelled: false, listeners: [] };
+    activeTask = task;
     activeDownloadId = mediaId;
     activeProgress = 0;
-    const myTaskIdentity = Math.random();
-    currentTaskIdentity = myTaskIdentity;
+    let db, record;
+    let nativeStarted = false;
+    let completed = false;
+    let savedPath = null;
+    try {
+      db = await ready;
+      if (!isCurrent(task)) return null;
+      const previous = await db.get(DOWNLOADS_STORE, mediaId);
+      if (!isCurrent(task)) return null;
+      if (previous?.status === 'completed') throw new Error('This item is already downloaded.');
+      if (previous?.path) await cleanFile(previous);
+      if (!isCurrent(task)) return null;
+      if (!await this.requestPermissions()) throw new Error('Storage permission is required to download media.');
+      if (!isCurrent(task)) return null;
 
-    // Notify app that a download has started/changed
-    window.dispatchEvent(new CustomEvent('cv_download_change', { detail: { id: mediaId, status: 'started' } }));
-    
-    // Force a 1% start signal to wake up UI bars
-    this._emitProgress(mediaId, 1);
-
-    // Setup Progress Listener
-    // Cleanup any existing dangling listeners first
-    if (activeProgressListener) {
-      await activeProgressListener.remove();
-      activeProgressListener = null;
-    }
-    if (activeSecondaryListener) {
-      await activeSecondaryListener.remove();
-      activeSecondaryListener = null;
-    }
-
-    if (Capacitor.isNativePlatform()) {
-      // Append task identity to URL to uniquely identify progress events from native layer
-      finalUrl = `${finalUrl}${finalUrl.includes('?') ? '&' : '?'}cvtask=${myTaskIdentity}`;
-
-      // Capacitor 5+ uses 'progress', older versions might use 'downloadFileProgress'
-      const handler = (p) => {
-        // ZOMBIE CHECK: If a new task identity is active, ignore this old callback
-        if (currentTaskIdentity !== myTaskIdentity) return;
-        
-        // ISOLATION: The native bridge broadcasts ALL active downloads. Filter for OUR unique URL.
-        if (p.url && p.url !== finalUrl) return;
-
-        const pct = Math.round((p.bytes / (p.contentLength || 1)) * 100);
-        console.log(`[Offline] Progress update: ${pct}%`);
-        this._emitProgress(mediaId, pct);
+      let finalUrl = url.startsWith('/')
+        ? `${localStorage.getItem('cv_server_url') || window.location.origin}${url}`
+        : url;
+      finalUrl = `${finalUrl}${finalUrl.includes('?') ? '&' : '?'}cvtask=${task.identity}`;
+      record = {
+        id: mediaId, taskId: task.identity, status: 'pending', type, metadata,
+        path: `${type}_${mediaId}_${task.identity}.mp4`, progress: 0, timestamp: Date.now(),
       };
-      // We register both for maximum compatibility
-      activeProgressListener = await Filesystem.addListener('progress', handler);
-      // Optional: secondary listener for fallback
-      activeSecondaryListener = await Filesystem.addListener('downloadFileProgress', handler);
-    } else {
-      // Simulation for non-native testing to ensure UI reacts
-      console.log('[Offline] Simulated progress started for browser');
-      await new Promise((resolve) => {
-        let sim = 0;
-        const interval = setInterval(() => {
-          // ZOMBIE CHECK
-          if (currentTaskIdentity !== myTaskIdentity || activeDownloadId !== mediaId) {
-            clearInterval(interval);
-            resolve();
-            return;
-          }
-          sim += Math.floor(Math.random() * 8) + 2;
-          if (sim >= 100) {
-            sim = 100;
-            this._emitProgress(mediaId, sim);
-            clearInterval(interval);
-            resolve();
-          } else {
-            this._emitProgress(mediaId, sim);
-          }
-        }, 500);
+      if (!await mutateRecord(db, mediaId, () => isCurrent(task), record)) return null;
+      if (!isCurrent(task)) return null;
+      notify(mediaId, 'started');
+      this._emitProgress(mediaId, 1);
+
+      const handler = progress => {
+        if (!isCurrent(task) || progress.url !== finalUrl) return;
+        const bytes = Number(progress.bytes), length = Number(progress.contentLength);
+        if (!Number.isFinite(bytes) || !Number.isFinite(length) || length <= 0 || bytes < 0) return;
+        this._emitProgress(mediaId, Math.max(1, Math.min(99, Math.round(bytes / length * 100))));
+      };
+      for (const event of ['progress', 'downloadFileProgress']) {
+        const handle = await Filesystem.addListener(event, handler);
+        task.listeners.push(handle);
+        if (!isCurrent(task)) return null;
+      }
+      nativeStarted = true;
+      await Filesystem.downloadFile({
+        url: finalUrl, path: record.path, directory: Directory.Data, progress: true,
+        headers: token ? { 'x-auth-token': token, Authorization: `Bearer ${token}` } : {},
       });
-
-      // On Web, we simulate a successful storage record since real file download isn't supported
-      const db = await dbPromise;
-      const record = {
-        id: mediaId,
-        status: 'completed',
-        type,
-        metadata,
-        path: null, // No real file path on web
-        progress: 100,
-        timestamp: Date.now()
-      };
-      await db.put(DOWNLOADS_STORE, record);
+      if (!isCurrent(task)) return null;
+      completed = await mutateRecord(db, mediaId,
+        stored => isCurrent(task) && stored?.taskId === task.identity,
+        { ...record, status: 'completed', progress: 100 });
+      if (!completed || !isCurrent(task)) return null;
       this._emitProgress(mediaId, 100);
+      savedPath = record.path;
+    } catch {
+      if (!task.cancelled) {
+        if (record && db) {
+          await mutateRecord(db, mediaId, stored => stored?.taskId === task.identity,
+            { ...record, status: 'interrupted' });
+        }
+        throw new Error('Download failed. Please retry when storage and connection are available.');
+      }
       return null;
-    }
-
-    const db = await dbPromise;
-
-    // Save initial record
-    await db.put(DOWNLOADS_STORE, {
-      id: mediaId,
-      status: 'pending',
-      type,
-      metadata,
-      path: null,
-      progress: 0,
-      timestamp: Date.now()
-    });
-
-    try {
-      // Create a universally unique filename so restarting doesn't corrupt existing downloads
-      const uniqueSuffix = Date.now();
-      const fileName = `${type}_${mediaId}_${uniqueSuffix}.mp4`;
-      
-      const result = await Filesystem.downloadFile({
-        url: finalUrl,
-        path: fileName,
-        directory: Directory.Data,
-        progress: true,
-        headers: token ? {
-          'x-auth-token': token,
-          'Authorization': `Bearer ${token}`
-        } : {}
-      });
-
-      // 1. STALE CHECK: If the user cancelled while the heavy download was happening, 
-      // do NOT save to DB and clean up the file immediately.
-      if (activeDownloadId !== mediaId) {
-        console.warn('[Offline] Download finished but ID is no longer active (Cancelled). Cleaning up.');
-        try {
-          await Filesystem.deleteFile({ path: fileName, directory: Directory.Data });
-        } catch (e) {}
-        return null;
-      }
-
-      // 2. Update DB FIRST to ensure status is 'completed'
-      await db.put(DOWNLOADS_STORE, {
-        id: mediaId,
-        status: 'completed',
-        type,
-        metadata,
-        path: fileName,
-        progress: 100,
-        timestamp: Date.now()
-      });
-
-      // 3. Then emit final 100% UI signal
-      this._emitProgress(mediaId, 100);
-      return fileName;
-    } catch (err) {
-      // If we didn't cancel it manually, delete the broken record
-      if (activeDownloadId === mediaId) {
-        await db.delete(DOWNLOADS_STORE, mediaId);
-      }
-      throw err;
     } finally {
-      if (activeProgressListener) {
-        activeProgressListener.remove();
-        activeProgressListener = null;
+      await removeListeners(task);
+      // Filesystem has no abort API: late completion only cleans its unique file.
+      if (record && (task.cancelled || (nativeStarted && !completed))) {
+        try { await cleanFile(record); } catch { /* Retained interrupted record permits retry. */ }
       }
-      if (activeSecondaryListener) {
-        activeSecondaryListener.remove();
-        activeSecondaryListener = null;
+      if (retiredTasks.get(mediaId) === task) retiredTasks.delete(mediaId);
+      if (activeTask === task) {
+        activeTask = null;
+        activeDownloadId = null;
+        activeProgress = 0;
+        notify(mediaId, 'finished');
       }
-      activeDownloadId = null;
-      window.dispatchEvent(new CustomEvent('cv_download_change', { detail: { id: mediaId, status: 'finished' } }));
     }
+    // A cancel confirmation can arrive while listener removal is awaiting.
+    return task.cancelled ? null : savedPath;
   },
 
-  /**
-   * Cancels an active download.
-   */
   async cancelDownload(mediaId) {
-    if (activeDownloadId === mediaId) {
-      console.log('[Offline] Cancelling download:', mediaId);
-      
-      // Manual listener cleanup since the promise might be hanging
-      if (activeProgressListener) {
-        activeProgressListener.remove();
-        activeProgressListener = null;
+    const task = activeTask;
+    if (!task || task.kind !== 'download' || task.id !== mediaId) return;
+    task.cancelled = true;
+    retiredTasks.set(mediaId, task);
+    try {
+      const db = await ready;
+      const tx = db.transaction(DOWNLOADS_STORE, 'readwrite');
+      const stored = await tx.store.get(mediaId);
+      if (stored?.taskId === task.identity) {
+        await tx.store.put({ ...stored, status: 'interrupted' });
       }
-      if (activeSecondaryListener) {
-        activeSecondaryListener.remove();
-        activeSecondaryListener = null;
+      await tx.done;
+    } finally {
+      await removeListeners(task);
+      if (activeTask === task) {
+        activeTask = null;
+        activeDownloadId = null;
+        activeProgress = 0;
+        this._emitProgress(mediaId, -1);
+        notify(mediaId, 'cancelled');
       }
-
-      activeDownloadId = null;
-      activeProgress = 0;
-      currentTaskIdentity = null; // Kill identity immediately
-      this._emitProgress(mediaId, -1); // Special signal for "Cancelled"
-      window.dispatchEvent(new CustomEvent('cv_download_change', { detail: { id: mediaId, status: 'cancelled' } }));
     }
-    
-    // Explicitly clean up from DB and Filesystem
-    await this.deleteDownload(mediaId);
   },
 
-  /**
-   * Deletes a downloaded file and its registry record.
-   */
   async deleteDownload(mediaId) {
-    const record = await this.getDownloadRecord(mediaId);
-    if (!record) return;
-
+    if (activeTask || retiredTasks.has(mediaId)) throw new Error('Wait for the current transfer before deleting.');
+    const task = { kind: 'delete', id: mediaId };
+    activeTask = task;
     try {
-      if (record.path) {
-        await Filesystem.deleteFile({
-          path: record.path,
-          directory: Directory.Data
-        });
-      }
-    } catch (e) {
-      console.warn('File already gone or error deleting:', e);
+      const db = await ready;
+      const record = await db.get(DOWNLOADS_STORE, mediaId);
+      if (!record) return;
+      await cleanFile(record);
+      await mutateRecord(db, mediaId,
+        stored => stored?.path === record.path && stored?.taskId === record.taskId, null);
+    } finally {
+      if (activeTask === task) activeTask = null;
     }
-
-    const db = await dbPromise;
-    await db.delete(DOWNLOADS_STORE, mediaId);
   },
 
   /**

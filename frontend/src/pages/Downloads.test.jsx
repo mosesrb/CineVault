@@ -1,4 +1,4 @@
-import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { vi, beforeEach, afterEach, describe, it, expect } from 'vitest'
 
@@ -37,6 +37,7 @@ beforeEach(() => {
   getSeasonEpisodes.mockResolvedValue({ data: [{ _id: 'qa-episode', title: 'Synthetic episode', season: 1, episode: 1 }] })
   OfflineStorageService.getActiveDownloadId.mockReturnValue(null)
   OfflineStorageService.getAllDownloads.mockResolvedValue([movie, episode, legacy])
+  OfflineStorageService.deleteDownload.mockResolvedValue(undefined)
 })
 afterEach(() => { cleanup(); localStorage.clear() })
 const openDetail = (path = '/detail/tvshow/qa-show') => render(<MemoryRouter initialEntries={[path]}>
@@ -76,6 +77,27 @@ describe('native download routes', () => {
 })
 
 describe('bounded metadata caller failures', () => {
+  it('keeps Profile downloads on deletion failure and shows generic retry guidance', async () => {
+    OfflineStorageService.deleteDownload.mockRejectedValue(new Error('synthetic-private-path'))
+    render(<MemoryRouter initialEntries={['/profile?tab=downloads']}><Profile /></MemoryRouter>)
+    await screen.findAllByRole('link', { name: 'Play downloaded Synthetic movie' })
+    fireEvent.click(screen.getAllByRole('button', { name: /Delete/ })[0])
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Unable to remove the local download')
+    expect(screen.getAllByRole('link', { name: 'Play downloaded Synthetic movie' })).toHaveLength(2)
+    expect(screen.queryByText(/synthetic-private-path/)).not.toBeInTheDocument()
+  })
+  it('keeps Navbar downloads on deletion failure and shows generic retry guidance', async () => {
+    OfflineStorageService.deleteDownload.mockRejectedValue(new Error('synthetic-private-path'))
+    render(<MemoryRouter><Navbar /></MemoryRouter>)
+    fireEvent.click(screen.getByRole('button', { name: 'User menu' }))
+    await screen.findByRole('link', { name: 'Play downloaded Synthetic movie' })
+    fireEvent.click(screen.getAllByRole('button', { name: /Delete/ })[0])
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Unable to remove the local download')
+    expect(screen.getByRole('link', { name: 'Play downloaded Synthetic movie' })).toBeInTheDocument()
+    expect(screen.queryByText(/synthetic-private-path/)).not.toBeInTheDocument()
+  })
   it('shows a generic Detail metadata failure without leaking the error', async () => {
     getMovie.mockRejectedValue(new Error('synthetic-private-path'))
     openDetail('/detail/movie/qa-movie')

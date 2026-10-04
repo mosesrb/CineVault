@@ -34,6 +34,7 @@ export default function Profile() {
   const [downloads, setDownloads] = useState([])
   const [dLoading, setDLoading]   = useState(false)
   const [deleteConfirmId, setDeleteConfirmId] = useState(null)
+  const [downloadError, setDownloadError] = useState('')
 
   const messageRef = useRef(null)
 
@@ -79,6 +80,8 @@ export default function Profile() {
     try {
       const items = await OfflineStorageService.getAllDownloads()
       setDownloads(items)
+    } catch {
+      setDownloadError('Unable to load local downloads. Please retry.')
     } finally {
       setDLoading(false)
     }
@@ -114,9 +117,14 @@ export default function Profile() {
 
   async function confirmDeleteDownload() {
     if (!deleteConfirmId) return
-    await OfflineStorageService.deleteDownload(deleteConfirmId)
-    setDownloads(d => d.filter(item => item.id !== deleteConfirmId))
-    setDeleteConfirmId(null)
+    setDownloadError('')
+    try {
+      await OfflineStorageService.deleteDownload(deleteConfirmId)
+      setDownloads(d => d.filter(item => item.id !== deleteConfirmId))
+      setDeleteConfirmId(null)
+    } catch {
+      setDownloadError('Unable to remove the local download. Please retry.')
+    }
   }
 
   const tabs = [
@@ -188,6 +196,7 @@ export default function Profile() {
         onCancel={() => setDeleteConfirmId(null)}
       />
       <div className="page-content profile-page animate-fadeUp">
+        {downloadError && <p role="alert">{downloadError}</p>}
         {/* Header */}
         <div className="profile-hero">
           <div className="profile-avatar-lg">

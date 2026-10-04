@@ -138,7 +138,7 @@ export default function DownloadButton({ mediaId, url, type, metadata, variant =
         }
       });
 
-      await OfflineStorageService.downloadMedia(
+      const savedPath = await OfflineStorageService.downloadMedia(
         mediaId, 
         url, 
         type, 
@@ -146,7 +146,9 @@ export default function DownloadButton({ mediaId, url, type, metadata, variant =
         token
       );
       
-      setStatus('completed');
+      // A cancelled native operation resolves null after its late cleanup.
+      // The cancellation/global-change listener owns that UI state.
+      if (savedPath) setStatus('completed');
     } catch (err) {
       console.error('Download failed:', err);
       setError(err.message || 'Download failed');
@@ -159,8 +161,12 @@ export default function DownloadButton({ mediaId, url, type, metadata, variant =
 
   async function handleConfirmDeleteDownload() {
     setShowDeleteConfirm(false);
-    await OfflineStorageService.deleteDownload(mediaId);
-    setStatus('idle');
+    try {
+      await OfflineStorageService.deleteDownload(mediaId);
+      setStatus('idle');
+    } catch {
+      setError('Unable to remove the local download. Please retry.');
+    }
   }
 
   function removeDownload(e) {

@@ -31,6 +31,7 @@ export default function Navbar() {
   const [activeProgress, setActiveProgress] = useState(0)
   const [pendingDeleteId, setPendingDeleteId] = useState(null)
   const [pendingCancelId, setPendingCancelId] = useState(null)
+  const [downloadError, setDownloadError] = useState('')
   const searchRef = useRef(null)
   const userMenuRef = useRef(null)
 
@@ -151,9 +152,14 @@ export default function Navbar() {
 
   async function confirmDeleteDownload() {
     if (!pendingDeleteId) return
-    await OfflineStorageService.deleteDownload(pendingDeleteId)
-    setPendingDeleteId(null)
-    refreshDownloads()
+    setDownloadError('')
+    try {
+      await OfflineStorageService.deleteDownload(pendingDeleteId)
+      setPendingDeleteId(null)
+      refreshDownloads()
+    } catch {
+      setDownloadError('Unable to remove the local download. Please retry.')
+    }
   }
 
   async function handleCancelDownload(e, id) {
@@ -164,10 +170,15 @@ export default function Navbar() {
 
   async function confirmCancelDownload() {
     if (!pendingCancelId) return
-    await OfflineStorageService.cancelDownload(pendingCancelId)
-    setPendingCancelId(null)
-    refreshDownloads()
-    setActiveDownloadId(null)
+    setDownloadError('')
+    try {
+      await OfflineStorageService.cancelDownload(pendingCancelId)
+      setPendingCancelId(null)
+      refreshDownloads()
+      setActiveDownloadId(null)
+    } catch {
+      setDownloadError('Unable to update the download. Please retry.')
+    }
   }
 
   function handleSearch(e) {
@@ -183,6 +194,7 @@ export default function Navbar() {
 
   return (
     <nav className="navbar glass">
+      {downloadError && <p role="alert">{downloadError}</p>}
       <ConfirmModal
         open={!!pendingDeleteId}
         title="Delete Download"
@@ -195,7 +207,7 @@ export default function Navbar() {
       <ConfirmModal
         open={!!pendingCancelId}
         title="Cancel Download"
-        message="Stop this download in progress?"
+        message="Cancel this download? The transfer may finish in the background; retry this item once it has stopped."
         confirmLabel="Stop Download"
         danger
         onConfirm={confirmCancelDownload}
