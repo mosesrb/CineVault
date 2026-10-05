@@ -162,4 +162,4 @@ function simulator({ projectRef, now = Date.now, checkOwner = () => false }) {
     };
 }
 
-module.exports = { configuration, prepare, exchange, beginBody, simulator, TTL, POLL_INTERVAL };
+module.exports = { configuration, prepare, exchange, beginBody, simulator, validateState, TTL, POLL_INTERVAL };
