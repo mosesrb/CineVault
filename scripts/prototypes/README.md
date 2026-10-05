@@ -1,8 +1,8 @@
 # CineVault pairing/configuration protocol model
 
 This is an isolated research prototype, not a server feature or deployable broker.
-Nothing in application startup, login, routes or frontend imports it. There are
-no network calls, Supabase packages, users or cloud mutations. The protocol
+Nothing in application startup, login, routes or frontend imports it. The pairing
+model has no network calls, Supabase packages, users or cloud mutations. The protocol
 model itself has no filesystem calls; the separate Windows storage research
 adapter below writes only to an explicitly supplied directory beneath this
 checkout's ignored `runtime/` root; neither interface admits tracked/outside paths.
@@ -77,3 +77,38 @@ prove sudden power-loss durability, hardware cache behavior, unauthorized-token
 access denial, every filesystem race, backup protection or protection from a
 compromised owner/SYSTEM/admin. Owner/SYSTEM plaintext storage is not encryption.
 The current app, .env, users, Mongo identity and hosted project remain untouched.
+
+## Enrollment authorization research adapters
+
+`enrollment_authority.js` is not imported by the app or a deployed function.
+It uses the existing pinned jsonwebtoken library and trusted public ES256/RS256
+keys, never token-provided key URLs or a Supabase project signing secret.
+The static trusted key snapshot expires within five minutes; real fixed-origin
+JWKS acquisition/rotation is still required before deployment. Authorization
+also makes a bounded, no-redirect, no-cache Auth `/user` read at the configured
+project, followed by an injected current-session/profile/owner-approval reader.
+Neither token metadata nor a saved approval supplies current authority.
+
+The current-row reader is a trusted contract, **not deployed SQL**. It must read
+the exact signed subject/session, current unblocked profile and an enabled owner
+approval bound to the complete pending request digest. No profile/owner bootstrap
+is supplied. A preflight decision is not safe to cache or use after revocation:
+the consuming private transaction must recheck these rows under its shared guard.
+Current reader test fixtures and mocked Auth responses are not hosted acceptance.
+
+The local gate verifies the existing access-JWT contract, then current user and
+session rows; stream tickets/body ADMIN claims cannot provision. CSRF tokens are
+short-lived/session-bound HMACs with a random nonce and per-process key. Exact
+configured Origin/Host, same-origin fetch metadata, POST and JSON are required.
+HTTP is allowed only for loopback origin; HTTPS is required otherwise. This is
+not yet wired to existing auth/CORS/routes/UI, and is not an Auth cutover.
+
+`challenge()` derives a separate approval proof using domain-separated HMAC of
+the durable polling capability and full pending binding. Begin carries only its
+digest, never the operational or polling secret. A future trusted local ADMIN UI
+shows the proof; the hosted owner supplies it only on that trusted approval page.
+Public UUID alone is not proof. This does not prove hardware honesty or establish
+the first cloud owner, and it does not make broker grants transactional/single-use.
+UI/PKCE/proof handoff, admission limits, private transactions, owner recovery,
+specialist/prerequisite acceptance and exact deployment approval still precede
+live enrollment. Run `node --test supabase/tests/enrollment_authority.test.js`.
