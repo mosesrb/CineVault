@@ -83,8 +83,8 @@ The current app, .env, users, Mongo identity and hosted project remain untouched
 `enrollment_authority.js` is not imported by the app or a deployed function.
 It uses the existing pinned jsonwebtoken library and trusted public ES256/RS256
 keys, never token-provided key URLs or a Supabase project signing secret.
-The static trusted key snapshot expires within five minutes; real fixed-origin
-JWKS acquisition/rotation is still required before deployment. Authorization
+The static trusted key snapshot expires within five minutes; the separate JWKS
+research adapter below supplies fixed-origin retrieval in isolation. Authorization
 also makes a bounded, no-redirect, no-cache Auth `/user` read at the configured
 project, followed by an injected current-session/profile/owner-approval reader.
 Neither token metadata nor a saved approval supplies current authority.
@@ -149,7 +149,7 @@ verify human JWT/Auth claims and admission limits, and supply only those derived
 bindings. Digest-only public requests would be unsafe. SQL bytea equality is an
 internal consistency check, not constant-time capability authentication. The
 existing JS adapter is not wired to these functions; tests use synthetic digests.
-No real owner provisioning, Auth refresh/PKCE/UI, JWKS, grant retention/cleanup,
+No real owner provisioning, Auth refresh/PKCE/UI, deployed JWKS, grant retention/cleanup,
 rotation/recovery, operational credential authentication, heartbeat or endpoint
 publication is implemented. Do not expose this schema via PostgREST.
 
@@ -164,3 +164,52 @@ original prerequisite acceptance and exact deployment approval remain required.
 [PostgreSQL locking](https://www.postgresql.org/docs/17/explicit-locking.html)
 and [Supabase current-session checks](https://supabase.com/docs/guides/auth/sessions)
 inform this boundary, not a claim of provider qualification.
+
+## Trusted public signing-key retrieval research adapter
+
+`enrollment_jwks.js` composes the existing authorization adapter with a fixed
+configured-project `/auth/v1/.well-known/jwks.json` read. It is **not imported by
+the app or deployed**. Run `node --test supabase/tests/enrollment_jwks.test.js`.
+All new network tests use synthetic keys and mocked responses; no hosted fetch,
+key rotation, shared signing secret or private credential is needed.
+
+Only public ES256/P-256 and RS256/2048–4096-bit JWKs are admitted (at most eight);
+private fields, remote key URLs/certificates, duplicate IDs, unsupported algorithms
+and ambiguous verification intent deny the whole set. JSON/UTF-8/body size and
+header/body deadline are bounded (elapsed monotonic/wall-clock checks also deny
+late completion when event-loop blocking delays the timer), redirects forbidden, origin/path pinned from
+detached trusted configuration, with no cookies or Auth/API key sent to JWKS.
+Header `kid` only selects a candidate; signature, exact issuer/audience/role,
+current Auth user and current session/profile/request-bound owner rows are still
+verified on every authorization. No token-supplied issuer/JWKS URL is followed.
+
+Keep **one long-lived provider/gate per trusted project**; constructing it per
+request would defeat its cache and refresh admission. Five-minute maximum cache
+starts at request initiation, never extends on delayed completion. One in-flight
+refresh and a global30-second cooldown bound unknown-kid request amplification;
+no unbounded per-kid negative cache. Rotation replaces rather than merges sets.
+Refresh failure clears the old snapshot; no stale-on-error fallback. This favors
+denial over availability: unknown-key refresh/failure may temporarily interrupt
+valid requests, so real authenticated request/rate admission must precede use.
+
+`purge()` is **trusted operator control**, not a body flag or public route. It
+invalidates saved/in-flight snapshots, aborts a pending read and refuses late
+cache repopulation. The composed gate also denies an authorization if its snapshot
+was purged/replaced/expired during live checks. A direct provider consumer must
+call `assertCurrent(snapshot)` immediately before acting; neither API is durable
+write authority. Private SQL must still recheck current authority under its guard.
+
+Supabase's upstream discovery cache can retain keys for ten minutes: local purge
+and `cache: no-store` do **not** guarantee instant upstream key revocation. The
+fresh Auth `/user` check is retained; hosted compatibility/rotation/revocation and
+deployment configuration need separate qualification. HS256 is deliberately not
+supported; fail closed, never request a project signing secret as a workaround.
+[Supabase signing-key discovery and caching](https://supabase.com/docs/guides/auth/signing-keys#public-key-discovery-and-caching)
+and [JWT verification](https://supabase.com/docs/guides/auth/jwts#verifying-a-jwt-from-supabase).
+
+Owner provisioning/current-row SQL integration, broker raw capability checks,
+trusted setup UI/PKCE/comparison/admission, grant retention/cleanup, operational
+credential authentication/rotation/recovery, multi-connection race qualification,
+original prerequisite/specialist acceptance and exact deployment approval remain
+before live enrollment/registration/heartbeat. Existing login and hosted migrations
+stay unchanged. This slice is scoped preparation, not Phase3 completion.
