@@ -112,3 +112,55 @@ the first cloud owner, and it does not make broker grants transactional/single-u
 UI/PKCE/proof handoff, admission limits, private transactions, owner recovery,
 specialist/prerequisite acceptance and exact deployment approval still precede
 live enrollment. Run `node --test supabase/tests/enrollment_authority.test.js`.
+
+## Disposable private enrollment transactions
+
+`enrollment_transactions.sql` is explicitly **not a migration**. It uses a
+test-only `cv_enrollment_lab` schema/NOLOGIN broker role and must never be applied
+to the hosted project. Existing deployed migration bodies remain unchanged.
+Run `node --test supabase/tests/enrollment_transactions.test.js`; PGlite executes
+actual PostgreSQL transactions against disposable foundation/Auth-shape fixtures.
+
+Trusted fixture provisioning supplies an installation owner, request-bound human
+approval and at most five-minute one-use grant. No public grant issuance or owner
+bootstrap is implemented. The consuming function locks the installation guard,
+rechecks current Auth user/session/profile and exact approval/project/binding/
+polling digest, then creates one OFFLINE mapping and digest-only credential. It
+returns only non-secret mapping fields. Exact retry returns the same mapping
+only while grant, approval/JWT, session, profile and credential remain valid.
+Rollback consumes nothing; clone/second-grant conflicts never adopt or rotate.
+The initial epoch=1/30-day credential lifetime is a research fixture choice,
+not an accepted lifetime policy. No users/memberships/endpoints are created.
+
+Owner revocation uses the same installation guard and current human authority;
+it resolves the exact credential/server/owner mapping before mutation, refuses
+foreign clone conflicts, revokes grants/credential and withholds that endpoint.
+Current authority and wall-clock expiry are rechecked after later SQL steps;
+expiry raises an exception and rolls back the operation. Ordinary clients
+and service_role have no lab CRUD/EXECUTE, and the test broker has EXECUTE only
+for consume/revoke, not the private current-owner helper. Definer functions are
+private, explicitly revoke PUBLIC defaults and pin an empty search_path; RLS is
+defense in depth, not a substitute for restricted grants. This NOLOGIN role is
+not issued to a PC, nor is it a deployed broker credential.
+
+SQL inputs are trusted adapter outputs: the future broker must detach/validate
+the full request, verify raw capabilities using constant-time digest comparison,
+verify human JWT/Auth claims and admission limits, and supply only those derived
+bindings. Digest-only public requests would be unsafe. SQL bytea equality is an
+internal consistency check, not constant-time capability authentication. The
+existing JS adapter is not wired to these functions; tests use synthetic digests.
+No real owner provisioning, Auth refresh/PKCE/UI, JWKS, grant retention/cleanup,
+rotation/recovery, operational credential authentication, heartbeat or endpoint
+publication is implemented. Do not expose this schema via PostgREST.
+
+Native row locks retain current authority through consumption; use wall-clock
+expiry after lock waits, not transaction-start now(). Lock installation first,
+then user/session/profile, approval, grant and credential. Privileged Auth work
+can deadlock with cascade operations: abort and bounded retry, never bypass.
+No HTTP call belongs inside the transaction. PGlite has one connection; queued
+tests do **not** qualify two-connection races, Auth lock interactions, cancellation,
+hosted permissions/advisors or provider durability. Those plus specialist and
+original prerequisite acceptance and exact deployment approval remain required.
+[PostgreSQL locking](https://www.postgresql.org/docs/17/explicit-locking.html)
+and [Supabase current-session checks](https://supabase.com/docs/guides/auth/sessions)
+inform this boundary, not a claim of provider qualification.
