@@ -75,6 +75,7 @@
     "testPathIgnorePatterns": [
       "/node_modules/",
       "<rootDir>/frontend/",
+      "<rootDir>/runtime/",
       "<rootDir>/supabase/tests/"
     ]
   }
