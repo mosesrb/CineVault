@@ -1,0 +1,3 @@
+extends: ./base.yml
+reporter: [text]
+check-coverage: true
