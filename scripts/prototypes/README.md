@@ -213,3 +213,63 @@ credential authentication/rotation/recovery, multi-connection race qualification
 original prerequisite/specialist acceptance and exact deployment approval remain
 before live enrollment/registration/heartbeat. Existing login and hosted migrations
 stay unchanged. This slice is scoped preparation, not Phase3 completion.
+
+## Isolated trusted broker / private transaction composition
+
+`enrollment_broker.js` and `enrollment_broker.sql` connect the isolated adapters
+in the disposable lab, **not** in a deployed broker or the app. No new runtime
+driver/dependency/credentials or deployable migration. Run
+`node --test supabase/tests/enrollment_broker.test.js`.
+
+`authorizeExistingApproval()` uses the fixed-project signing-key verifier,
+fresh Auth user and actual private SQL current-session/profile/installation/
+owner approval lookup. It is a read-only preflight of a **previously provisioned**
+request-bound approval, not first owner bootstrap or grant issuance. Provisioning
+still uses trusted synthetic fixtures; no boolean body or user metadata creates
+an owner or a grant. This result must never be cached as write authority.
+
+`consume()` accepts exactly the full pending request and raw polling capability,
+not a JWT, owner ID, grant ID, secret digest alone or durable operational secret.
+Existing protocol digests hash canonical lower-hex UTF-8 strings; preserve that
+encoding across PC and broker. Constant-time SHA256 comparisons tie the capability
+to its request and private stored grant, full approval binding and operational
+digest/credential ID. SQL resolves grant IDs internally and rechecks current
+owner/session/profile/approval/grant/credential under the original mutation guard.
+The added consume_bound wrapper checks credential ID and operational digest while
+core locks are still held; a changed digest after lookup rolls back even after a
+provisional insert. The broker cannot execute the core-only bypass after this lab
+extension. Current-row lookup refuses ambiguous duplicate approval bindings.
+Responses expose only one stable OFFLINE mapping; no membership/endpoint issuance.
+Exact lost-response retries still require live current authority, not cached success.
+
+Private helper definer reads pin empty search_path, qualify underlying tables and
+revoke PUBLIC/client/service_role EXECUTE. Only the NOLOGIN research broker role
+gets helper/core-function EXECUTE, never direct table CRUD; it is not a credential
+issued to the PC. These helpers take verifier-derived IDs/internal digests, not
+ordinary-client auth.uid claims; exposing them via RPC would violate the boundary.
+
+Trusted constructor `admit` must be side-effect-free/cooperate with cancellation,
+return literal true and apply real global/principal/request admission; tests inject
+synthetic admission only. Shape/proof checks precede DB work. Each production
+connection must use a narrow trusted broker role and transaction-scoped statement/
+lock timeouts. The provided database interface is still a trusted adapter contract,
+not a deployed pooled driver. It must commit only on successful callback, rollback
+every exception, never replay callbacks implicitly and resolve after commit settles.
+No HTTP belongs inside mutation transactions.
+
+Never use Promise.race to return mutation denial while background SQL can commit
+later. Consumption awaits transaction settlement, with callback elapsed-clock
+checks and SQL timeouts; a real driver still needs cancellation/rollback/transport
+qualification. An expired or lost commit reply can be **uncertain**, not proof of
+rollback. Preserve/retry exactly the same pending identity while valid; no reset,
+new random credential or automatic adoption. After expiry explicit recovery is
+still required. Tests simulate callback rollback and lost reply, not provider locks,
+two real connections, abrupt network/process failure or durable hosted storage.
+
+Broker revocation/grant issuance/retention and first owner provisioning, operational
+credential auth/rotation/recovery, UI/PKCE/trusted comparison, real admission and
+provider/concurrency/driver qualification remain. Original prerequisite/full
+specialist acceptance and exact deployment approval precede live enrollment and
+registration/heartbeat. Existing login/users/media/migrations remain untouched.
+[Supabase current-session checks](https://supabase.com/docs/guides/auth/sessions#how-to-ensure-an-access-token-jwt-cannot-be-used-after-a-user-signs-out)
+inform this boundary, not a claim of hosted qualification.
