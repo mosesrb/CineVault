@@ -16,11 +16,23 @@ const stream = require('../routes/stream');
 const discover = require('../routes/discover');
 const identity = require('../routes/identity');
 const adminSessions = require('../routes/admin_sessions');
+const adminControlPlane = require('../routes/admin_control_plane');
+const controlPlane = require('../services/controlPlaneService');
 const { createHealthRouter } = require('./health');
 
 module.exports = function (app) {
     app.use(express.json());
     app.use('/health', createHealthRouter());
+    // Only successful authenticated application work triggers cloud activity.
+    // Health probes, anonymous traffic and cloud admin/status polling never do.
+    app.use((req, res, next) => {
+        res.once('finish', () => {
+            if (req.auth && res.statusCode >= 200 && res.statusCode < 400 &&
+                !req.originalUrl.startsWith('/api/v1/admin/control-plane') &&
+                !req.originalUrl.startsWith('/api/admin/control-plane')) controlPlane.noteActivity('authenticated-request');
+        });
+        next();
+    });
     // 1. Simple Request Logger — MOVE TO TOP to see all preflight (OPTIONS) traffic
     app.use((req, res, next) => {
         if (req.path.startsWith('/api/v1/stream')) {
@@ -111,6 +123,7 @@ module.exports = function (app) {
     app.use(['/api/v1/identity', '/api/identity'], apiLimiter, identity);
     app.use(['/api/v1/stream', '/api/stream'], stream); // Streaming might need custom limits
     app.use(['/api/v1/admin/sessions', '/api/admin/sessions'], apiLimiter, adminSessions);
+    app.use(['/api/v1/admin/control-plane', '/api/admin/control-plane'], apiLimiter, adminControlPlane);
 
     // Network info — returns local LAN IP so Android/TV clients can auto-configure
     app.get(['/api/v1/network-info', '/api/network-info'], (req, res) => {

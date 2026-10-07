@@ -7,6 +7,7 @@ const { createApp } = require('./app');
 const { connectDatabase, disconnectDatabase } = require('./startup/dbconnection');
 const { initRedis, closeRedis } = require('./middleware/cache');
 const { ensureServerIdentity } = require('./services/serverIdentityService');
+const { initializeControlPlane, stopControlPlane } = require('./services/controlPlaneService');
 
 let server = null;
 let stopping = null;
@@ -29,6 +30,7 @@ async function startServer() {
         await connectDatabase();
         await ensureServerIdentity();
         await initRedis();
+        await initializeControlPlane();
 
         const port = process.env.PORT || 3000;
         server = await new Promise((resolve, reject) => {
@@ -37,7 +39,7 @@ async function startServer() {
         });
     } catch (error) {
         // Identity validation must not leave a failed startup holding dependencies.
-        await Promise.allSettled([closeRedis(), disconnectDatabase()]);
+        await Promise.allSettled([stopControlPlane(), closeRedis(), disconnectDatabase()]);
         throw error;
     }
 
@@ -59,6 +61,7 @@ async function stopServer(reason = 'shutdown') {
                 listener.close(error => error ? reject(error) : resolve());
             });
         }
+        await stopControlPlane();
         await Promise.allSettled([closeRedis(), disconnectDatabase()]);
         winston.info('CineVault stopped.');
     })();

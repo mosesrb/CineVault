@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>CineVault owner approval</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.mjs"></script>
+</head>
+<body>
+<main>
+  <h1>CineVault owner approval</h1>
+  <p>This separate trusted page approves one server setup. It does not grant media access or migrate users.</p>
+  <p id="status" role="status">Checking trusted origin…</p>
+  <p id="error" role="alert"></p>
+  <form id="login">
+    <h2>Sign in with your cloud-owner account</h2>
+    <p>Use your CineVault Supabase Auth account, not your Supabase dashboard password or an API secret.</p>
+    <label>Email<input id="email" type="email" autocomplete="username" required maxlength="255"></label>
+    <label>Password<input id="password" type="password" autocomplete="current-password" required maxlength="1024"></label>
+    <button id="signin" disabled>Sign in</button>
+  </form>
+  <form id="approval" hidden>
+    <h2>Confirm the installation you control</h2>
+    <label>Pairing request from the local ADMIN page<textarea id="request" rows="9" required maxlength="8192"></textarea></label>
+    <label>Approval proof<input id="proof" type="password" autocomplete="off" required maxlength="64"></label>
+    <label>Expected server UUID, checked against your PC<input id="instance" required maxlength="36"></label>
+    <label><input id="confirm" type="checkbox" required>I verified this exact installation and request on my CineVault PC.</label>
+    <button id="approve">Approve this setup</button>
+  </form>
+  <p id="instructions" hidden>Keep this page open and signed in until the PC's “Check owner approval” confirms enrollment.
+    Then sign out here. Expiry/sign-out before redemption denies the grant.</p>
+  <button id="signout" hidden>Finish and sign out</button>
+</main>
+</body>
+</html>

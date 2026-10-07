@@ -25,6 +25,7 @@ import AdminTVShows   from './pages/admin/AdminTVShows'
 import AdminUsers     from './pages/admin/AdminUsers'
 import AdminGenres    from './pages/admin/AdminGenres'
 import AdminSessions  from './pages/admin/AdminSessions'
+import ControlPlane from './pages/admin/ControlPlane'
 import PrivacyPolicy  from './pages/PrivacyPolicy'
 import TermsOfService from './pages/TermsOfService'
 import Footer         from './components/Footer'
@@ -185,6 +186,7 @@ function AppRoutes() {
           <Route path="users" element={<AdminUsers />} />
           <Route path="genres" element={<AdminGenres />} />
           <Route path="sessions" element={<AdminSessions />} />
+          <Route path="control-plane" element={<ControlPlane />} />
         </Route>
 
         <Route path="/privacy" element={<PrivacyPolicy />} />

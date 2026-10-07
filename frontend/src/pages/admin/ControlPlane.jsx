@@ -1,0 +1,69 @@
+import { useEffect, useState } from 'react'
+
+// Deliberately bypasses shared GET/offline caches. Setup proofs are ephemeral,
+// never localStorage, URLs, telemetry or offline state. PC same-origin only.
+async function request(path = '', method = 'GET', csrfToken) {
+  const token = localStorage.getItem('cv_token')
+  const response = await fetch(`/api/v1/admin/control-plane${path}`, {
+    method, cache: 'no-store', redirect: 'error', credentials: 'omit',
+    headers: { 'Content-Type': 'application/json', ...(token ? { 'x-auth-token': token } : {}),
+      ...(csrfToken ? { 'x-cinevault-csrf': csrfToken } : {}) },
+    ...(method === 'POST' ? { body: '{}' } : {}), signal: AbortSignal.timeout(20000),
+  })
+  const result = await response.json()
+  if (!response.ok) throw new Error(result.error || 'Cloud administration unavailable.')
+  return result
+}
+
+export default function ControlPlane() {
+  const [status, setStatus] = useState(null)
+  const [setup, setSetup] = useState(null)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    let live = true
+    request().then(value => { if (live) setStatus(value) }).catch(() => {
+      if (live) setError('Unable to read live cloud status. No cached status is used.')
+    })
+    return () => { live = false }
+  }, [])
+  useEffect(() => {
+    if (!setup?.expiresAt) return
+    const timer = setTimeout(() => setSetup(null), Math.max(0, setup.expiresAt - Date.now()))
+    return () => clearTimeout(timer)
+  }, [setup])
+  async function perform(operation) {
+    setBusy(true); setError('')
+    try {
+      const { csrfToken } = await request('/csrf', 'POST')
+      const result = await request(`/${operation}`, 'POST', csrfToken)
+      if (operation === 'prepare') setSetup(result.alreadyEnrolled ? null : result)
+      if (operation === 'redeem' && result.enrolled) setSetup(null)
+      setStatus(await request())
+    } catch (failure) {
+      setError(failure.message)
+      try { setStatus(await request()) } catch { /* Keep explicit failure, not cached success. */ }
+    } finally { setBusy(false) }
+  }
+  return <section className="glass" style={{ padding: 'var(--sp-6)' }}>
+    <h1>Cloud control plane</h1>
+    <p>Use this page in the configured PC browser. Existing local login and media remain unchanged.</p>
+    <p role="status">Status: {status?.mode || 'Loading…'}</p>
+    {status?.guidance && <p>{status.guidance}</p>}
+    {error && <p role="alert">{error}</p>}
+    <p>Setup is opt-in and requires the reviewed hosted broker and trusted cloud-owner approval.
+      Do not paste Supabase secret keys, database passwords or owner login tokens here.</p>
+    <button disabled={busy || !status?.enabled} onClick={() => perform('prepare')}>Prepare one-time setup</button>{' '}
+    <button disabled={busy || !status?.enabled} onClick={() => perform('redeem')}>Check owner approval</button>{' '}
+    <button disabled={busy || !status?.enabled} onClick={() => perform('retry')}>Retry cloud recovery</button>
+    {setup && <div>
+      <h2>Trusted owner approval</h2>
+      <p>Expires: {new Date(setup.expiresAt).toLocaleTimeString()}. Copy this request and proof only
+        to the trusted enrollment page specified in the setup runbook. They do not grant local media access.</p>
+      <label>Pairing request<textarea aria-label="Pairing request" readOnly rows={8} value={JSON.stringify(setup.request, null, 2)} /></label>
+      <label>Approval proof<input aria-label="Approval proof" readOnly value={setup.approvalProof} /></label>
+    </div>}
+    <p>Free projects can pause after inactivity. Recovery is owner-driven; idle keepalive traffic is disabled.
+      “Connected” means a cloud acknowledgment, not verified remote endpoint availability.</p>
+  </section>
+}

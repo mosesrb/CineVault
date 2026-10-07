@@ -2,6 +2,6 @@
   "name": "cinevault-control-plane-tests",
   "private": true,
   "version": "1.0.0",
-  "scripts": { "test": "node --test rls.test.js pairing.test.js protected_state.test.js enrollment_authority.test.js enrollment_transactions.test.js enrollment_jwks.test.js enrollment_broker.test.js" },
+  "scripts": { "test": "node --test rls.test.js pairing.test.js protected_state.test.js enrollment_authority.test.js enrollment_transactions.test.js enrollment_jwks.test.js enrollment_broker.test.js control_plane_runtime.test.js control_plane_store.test.js enrollment_page.test.js" },
   "devDependencies": { "@electric-sql/pglite": "0.5.8" }
 }

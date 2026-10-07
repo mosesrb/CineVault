@@ -11,6 +11,7 @@ const NAV = [
   { to: '/admin/genres',   label: 'Genres',     icon: Tag },
   { to: '/admin/users',    label: 'Users',      icon: Users },
   { to: '/admin/sessions', label: 'Sessions',   icon: KeyRound },
+  { to: '/admin/control-plane', label: 'Cloud status', icon: ShieldCheck },
 ]
 
 export default function AdminLayout() {

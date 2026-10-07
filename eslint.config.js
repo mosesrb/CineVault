@@ -16,6 +16,12 @@ module.exports = [
     },
     {
         ...js.configs.recommended,
+        files: ['enrollment/**/*.mjs'],
+        languageOptions: { ecmaVersion: 'latest', sourceType: 'module', globals: globals.browser },
+        rules: { ...js.configs.recommended.rules, 'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }] }
+    },
+    {
+        ...js.configs.recommended,
         files: [
             'app.js',
             'index.js',

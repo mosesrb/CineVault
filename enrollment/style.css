@@ -1,0 +1,9 @@
+:root { color-scheme: dark; font-family: system-ui, sans-serif; background: #151819; color: #f4f6f6; }
+main { max-width: 44rem; margin: 3rem auto; padding: 1.5rem; }
+form { border: 1px solid #465655; border-radius: .6rem; padding: 1.5rem; margin: 1.5rem 0; }
+label { display: block; margin: 1rem 0; }
+input:not([type=checkbox]), textarea { display: block; box-sizing: border-box; width: 100%; padding: .7rem; margin-top: .4rem; }
+button { padding: .7rem 1.2rem; cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+#error { color: #ffb3a7; }
+:focus-visible { outline: 3px solid #55ceba; outline-offset: 3px; }
