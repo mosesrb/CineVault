@@ -11,7 +11,7 @@ describe('dependency-free development watch mode', () => {
         expect(pkg.scripts.predev).toBe('node scripts/ensure_local_mongodb.js');
         expect(pkg.scripts.start).toBe('node index.js');
         expect(pkg.scripts.fullstack).toContain('npm run dev');
-        expect(pkg.scripts.audit).toBe('npm audit && npm audit --prefix frontend && npm audit --prefix supabase/tests');
+        expect(pkg.scripts.audit).toBe('npm audit && npm audit --prefix frontend && npm audit --prefix supabase/tests && npm audit --prefix supabase/broker');
         expect(pkg.scripts['verify:web']).toMatch(/^npm run audit &&/);
         expect(pkg.scripts['verify:web']).toContain('npm run test:control-plane');
         expect(pkg.scripts['test:control-plane']).toBe('npm test --prefix supabase/tests');

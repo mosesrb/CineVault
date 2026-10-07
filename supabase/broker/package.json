@@ -1,0 +1,7 @@
+{
+  "name": "cinevault-hosted-broker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": { "postgres": "3.4.9", "jsonwebtoken": "9.0.3" }
+}
