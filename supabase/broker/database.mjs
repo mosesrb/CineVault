@@ -2,6 +2,8 @@ import { Buffer } from 'node:buffer'
 import { performance } from 'node:perf_hooks'
 import { BrokerFailure, PROJECT_REF } from './broker.mjs'
 const queries = Object.freeze({
+  admitRequest: ['select cinevault_private.cp_admit_request() as result',0],
+  admit: ['select cinevault_private.cp_admit($1,$2) as result',2],
   approve: ['select cinevault_private.cp_approve($1,$2,$3,$4,$5,$6) as result',6],
   register: ['select cinevault_private.cp_register($1,$2,$3,$4) as result',4],
   verifier: ['select cinevault_private.cp_verifier($1) as result',1],

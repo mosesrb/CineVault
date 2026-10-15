@@ -46,8 +46,41 @@ guard tests exercise committed profile/session/credential revocation, not every
 privileged Auth cascade/deadlock permutation. Request bodies have a five-second
 side-effect-free read bound; trusted admission/runtime construction is still gated.
 
-Runtime entry/secret provisioning/Pages origin, admission limits across isolates,
-effective headers/CORS and real hosted pool/Deno/Auth/concurrency qualification
+The prepared `supabase/functions/cinevault-control-plane` entry composes one
+pool/verifier per isolate, exact provider-internal route and the existing guards.
+It requires all five hosted `CV_BROKER_*` configuration values: ENABLED must be
+literal `true`, PROJECT_REF fixed, DATABASE_URL the dedicated hosted pool secret,
+APPROVAL_ORIGIN exact Pages origin and PUBLISHABLE_KEY a public key. Missing or
+invalid configuration returns generic503 without opening a pool/provider request.
+No secrets/config are returned or logged; ordinary PC/app imports remain unchanged.
+
+Apply prepared `admission.sql` after `schema.sql` only in disposable tests until
+an exact migration/deployment is approved. It adds one private RLS global counter
+row and three counters per **already provisioned** installation, no arbitrary IP/
+caller-key rows. A request consumes the shared120/minute budget before reading its
+body; valid-shaped operations also consume4approve/10register/10heartbeat per
+installation per minute, before expensive Auth or business transactions. Budget
+transactions settle independently, so denied business work cannot roll back its
+attempt. Clock regression denies rather than resetting quota. Each isolate has
+only two active handlers/no queue; missing/exhausted state fails closed. These
+limits are deployment candidates, not a guaranteed provider billing/DoS shield.
+Attackers knowing an installation UUID can exhaust its pre-auth budget; global
+exhaustion can deny legitimate work. Provider/gateway abuse controls and accepted
+availability/cost limits still need explicit commissioning decisions. Denied
+function invocations still consume provider resources. No idle timer/job runs.
+
+Pinned Deno2.9.6 local qualification checks actual crypto/JWT and Postgres.js
+role/bytea/JSON transport against a synthetic loopback fixture, not Supabase's
+deployed Edge Runtime/Supavisor/TLS/Auth. `deno.json`/generated integrity lock are
+function-local, npm packages pinned, Deno audit is separate from four npm audits.
+CI prepares the same frozen check/audit/test step using an exact official action
+commit; new workflow not yet pushed/run. Test driver env/network permissions are
+named PG options plus the synthetic port/loopback, never unrestricted permissions.
+The node suite adds actual SQL budgets/full composition and the separate driver
+suite races global/per-install counters across real connections.
+
+Secret provisioning/Pages origin, gateway settings/actual route compatibility,
+effective deployed headers/CORS and real hosted pool/runtime/Auth qualification
 remain commissioning gates. No arbitrary SQL proxy or automatic owner bootstrap.
 Rotation/recovery/expired-grant cleanup are not implemented by a destructive reset;
 they need explicit owner-authorized flow preserving server identity/epochs. Existing
@@ -57,3 +90,6 @@ References: [Supabase database connections](https://supabase.com/docs/guides/fun
 [Postgres.js transactions](https://github.com/porsager/postgres#transactions),
 [function authentication](https://supabase.com/docs/guides/functions/auth),
 [session revocation](https://supabase.com/docs/guides/auth/sessions).
+Runtime references: [function-local dependencies](https://supabase.com/docs/guides/functions/dependencies),
+[gateway routing](https://supabase.com/docs/guides/functions/routing),
+[resource limits](https://supabase.com/docs/guides/functions/limits).

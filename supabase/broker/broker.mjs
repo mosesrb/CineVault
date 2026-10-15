@@ -106,10 +106,11 @@ export function createBroker({database,verifyOwner,admit,now=Date.now}) {
 /** HTTP has fixed CORS, size/shape limits, no credential-bearing URLs or logs.
  * It awaits settled mutation transactions: request cancellation is not rollback.
  * A lost reply must be retried with the existing durable operation, not new keys. */
-export function createHandler({broker,approvedOrigin,admitRequest,bodyTimeoutMs=5000}) {
+export function createHandler({broker,approvedOrigin,admitRequest,bodyTimeoutMs=5000,routePath='/functions/v1/cinevault-control-plane'}) {
   if(!/^https:\/\/[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.pages\.dev$/.test(approvedOrigin) ||
     typeof broker?.execute!=='function' || typeof admitRequest!=='function' ||
-    !Number.isSafeInteger(bodyTimeoutMs) || bodyTimeoutMs<1 || bodyTimeoutMs>5000)throw Error('broker_configuration_invalid')
+    !Number.isSafeInteger(bodyTimeoutMs) || bodyTimeoutMs<1 || bodyTimeoutMs>5000 ||
+    !['/functions/v1/cinevault-control-plane','/cinevault-control-plane'].includes(routePath))throw Error('broker_configuration_invalid')
   return async request=>{
     const origin=request.headers.get('origin')
     const headers={'content-type':'application/json','cache-control':'no-store','x-content-type-options':'nosniff',vary:'Origin'}
@@ -119,7 +120,7 @@ export function createHandler({broker,approvedOrigin,admitRequest,bodyTimeoutMs=
     const respond=(body,status)=>new Response(JSON.stringify(body),{status,headers})
     try {
       if(origin!==null && origin!==approvedOrigin)return respond({error:'authorization'},403)
-      if(new URL(request.url).search || new URL(request.url).pathname!==`/functions/v1/cinevault-control-plane`)return respond({error:'authorization'},403)
+      if(new URL(request.url).search || new URL(request.url).pathname!==routePath)return respond({error:'authorization'},403)
       if(request.method==='OPTIONS')return origin===approvedOrigin?respond({},200):respond({error:'authorization'},403)
       if(request.method!=='POST')return respond({error:'authorization'},405)
       if(!/^application\/json(?:;|$)/i.test(request.headers.get('content-type')||''))deny()

@@ -73,6 +73,19 @@ jobs:
         CV_QA_POSTGRES_PORT: '5432'
       run: npm run test:driver --prefix supabase/tests
 
+    - name: Use Pinned Deno Qualification Runtime
+      uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+      with:
+        deno-version: '2.9.6'
+
+    - name: Check Prepared Function and Qualify Deno Driver
+      env:
+        CV_QA_POSTGRES_PORT: '5432'
+      run: |
+        deno check --frozen --config supabase/functions/cinevault-control-plane/deno.json supabase/functions/cinevault-control-plane/index.ts supabase/functions/cinevault-control-plane/runtime_test.ts
+        deno audit --lock supabase/functions/cinevault-control-plane/deno.lock
+        deno test --frozen --config supabase/functions/cinevault-control-plane/deno.json --allow-env=CV_QA_POSTGRES_PORT,PGAPPNAME,PGSSLNEGOTIATION,PGIDLE_TIMEOUT,PGMAX_LIFETIME,PGMAX_PIPELINE,PGBACKOFF,PGKEEP_ALIVE,PGDEBUG,PGFETCH_TYPES,PGPUBLICATIONS,PGTARGET_SESSION_ATTRS,PGTARGETSESSIONATTRS --allow-net=127.0.0.1 supabase/functions/cinevault-control-plane/runtime_test.ts
+
     - name: Build Frontend
       run: npm run build --prefix frontend
 

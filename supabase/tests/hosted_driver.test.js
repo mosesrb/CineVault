@@ -20,6 +20,7 @@ test('disposable Postgres17 real driver transactions and concurrency',{skip:!por
    await setup.unsafe('alter table auth.users add is_anonymous boolean default false,add banned_until timestamptz,add deleted_at timestamptz; create table auth.sessions(id uuid primary key,user_id uuid not null,not_after timestamptz);');
    await setup.unsafe(read('../migrations/20261004161756_control_plane_foundation.sql'));
    await setup.unsafe(read('../broker/schema.sql'));
+   await setup.unsafe(read('../broker/admission.sql'));
    await setup.unsafe('create role cv_qa_login login; grant cv_control_broker to cv_qa_login;');
   }finally{setup.release();}
   client=postgres({host:'127.0.0.1',port:Number(port),database:'postgres',username:'cv_qa_login',prepare:false,max:2,connect_timeout:3,
@@ -94,6 +95,16 @@ test('disposable Postgres17 real driver transactions and concurrency',{skip:!por
   await t.test('narrow login cannot read tables or execute internal owner helper',async()=>{
    await assert.rejects(client.unsafe('select * from cinevault_private.cp_credentials'),e=>e.code==='42501');
    await assert.rejects(client.unsafe("select cinevault_private.cp_guard('00000000-0000-4000-8000-000000000001')"),e=>e.code==='42501');
+  });
+  await t.test('concurrent global admission counts exactly120 across separate driver connections',async()=>{
+   const answers=await Promise.all(Array.from({length:126},()=>database.transaction(tx=>tx.call('admitRequest',[]))));
+   assert.equal(answers.filter(v=>v===true).length,120);assert.equal(answers.filter(v=>v===false).length,6);
+   assert.equal((await admin`select used from cinevault_private.cp_admission`)[0].used,120);
+  });
+  await t.test('concurrent same-installation admission cannot exceed its ten-request budget',async()=>{
+   const f=await fixture();const answers=await Promise.all(Array.from({length:16},()=>database.transaction(tx=>tx.call('admit',['register',f.state.serverInstanceId]))));
+   assert.equal(answers.filter(v=>v===true).length,10);assert.equal(answers.filter(v=>v===false).length,6);
+   assert.equal((await admin`select admission_counts from cinevault_private.cp_installations where instance_id=${f.state.serverInstanceId}`)[0].admission_counts.register,10);
   });
  } finally {if(client)await client.end({timeout:3});await admin.end({timeout:3});}
 });

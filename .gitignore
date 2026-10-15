@@ -32,6 +32,8 @@ hls-cache/
 *.mov
 *.webm
 *.ts
+!supabase/functions/cinevault-control-plane/index.ts
+!supabase/functions/cinevault-control-plane/runtime_test.ts
 *.m3u8
 
 # Logs & Runtime
