@@ -20,6 +20,7 @@ export default function ControlPlane() {
   const [setup, setSetup] = useState(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [confirmRecovery, setConfirmRecovery] = useState(false)
   useEffect(() => {
     let live = true
     request().then(value => { if (live) setStatus(value) }).catch(() => {
@@ -37,7 +38,8 @@ export default function ControlPlane() {
     try {
       const { csrfToken } = await request('/csrf', 'POST')
       const result = await request(`/${operation}`, 'POST', csrfToken)
-      if (operation === 'prepare') setSetup(result.alreadyEnrolled ? null : result)
+      if (operation === 'prepare' || operation === 'recover') setSetup(result.alreadyEnrolled ? null : result)
+      if (operation === 'recover') setConfirmRecovery(false)
       if (operation === 'redeem' && result.enrolled) setSetup(null)
       setStatus(await request())
     } catch (failure) {
@@ -56,6 +58,11 @@ export default function ControlPlane() {
     <button disabled={busy || !status?.enabled} onClick={() => perform('prepare')}>Prepare one-time setup</button>{' '}
     <button disabled={busy || !status?.enabled} onClick={() => perform('redeem')}>Check owner approval</button>{' '}
     <button disabled={busy || !status?.enabled} onClick={() => perform('retry')}>Retry cloud recovery</button>
+    <p>Credential replacement pauses old cloud activity until you approve the exact saved candidate on the trusted owner page.
+      Server identity and cloud mapping are preserved. Missing/corrupt state requires manual recovery; do not delete it.</p>
+    <label><input type="checkbox" checked={confirmRecovery} disabled={busy || !status?.enabled}
+      onChange={event => setConfirmRecovery(event.target.checked)} />I want to prepare or resume owner-approved credential replacement.</label>{' '}
+    <button disabled={busy || !status?.enabled || !confirmRecovery} onClick={() => perform('recover')}>Prepare credential replacement</button>
     {setup && <div>
       <h2>Trusted owner approval</h2>
       <p>Expires: {new Date(setup.expiresAt).toLocaleTimeString()}. Copy this request and proof only

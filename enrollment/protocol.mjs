@@ -22,7 +22,14 @@ export async function validatePairing(text, proof, instance, now = Date.now()) {
   if (typeof text !== 'string' || text.length > 8192 || typeof proof !== 'string' || !HEX.test(proof) ||
     typeof instance !== 'string' || !UUID.test(instance)) fail()
   const request = JSON.parse(text)
-  exact(request, fields)
+  const replacing=Object.hasOwn(request,'replacement')
+  exact(request, replacing?[...fields,'replacement']:fields)
+  if(replacing){
+    exact(request.replacement,['credentialId','cloudServerId','epoch'])
+    if(!['credentialId','cloudServerId'].every(k=>typeof request.replacement[k]==='string'&&UUID.test(request.replacement[k])) ||
+      request.replacement.credentialId===request.credentialId || !Number.isSafeInteger(request.replacement.epoch) ||
+      request.replacement.epoch<1 || request.replacement.epoch>=Number.MAX_SAFE_INTEGER-1)fail()
+  }
   if (request.projectRef !== REF || request.serverInstanceId !== instance ||
     !['serverInstanceId', 'pairId', 'credentialId', 'idempotencyKey'].every(k => typeof request[k] === 'string' && UUID.test(request[k])) ||
     !['secretDigest', 'pollDigest', 'approvalDigest'].every(k => typeof request[k] === 'string' && HEX.test(request[k])) ||
@@ -97,7 +104,7 @@ export function createOwnerSession({ config, origin, fetchImpl = fetch, now = Da
       if (!accessToken || now() >= validUntil) { accessToken = null; fail() }
       const request = await validatePairing(text, proof, confirmedInstanceId, now())
       const result = await jsonRequest(`${checked.projectUrl}/functions/v1/cinevault-control-plane`,
-        { operation: 'approve', request, approvalProof: proof, confirmedInstanceId }, accessToken)
+        { operation: request.replacement?'approve-replacement':'approve', request, approvalProof: proof, confirmedInstanceId }, accessToken)
       exact(result, ['approved', 'pairId', 'expiresAt'])
       if (result.approved !== true || result.pairId !== request.pairId || !Number.isSafeInteger(result.expiresAt) ||
         result.expiresAt > request.expiresAt || result.expiresAt <= now() || now() >= validUntil) fail()

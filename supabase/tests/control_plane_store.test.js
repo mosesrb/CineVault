@@ -47,3 +47,12 @@ nativeTest('production state denies credential replacement, project reuse and co
     const file=path.join(f.directory,'state.json');await fs.writeFile(file,'invalid-synthetic-json');
     await assert.rejects(f.store.read());assert.equal(await fs.readFile(file,'utf8'),'invalid-synthetic-json');
 });
+nativeTest('production native replacement candidate/previous mapping survive reopen and CAS rejects stale writer',async t=>{
+    const f=await fixture(t);await f.store.writeAtomic(f.active);const stale=createStore(f.options);await stale.read();
+    const candidate=initialState(PROJECT_REF,f.state.serverInstanceId,Date.now());
+    const replacing={version:2,status:'replacing',projectRef:PROJECT_REF,serverInstanceId:f.state.serverInstanceId,previous:f.active,candidate};
+    await f.store.writeAtomic(replacing);const current=createStore(f.options);assert.deepEqual(await current.read(),replacing);
+    await assert.rejects(stale.writeAtomic(f.active));
+    await current.writeAtomic({...candidate,status:'active',mapping:{...f.active.mapping,credentialId:candidate.credentialId,epoch:2},sequence:0,pending:null});
+    const saved=await createStore(f.options).read();assert.equal(saved.secret,candidate.secret);assert.equal(saved.mapping.cloudServerId,f.active.mapping.cloudServerId);assert.equal(saved.mapping.epoch,2);
+});

@@ -30,6 +30,15 @@ function validatePending(pending, state) {
         !['authenticated-request','media-work','admin-retry','startup','shutdown'].includes(pending.activity)) fail();
 }
 function validateState(value, projectRef, serverInstanceId) {
+    if(value?.status==='replacing') {
+        exact(value,['version','status','projectRef','serverInstanceId','previous','candidate']);
+        if(value.version!==2 || value.projectRef!==projectRef || value.serverInstanceId!==serverInstanceId ||
+            value.previous?.status!=='active' || value.candidate?.status!=='pairing')fail();
+        validateState(value.previous,projectRef,serverInstanceId);validateState(value.candidate,projectRef,serverInstanceId);
+        if(value.previous.credentialId===value.candidate.credentialId || value.previous.secret===value.candidate.secret ||
+            value.previous.mapping.epoch>=Number.MAX_SAFE_INTEGER-1)fail();
+        return value;
+    }
     const keys = ['version','status','projectRef','serverInstanceId','pairId','credentialId','secret',
         'pollSecret','expiresAt','idempotencyKey'];
     exact(value, value?.status === 'active' ? [...keys,'mapping','sequence','pending'] : keys);
@@ -58,6 +67,25 @@ function initialState(projectRef, serverInstanceId, now) {
         pollSecret: crypto.randomBytes(32).toString('hex'), expiresAt: now + PAIR_TTL, idempotencyKey: crypto.randomUUID() };
 }
 function validateTransition(previous, next) {
+    if(next.status==='replacing') {
+        if(previous?.status==='active') {
+            if(JSON.stringify(next.previous)!==JSON.stringify(previous))fail();
+        }else if(previous?.status==='replacing') {
+            if(JSON.stringify(next.previous)!==JSON.stringify(previous.previous))fail();
+            for(const k of Object.keys(previous.candidate).filter(k=>!['pairId','expiresAt','idempotencyKey'].includes(k)))
+                if(previous.candidate[k]!==next.candidate[k])fail();
+            if(next.candidate.expiresAt<previous.candidate.expiresAt)fail();
+        }else fail();
+        return;
+    }
+    if(previous?.status==='replacing') {
+        if(next.status!=='active' || next.sequence!==0 || next.pending!==null)fail();
+        for(const k of Object.keys(previous.candidate).filter(k=>k!=='status'))
+            if(next[k]!==previous.candidate[k])fail();
+        if(next.mapping.cloudServerId!==previous.previous.mapping.cloudServerId ||
+            next.mapping.epoch!==previous.previous.mapping.epoch+1)fail();
+        return;
+    }
     if (!previous) {
         if (next.status !== 'pairing') fail();
         return;
@@ -76,5 +104,18 @@ function validateTransition(previous, next) {
         } else if (next.sequence !== previous.pending.sequence) fail();
     }
 }
+/** Replacement uses a domain-separated proof bound to the old mapping/epoch.
+ * The saved candidate survives grant renewal; a lost reply never changes keys. */
+function replacementRequest(state) {
+    validateState(state,state.projectRef,state.serverInstanceId);
+    if(state.status!=='replacing')fail();
+    const {credentialId,cloudServerId,epoch}=state.previous.mapping;
+    const request={...pairingRequest(state.candidate).request,replacement:{credentialId,cloudServerId,epoch}};
+    const values=[...bindingFields.slice(0,8).map(k=>request[k]),credentialId,cloudServerId,epoch];
+    const approvalProof=crypto.createHmac('sha256',Buffer.from(state.candidate.pollSecret,'hex'))
+        .update('cinevault-replacement-v1\n'+JSON.stringify(values)).digest('hex');
+    request.approvalDigest=digest(approvalProof);
+    return {request,approvalProof};
+}
 module.exports = { PROJECT_REF, UUID, HEX, PAIR_TTL, digest, exact, integer, matches,
-    bindingFields, bindingDigest, pairingRequest, validateState, validateMapping, initialState, validateTransition };
+    bindingFields, bindingDigest, pairingRequest, replacementRequest, validateState, validateMapping, initialState, validateTransition };

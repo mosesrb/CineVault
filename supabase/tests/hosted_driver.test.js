@@ -1,7 +1,7 @@
 // Opt-in real Postgres.js/two-connection qualification on a disposable container.
 // Never a hosted Auth fixture. Only an explicitly configured loopback port.
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
-const {initialState,pairingRequest,PROJECT_REF}=require('../../services/controlPlane/protocol');
+const {initialState,pairingRequest,replacementRequest,PROJECT_REF}=require('../../services/controlPlane/protocol');
 const port=process.env.CV_QA_POSTGRES_PORT;
 test('disposable Postgres17 real driver transactions and concurrency',{skip:!port,timeout:45000},async t=>{
  assert.match(port,/^[0-9]{4,5}$/);assert.ok(Number(port)>1024&&Number(port)<=65535);
@@ -21,6 +21,7 @@ test('disposable Postgres17 real driver transactions and concurrency',{skip:!por
    await setup.unsafe(read('../migrations/20261004161756_control_plane_foundation.sql'));
    await setup.unsafe(read('../broker/schema.sql'));
    await setup.unsafe(read('../broker/admission.sql'));
+   await setup.unsafe(read('../broker/replacement.sql'));
    await setup.unsafe('create role cv_qa_login login; grant cv_control_broker to cv_qa_login;');
   }finally{setup.release();}
   client=postgres({host:'127.0.0.1',port:Number(port),database:'postgres',username:'cv_qa_login',prepare:false,max:2,connect_timeout:3,
@@ -71,6 +72,31 @@ test('disposable Postgres17 real driver transactions and concurrency',{skip:!por
    finally {release.resolve();await holding;}
    return pending;
   }
+  async function replacementFixture(){
+   const f=await fixture();await f.approve();const mapping=await f.register(),previous={...f.state,status:'active',mapping,sequence:0,pending:null};
+   const state={version:2,status:'replacing',projectRef:PROJECT_REF,serverInstanceId:f.state.serverInstanceId,previous,candidate:initialState(PROJECT_REF,f.state.serverInstanceId,Date.now())};
+   const setup=replacementRequest(state),approve=()=>f.broker.execute({operation:'approve-replacement',...setup,confirmedInstanceId:f.state.serverInstanceId},null,'synthetic');
+   return {...f,replacement:state,setup,approveReplacement:approve,replace:()=>f.broker.execute({operation:'replace',request:setup.request,pollSecret:state.candidate.pollSecret},null,null)};
+  }
+  await t.test('concurrent replacement redemption commits exactly one new epoch and identical lifetime',async()=>{
+   const f=await replacementFixture();await f.approveReplacement();const replies=await Promise.all([f.replace(),f.replace()]);assert.deepEqual(replies[0],replies[1]);
+   assert.equal(replies[0].epoch,2);assert.equal((await admin`select epoch::int epoch from cinevault_private.cp_credentials where instance_id=${f.state.serverInstanceId}`)[0].epoch,2);
+  });
+  await t.test('replacement behind session revocation guard rolls back without new epoch',async()=>{
+   const f=await replacementFixture();await f.approveReplacement();
+   const result=await behindGuard(f,tx=>tx`delete from auth.sessions where id=${f.session}`,f.replace);assert.equal(result.error?.kind,'authorization');
+   assert.equal((await admin`select epoch::int epoch from cinevault_private.cp_credentials where instance_id=${f.state.serverInstanceId}`)[0].epoch,1);
+  });
+  await t.test('replacement approval expiry committed behind guard blocks mutation after wait',async()=>{
+   const f=await replacementFixture();await f.approveReplacement();
+   const result=await behindGuard(f,tx=>tx`update cinevault_private.cp_replacements set jwt_expires_at=clock_timestamp()-interval '1 second' where instance_id=${f.state.serverInstanceId}`,f.replace);
+   assert.equal(result.error?.kind,'authorization');assert.equal((await admin`select epoch::int epoch from cinevault_private.cp_credentials where instance_id=${f.state.serverInstanceId}`)[0].epoch,1);
+  });
+  await t.test('concurrent different candidate approvals cannot overwrite an unconsumed live grant',async()=>{
+   const f=await replacementFixture(),different=replacementRequest({...f.replacement,candidate:initialState(PROJECT_REF,f.state.serverInstanceId,Date.now())});
+   const replies=await Promise.allSettled([f.approveReplacement(),f.broker.execute({operation:'approve-replacement',...different,confirmedInstanceId:f.state.serverInstanceId},null,'synthetic')]);
+   assert.equal(replies.filter(r=>r.status==='fulfilled').length,1);assert.equal(replies.filter(r=>r.status==='rejected'&&r.reason.kind==='conflict').length,1);
+  });
   await t.test('profile revocation while registration waits denies cached mapping after lock release',async()=>{
    const f=await fixture();await f.approve();await f.register();
    const result=await behindGuard(f,tx=>tx`update public.profiles set blocked=true where id=${f.owner}`,f.register);

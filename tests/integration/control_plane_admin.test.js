@@ -28,6 +28,7 @@ describe('control-plane local administrator boundary',()=>{
         jest.spyOn(cloud,'prepare').mockResolvedValue({alreadyEnrolled:true});
         jest.spyOn(cloud,'redeem').mockResolvedValue({enrolled:true});
         jest.spyOn(cloud,'retry').mockResolvedValue(undefined);
+        jest.spyOn(cloud,'recover').mockResolvedValue({alreadyEnrolled:false});
     });
     afterEach(async()=>{jest.restoreAllMocks();await Session.deleteMany({userId:user._id});await User.deleteOne({_id:user._id});});
     afterAll(()=>{for(const [key,value] of Object.entries(saved)){if(value===undefined)delete process.env[key];else process.env[key]=value;}});
@@ -41,7 +42,7 @@ describe('control-plane local administrator boundary',()=>{
         const r=await request(app).get(url).set('x-auth-token',token);
         expect(r.status).toBe(200);expect(r.headers['cache-control']).toBe('no-store');expect(Object.keys(r.body).sort()).toEqual(['enabled','guidance','mode']);
     });
-    it.each(['prepare','redeem','retry'])('requires current session-bound CSRF for %s',async operation=>{
+    it.each(['prepare','redeem','retry','recover'])('requires current session-bound CSRF for %s',async operation=>{
         expect((await post('/'+operation)).status).toBe(403);
         const issued=await post('/csrf');expect(issued.status).toBe(200);
         expect((await post('/'+operation,issued.body.csrfToken)).status).toBe(200);expect(cloud[operation]).toHaveBeenCalledTimes(1);

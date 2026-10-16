@@ -6,7 +6,8 @@ ordinary CineVault server. It is **not commissioned** or a tracked migration;
 the schema requires CLI-generated migration identity after review/qualification.
 Do not deploy the disposable `scripts/prototypes` lab SQL instead.
 
-The HTTP API accepts only approve/register/heartbeat. Human approval requires
+The HTTP API accepts approve/register/heartbeat plus the separate human-approved
+approve-replacement/replace flow described below. Human approval requires
 exact configured Pages origin, signed fixed-project JWT, fresh Auth/user read,
 explicit confirmed installation UUID/proof, then SQL-locked current user/session/
 profile and privately provisioned installation owner. Editable metadata is ignored.
@@ -23,7 +24,7 @@ installation. Thirty-day lifetime is an explicit **deployment policy candidate**
 not an approved rotation/lifetime policy. Owner-only SQL revocation uses the same
 guard, withdraws endpoints and changes no media/user membership.
 
-The dedicated `cv_control_broker` NOLOGIN role gets only five private EXECUTE
+The dedicated `cv_control_broker` NOLOGIN role gets only allowlisted private EXECUTE
 functions, no table CRUD/helper/core access; PUBLIC/anon/authenticated/service_role
 cannot call them. The login role/password is a separate exact-approved hosted
 provisioning step. No service-role/project key, DB password or owner refresh token
@@ -82,9 +83,51 @@ suite races global/per-install counters across real connections.
 Secret provisioning/Pages origin, gateway settings/actual route compatibility,
 effective deployed headers/CORS and real hosted pool/runtime/Auth qualification
 remain commissioning gates. No arbitrary SQL proxy or automatic owner bootstrap.
-Rotation/recovery/expired-grant cleanup are not implemented by a destructive reset;
-they need explicit owner-authorized flow preserving server identity/epochs. Existing
+Recovery is never implemented by a destructive reset. Existing
 login/users stay unchanged, and no media/tunnel traffic enters this broker.
+
+## Prepared owner-approved credential replacement
+
+Apply `replacement.sql` after schema/admission SQL only in disposable tests until
+an exact migration/deployment is approved. The explicit local ADMIN/CSRF action
+persists a version2 `replacing` envelope containing the intact previous active
+state and new candidate before displaying a proof or sending requests. Old cloud
+heartbeat work pauses; restart resumes the same candidate. Ordinary active and
+pairing version1 files remain valid, with no automatic file migration or reset.
+Missing/corrupt/unmapped state is not adopted or overwritten by this flow.
+
+The candidate's domain-separated HMAC binds project/instance/new credential and
+digest/poll/expiry/idempotency plus old credential/cloud-server/epoch. Fresh signed
+cloud-owner Auth and current locked session/profile/installation ownership approve
+the exact request. Approval and redemption share existing approve/register quotas;
+operational credentials cannot approve or create replacement authority. One private
+RLS/EXECUTE-only replacement grant per installation bounds storage. An unconsumed
+live different grant conflicts, rather than being silently overwritten.
+
+Redemption changes only operational credential ID/digest/epoch/lifetime/sequence,
+preserves instance UUID and cloud server/user/membership identity, invalidates old
+heartbeat proofs/receipts, and withholds endpoint verification. Candidate epoch is
+exactly old+1; exact retry preserves the same lifetime/result without a second bump.
+Old expired/revoked credentials can be replaced only with fresh human approval;
+replay cannot revive an already issued revoked/expired candidate. Human SQL revoke
+also disables pending replacement grants. No new endpoint or membership is issued.
+
+After a lost reply and grant expiry, explicit local recovery renews only challenge
+metadata, retaining both saved credentials and mapping. Fresh owner approval may
+authorize that same already-issued, still-valid candidate without extending its
+credential lifetime or advancing epoch again. Expired grants are overwritten and
+expired original enrollment grants removed during real authorized work, no idle
+cleanup timer. If the issued candidate itself expires/is revoked before local
+reconciliation, or protected state is missing/corrupt, manual operator recovery is
+still required. Expired initial pairing without any saved active mapping also
+remains fail-closed; this is not an arbitrary import/bootstrap/repair facility.
+
+Tests cover complete local coordinator/transport/HTTP/broker/SQL composition,
+native protected-state reopen/CAS, fresh-page dispatch, admin/CSRF/UI confirmation,
+lost replies/restarts, authority/epoch/conflict/revocation and real driver races.
+These synthetic checks do not establish deployed Edge Runtime/Auth/Supavisor parity
+or physical/browser UI/release qualification. Hosted enabling/owner provisioning,
+exact protocol/origin/lifetime policy and rollout approval remain separate gates.
 
 References: [Supabase database connections](https://supabase.com/docs/guides/functions/connect-to-postgres),
 [Postgres.js transactions](https://github.com/porsager/postgres#transactions),

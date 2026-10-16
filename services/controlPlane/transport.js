@@ -59,6 +59,7 @@ function createTransport({ config, fetchImpl = fetch, timeoutMs = 10000, now = D
     }
     return Object.freeze({
         redeem: (request,pollSecret,signal)=>post({operation:'register',request,pollSecret},null,signal),
+        replace: (request,pollSecret,signal)=>post({operation:'replace',request,pollSecret},null,signal),
         async heartbeat(state,pending,signal) {
             const reply = await post({ ...pending,projectRef:state.projectRef,serverInstanceId:state.serverInstanceId,
                 credentialId:state.credentialId,epoch:state.mapping.epoch },state.secret,signal);

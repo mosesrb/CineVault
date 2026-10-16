@@ -1,6 +1,6 @@
 'use strict';
 const crypto = require('node:crypto');
-const { initialState, validateState, validateMapping, pairingRequest, integer } = require('./protocol');
+const { initialState, validateState, validateMapping, pairingRequest, replacementRequest, integer, PAIR_TTL } = require('./protocol');
 const { CloudFailure } = require('./transport');
 const INTERVAL = 60000;
 const MAX_ATTEMPTS = 5;
@@ -42,6 +42,7 @@ function createCoordinator({ config, serverInstanceId, store, transport, now = D
             state = await read();
             if(stopped)return;
             if(!state){mode='not_enrolled';activity=null;return;}
+            if(state.status==='replacing'){mode='awaiting_replacement_owner';activity=null;return;}
             if(state.status!=='active'){mode=clock()>=state.expiresAt?'pairing_expired':'awaiting_owner';activity=null;return;}
             if(state.mapping.credentialExpiresAt<=clock()){mode='credential_expired';activity=null;return;}
             if(state.pending===null) {
@@ -69,6 +70,7 @@ function createCoordinator({ config, serverInstanceId, store, transport, now = D
         status() {
             return Object.freeze({mode,enabled:config.mode==='ready',
                 guidance: mode==='paused'?'Resume the existing project in the Supabase dashboard, then retry.':
+                    mode==='awaiting_replacement_owner'?'Old cloud activity is paused. Approve the saved replacement on the trusted owner page, then check owner approval.':
                     ['authorization','conflict','credential_expired','pairing_expired','recovery_required'].includes(mode)?
                         'Owner recovery is required. Do not delete credentials or reset the server identity.':
                         mode==='not_enrolled'?'Prepare setup and obtain trusted cloud-owner approval.':
@@ -82,6 +84,11 @@ function createCoordinator({ config, serverInstanceId, store, transport, now = D
                     if(stopped)throw Error('control_plane_stopped');
                     if(state===null){state=initialState(config.projectRef,serverInstanceId,clock());await store.writeAtomic(state);}
                     if(stopped)throw Error('control_plane_stopped');
+                    if(state.status==='replacing'){
+                        mode='awaiting_replacement_owner';
+                        if(state.candidate.expiresAt<=clock())throw Error();
+                        return {...replacementRequest(state),expiresAt:state.candidate.expiresAt,alreadyEnrolled:false};
+                    }
                     if(state.status==='active'){mode='enrolled';return {alreadyEnrolled:true};}
                     if(state.expiresAt<=clock()){mode='pairing_expired';throw Error('control_plane_recovery_required');}
                     mode='awaiting_owner';
@@ -96,6 +103,18 @@ function createCoordinator({ config, serverInstanceId, store, transport, now = D
                     const state=await read();
                     if(stopped)throw Error('control_plane_stopped');
                     if(!state)throw Error();
+                    if(state.status==='replacing'){
+                        if(state.candidate.expiresAt<=clock()){mode='pairing_expired';throw Error();}
+                        controller=new AbortController();
+                        const mapping=await transport.replace(replacementRequest(state).request,state.candidate.pollSecret,controller.signal);
+                        if(stopped || controller.signal.aborted)throw Error();
+                        if(mapping===null){mode='awaiting_replacement_owner';return {enrolled:false};}
+                        validateMapping(mapping,state.candidate);
+                        if(mapping.cloudServerId!==state.previous.mapping.cloudServerId || mapping.epoch!==state.previous.mapping.epoch+1 ||
+                            mapping.credentialExpiresAt<=clock() || state.candidate.expiresAt<=clock())throw Error();
+                        await store.writeAtomic({...state.candidate,status:'active',mapping,sequence:0,pending:null});
+                        lastReport=-INTERVAL;mode='connected';return {enrolled:true};
+                    }
                     if(state.status==='active'){mode='enrolled';return {enrolled:true};}
                     if(state.expiresAt<=clock()){mode='pairing_expired';throw Error();}
                     controller=new AbortController();
@@ -108,6 +127,29 @@ function createCoordinator({ config, serverInstanceId, store, transport, now = D
                     mode='connected';return {enrolled:true};
                 } catch(error){if(mode!=='pairing_expired')classify(error);throw Error('control_plane_registration_unavailable');}
                 finally{controller=null;}
+            });
+        },
+        async recover() {
+            // Explicit current local-admin/CSRF action. Stop old scheduled work;
+            // serialized in-flight mutation settles before a candidate is saved.
+            if(timer!==null){cancel(timer);timer=null;}activity=null;
+            return serialized(async()=>{
+                if(stopped || config.mode!=='ready')throw Error('control_plane_disabled');
+                try {
+                    const current=await read();if(stopped)throw Error();
+                    if(timer!==null){cancel(timer);timer=null;}activity=null;attempts=0;
+                    let state;
+                    if(current?.status==='active')state={version:2,status:'replacing',projectRef:current.projectRef,
+                        serverInstanceId,previous:current,candidate:initialState(config.projectRef,serverInstanceId,clock())};
+                    else if(current?.status==='replacing'){
+                        state=current;
+                        if(current.candidate.expiresAt<=clock())state={...current,candidate:{...current.candidate,
+                            pairId:crypto.randomUUID(),idempotencyKey:crypto.randomUUID(),expiresAt:clock()+PAIR_TTL}};
+                    }else throw Error(); // Missing/corrupt/unmapped state is NOT adopted/reset.
+                    await store.writeAtomic(state);if(stopped)throw Error();
+                    mode='awaiting_replacement_owner';
+                    return {...replacementRequest(state),expiresAt:state.candidate.expiresAt,alreadyEnrolled:false};
+                }catch(error){classify(error);throw Error('control_plane_recovery_required');}
             });
         },
         noteActivity(kind='authenticated-request') {

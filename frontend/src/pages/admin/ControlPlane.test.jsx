@@ -15,6 +15,18 @@ describe('cloud administration page', () => {
     fetch.mockResolvedValue(response({ mode: 'disabled', enabled: false })); render(<ControlPlane />)
     await screen.findByText('Status: disabled'); for (const button of screen.getAllByRole('button')) expect(button).toBeDisabled()
   })
+  it('requires explicit replacement confirmation and sends only same-origin CSRF action', async () => {
+    const setup={alreadyEnrolled:false,request:{replacement:{epoch:1}},approvalProof:'replacement-proof',expiresAt:Date.now()+10000}
+    fetch.mockResolvedValueOnce(response({...status,mode:'credential_expired'})).mockResolvedValueOnce(response({csrfToken:'replace-csrf'}))
+      .mockResolvedValueOnce(response(setup)).mockResolvedValueOnce(response({...status,mode:'awaiting_replacement_owner'}))
+    render(<ControlPlane />); await screen.findByText('Status: credential_expired')
+    const button=screen.getByText('Prepare credential replacement'); expect(button).toBeDisabled()
+    fireEvent.click(screen.getByRole('checkbox')); fireEvent.click(button)
+    await screen.findByDisplayValue('replacement-proof')
+    expect(fetch.mock.calls[2][0]).toBe('/api/v1/admin/control-plane/recover')
+    expect(fetch.mock.calls[2][1]).toMatchObject({body:'{}',headers:{'x-cinevault-csrf':'replace-csrf'}})
+    expect(screen.getByRole('checkbox')).not.toBeChecked(); expect(localStorage.length).toBe(1)
+  })
   it('obtains fresh CSRF then shows pairing proof only in memory', async () => {
     const setup = { alreadyEnrolled: false, request: { pairId: 'synthetic-pair' }, approvalProof: 'synthetic-proof', expiresAt: Date.now() + 10000 }
     fetch.mockResolvedValueOnce(response(status)).mockResolvedValueOnce(response({ csrfToken: 'synthetic-csrf' }))

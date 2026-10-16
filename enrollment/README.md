@@ -30,6 +30,15 @@ installation UUID, exact project, five-minute expiry, current human session and
 privately provisioned installation owner. Client validation is not authority;
 the broker must revalidate everything and lock current rows for grant issuance.
 
+Requests carrying `replacement` additionally name the old credential/cloud-server/
+epoch. The owner checkbox explicitly covers replacing that exact operational
+credential while preserving the cloud server. The page sends distinct
+`approve-replacement`, never an operational-secret-based approval. Fresh owner
+approval is required again after an expired uncertain grant; the PC retains its
+candidate secret and exact mapping. No automatic reset, import, owner transfer,
+secret delivery to this page or publishing is implied. See broker README for the
+intact-state-only recovery boundary and remaining manual cases.
+
 ## Commissioning gates
 
 - Review/test static page and prepare narrow hosted approve/register/heartbeat

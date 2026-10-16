@@ -44,7 +44,7 @@ router.post('/csrf',(req,res)=>{
         res.json({csrfToken:body+'.'+sign(body)});
     } catch {res.status(403).json({error:'Cloud administration requires the configured same-origin PC browser.'});}
 });
-for(const operation of ['prepare','redeem','retry'])router.post('/'+operation,async(req,res)=>{
+for(const operation of ['prepare','redeem','retry','recover'])router.post('/'+operation,async(req,res)=>{
     try {exact(req.body,[]);validateCsrf(req);}catch{return res.status(403).json({error:'Cloud administration denied.'});}
     try {const result=await cloud[operation]();res.json(result || cloud.controlPlaneStatus());}
     catch {res.status(503).json({error:'Control plane unavailable; check cloud status for owner recovery guidance.'});}

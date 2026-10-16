@@ -4,7 +4,8 @@ const { spawn } = require('node:child_process');
 const { validateState, validateTransition } = require('./protocol');
 const failure = () => new Error('control_plane_recovery_required');
 /** Windows NTFS ACL + lock + digest-CAS. Payload only travels over stdin.
- * No arbitrary paths, credential import, reset, rotate or repair API. */
+ * No arbitrary paths, credential import, reset or repair API. Replacement must
+ * follow the exact persisted candidate/previous mapping transition contract. */
 function createStore({ directory, projectRef, serverInstanceId }) {
     if (process.platform !== 'win32') throw failure();
     if(typeof directory!=='string' || !/^[A-Za-z]:[\\/]/.test(directory) || directory.includes('..') ||

@@ -2,7 +2,7 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const crypto=require('node:crypto');
-const {initialState,pairingRequest,PROJECT_REF}=require('../../services/controlPlane/protocol');
+const {initialState,pairingRequest,replacementRequest,PROJECT_REF}=require('../../services/controlPlane/protocol');
 const modulePromise=import('../../enrollment/protocol.mjs');
 const origin='https://cinevault-qa.pages.dev';
 const config={projectRef:PROJECT_REF,projectUrl:`https://${PROJECT_REF}.supabase.co`,publishableKey:'sb_publishable_'+'a'.repeat(32),approvedOrigin:origin};
@@ -11,6 +11,17 @@ const owner=crypto.randomUUID();
 const login=()=>({access_token:'synthetic-owner-access',refresh_token:'synthetic-owner-refresh',token_type:'bearer',expires_in:3600,
     user:{id:owner,is_anonymous:false,user_metadata:{role:'ADMIN'}}});
 const challenge=()=>{const state=initialState(PROJECT_REF,crypto.randomUUID(),Date.now());return pairingRequest(state);};
+test('owner page validates replacement context and dispatches distinct human-only approval',async()=>{
+    const {createOwnerSession,validatePairing}=await modulePromise;
+    const pair=initialState(PROJECT_REF,crypto.randomUUID(),Date.now()),previous={...pair,status:'active',mapping:{projectRef:PROJECT_REF,
+        serverInstanceId:pair.serverInstanceId,credentialId:pair.credentialId,cloudServerId:crypto.randomUUID(),epoch:1,credentialExpiresAt:Date.now()+86400000},sequence:0,pending:null};
+    const {request,approvalProof}=replacementRequest({version:2,status:'replacing',projectRef:PROJECT_REF,serverInstanceId:pair.serverInstanceId,previous,candidate:initialState(PROJECT_REF,pair.serverInstanceId,Date.now())});let body;
+    const session=createOwnerSession({config,origin,fetchImpl:async(url,options)=>{if(url.includes('/token?'))return json(login());body=JSON.parse(options.body);return json({approved:true,pairId:request.pairId,expiresAt:request.expiresAt});}});
+    for(const replacement of [{...request.replacement,epoch:1.5},{...request.replacement,cloudServerId:'invalid'},{...request.replacement,credentialId:request.credentialId}])
+        await assert.rejects(validatePairing(JSON.stringify({...request,replacement}),approvalProof,request.serverInstanceId));
+    await session.signIn('owner@example.test','synthetic-password');await session.approve(JSON.stringify(request),approvalProof,request.serverInstanceId);
+    assert.equal(body.operation,'approve-replacement');assert.deepEqual(body.request.replacement,request.replacement);session.dispose();
+});
 test('unconfigured page, preview/foreign/http origins and secret keys deny before Auth',async()=>{
     const {configuration}=await modulePromise;
     for(const [value,url] of [[{...config,publishableKey:''},origin],[{...config,publishableKey:'sb_secret_'+'a'.repeat(32)},origin],
