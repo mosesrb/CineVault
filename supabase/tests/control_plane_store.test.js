@@ -5,7 +5,7 @@ const fs=require('node:fs/promises');
 const path=require('node:path');
 const crypto=require('node:crypto');
 const {createStore}=require('../../services/controlPlane/store');
-const {initialState,PROJECT_REF}=require('../../services/controlPlane/protocol');
+const {initialState,renewPairing,PROJECT_REF}=require('../../services/controlPlane/protocol');
 const BASE=path.resolve(__dirname,'../../runtime/qa/protected-store-tests');
 const nativeTest=(name,fn)=>test(name,{skip:process.platform!=='win32'},fn);
 async function fixture(t){
@@ -40,6 +40,12 @@ nativeTest('production outbox persists and exact ACK transition survives restart
 nativeTest('production separate stale writer fails CAS and cannot clear a newer operation',async t=>{
     const f=await fixture(t),other=createStore(f.options);await other.read();await f.store.writeAtomic(f.active);
     await assert.rejects(other.writeAtomic(f.state));assert.deepEqual(await other.read(),f.active);
+});
+nativeTest('production renewed initial candidate survives native reopen and denies stale original writer',async t=>{
+    const f=await fixture(t),stale=createStore(f.options);await stale.read();
+    const renewed=renewPairing(f.state,f.state.expiresAt);await f.store.writeAtomic(renewed);
+    assert.deepEqual(await createStore(f.options).read(),renewed);
+    await assert.rejects(stale.writeAtomic(f.state));assert.equal((await stale.read()).secret,f.state.secret);
 });
 nativeTest('production state denies credential replacement, project reuse and corrupted bytes',async t=>{
     const f=await fixture(t);await assert.rejects(f.store.writeAtomic({...f.state,secret:'0'.repeat(64)}));

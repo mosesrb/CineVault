@@ -1,6 +1,6 @@
 'use strict';
 const crypto = require('node:crypto');
-const { initialState, validateState, validateMapping, pairingRequest, replacementRequest, integer, PAIR_TTL } = require('./protocol');
+const { initialState, renewPairing, validateState, validateMapping, pairingRequest, replacementRequest, integer } = require('./protocol');
 const { CloudFailure } = require('./transport');
 const INTERVAL = 60000;
 const MAX_ATTEMPTS = 5;
@@ -71,7 +71,8 @@ function createCoordinator({ config, serverInstanceId, store, transport, now = D
             return Object.freeze({mode,enabled:config.mode==='ready',
                 guidance: mode==='paused'?'Resume the existing project in the Supabase dashboard, then retry.':
                     mode==='awaiting_replacement_owner'?'Old cloud activity is paused. Approve the saved replacement on the trusted owner page, then check owner approval.':
-                    ['authorization','conflict','credential_expired','pairing_expired','recovery_required'].includes(mode)?
+                    mode==='pairing_expired'?'The approval challenge expired. Explicit owner recovery can renew an intact saved candidate; fresh cloud-owner approval is required. Do not delete credentials or reset server identity.':
+                    ['authorization','conflict','credential_expired','recovery_required'].includes(mode)?
                         'Owner recovery is required. Do not delete credentials or reset the server identity.':
                         mode==='not_enrolled'?'Prepare setup and obtain trusted cloud-owner approval.':
                             mode==='unavailable'?'Cloud status is unavailable; local CineVault remains independent.':null});
@@ -143,10 +144,15 @@ function createCoordinator({ config, serverInstanceId, store, transport, now = D
                         serverInstanceId,previous:current,candidate:initialState(config.projectRef,serverInstanceId,clock())};
                     else if(current?.status==='replacing'){
                         state=current;
-                        if(current.candidate.expiresAt<=clock())state={...current,candidate:{...current.candidate,
-                            pairId:crypto.randomUUID(),idempotencyKey:crypto.randomUUID(),expiresAt:clock()+PAIR_TTL}};
+                        if(current.candidate.expiresAt<=clock())state={...current,candidate:renewPairing(current.candidate,clock())};
+                    }else if(current?.status==='pairing'){
+                        state=renewPairing(current,clock());
                     }else throw Error(); // Missing/corrupt/unmapped state is NOT adopted/reset.
                     await store.writeAtomic(state);if(stopped)throw Error();
+                    if(state.status==='pairing'){
+                        mode='awaiting_owner';
+                        return {...pairingRequest(state),expiresAt:state.expiresAt,alreadyEnrolled:false};
+                    }
                     mode='awaiting_replacement_owner';
                     return {...replacementRequest(state),expiresAt:state.candidate.expiresAt,alreadyEnrolled:false};
                 }catch(error){classify(error);throw Error('control_plane_recovery_required');}

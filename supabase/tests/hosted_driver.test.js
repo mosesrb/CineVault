@@ -1,7 +1,7 @@
 // Opt-in real Postgres.js/two-connection qualification on a disposable container.
 // Never a hosted Auth fixture. Only an explicitly configured loopback port.
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
-const {initialState,pairingRequest,replacementRequest,PROJECT_REF}=require('../../services/controlPlane/protocol');
+const {initialState,renewPairing,pairingRequest,replacementRequest,PROJECT_REF}=require('../../services/controlPlane/protocol');
 const port=process.env.CV_QA_POSTGRES_PORT;
 test('disposable Postgres17 real driver transactions and concurrency',{skip:!port,timeout:45000},async t=>{
  assert.match(port,/^[0-9]{4,5}$/);assert.ok(Number(port)>1024&&Number(port)<=65535);
@@ -78,6 +78,35 @@ test('disposable Postgres17 real driver transactions and concurrency',{skip:!por
    const setup=replacementRequest(state),approve=()=>f.broker.execute({operation:'approve-replacement',...setup,confirmedInstanceId:f.state.serverInstanceId},null,'synthetic');
    return {...f,replacement:state,setup,approveReplacement:approve,replace:()=>f.broker.execute({operation:'replace',request:setup.request,pollSecret:state.candidate.pollSecret},null,null)};
   }
+  async function renewalFixture(issued=true){
+   const f=await fixture();await f.approve();const mapping=issued?await f.register():null;
+   await admin`update cinevault_private.cp_pairings set expires_at=clock_timestamp()-interval '1 second' where instance_id=${f.state.serverInstanceId}`;
+   const state=renewPairing({...f.state,expiresAt:Date.now()-1},Date.now()),setup=pairingRequest(state);
+   const approve=()=>f.broker.execute({operation:'approve',...setup,confirmedInstanceId:state.serverInstanceId},null,'synthetic');
+   const register=()=>f.broker.execute({operation:'register',request:setup.request,pollSecret:state.pollSecret},null,null);
+   return {...f,renewed:state,setup,mapping,approveRenewal:approve,registerRenewal:register};
+  }
+  await t.test('concurrent initial grant renewal preserves one issued mapping/epoch/lifetime',async()=>{
+   const f=await renewalFixture();const approvals=await Promise.all([f.approveRenewal(),f.approveRenewal()]);assert.deepEqual(approvals[0],approvals[1]);
+   const replies=await Promise.all([f.registerRenewal(),f.registerRenewal()]);assert.deepEqual(replies[0],f.mapping);assert.deepEqual(replies[1],f.mapping);
+   assert.equal((await admin`select count(*)::int n from public.servers where server_instance_id=${f.state.serverInstanceId}`)[0].n,1);
+  });
+  await t.test('different renewed initial challenges race: exactly one replaces the expired grant',async()=>{
+   const f=await renewalFixture(false),different=pairingRequest(renewPairing({...f.state,expiresAt:Date.now()-1},Date.now()));
+   const results=await Promise.allSettled([f.approveRenewal(),f.broker.execute({operation:'approve',...different,confirmedInstanceId:f.state.serverInstanceId},null,'synthetic')]);
+   assert.equal(results.filter(v=>v.status==='fulfilled').length,1);assert.equal(results.filter(v=>v.status==='rejected'&&v.reason.kind==='conflict').length,1);
+   assert.equal((await admin`select count(*)::int n from cinevault_private.cp_credentials where instance_id=${f.state.serverInstanceId}`)[0].n,0);
+  });
+  await t.test('initial renewal behind committed credential revocation cannot restore the grant',async()=>{
+   const f=await renewalFixture();
+   const result=await behindGuard(f,tx=>tx`update cinevault_private.cp_credentials set revoked=true where instance_id=${f.state.serverInstanceId}`,f.approveRenewal);
+   assert.equal(result.error?.kind,'authorization');
+   assert.equal((await admin`select request from cinevault_private.cp_pairings where instance_id=${f.state.serverInstanceId}`)[0].request.pairId,f.state.pairId);
+  });
+  await t.test('initial renewal behind committed owner session deletion fails closed',async()=>{
+   const f=await renewalFixture();const result=await behindGuard(f,tx=>tx`delete from auth.sessions where id=${f.session}`,f.approveRenewal);
+   assert.equal(result.error?.kind,'authorization');
+  });
   await t.test('concurrent replacement redemption commits exactly one new epoch and identical lifetime',async()=>{
    const f=await replacementFixture();await f.approveReplacement();const replies=await Promise.all([f.replace(),f.replace()]);assert.deepEqual(replies[0],replies[1]);
    assert.equal(replies[0].epoch,2);assert.equal((await admin`select epoch::int epoch from cinevault_private.cp_credentials where instance_id=${f.state.serverInstanceId}`)[0].epoch,2);

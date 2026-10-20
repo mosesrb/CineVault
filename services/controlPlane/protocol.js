@@ -66,6 +66,13 @@ function initialState(projectRef, serverInstanceId, now) {
         credentialId: crypto.randomUUID(), secret: crypto.randomBytes(32).toString('hex'),
         pollSecret: crypto.randomBytes(32).toString('hex'), expiresAt: now + PAIR_TTL, idempotencyKey: crypto.randomUUID() };
 }
+/** Renew only the short approval challenge. Keep the candidate keys because a
+ * previous registration may have committed without a locally saved reply. */
+function renewPairing(state, now) {
+    validateState(state,state.projectRef,state.serverInstanceId);
+    if(state.status!=='pairing' || !integer(now) || now<state.expiresAt || now>Number.MAX_SAFE_INTEGER-PAIR_TTL)fail();
+    return {...state,pairId:crypto.randomUUID(),idempotencyKey:crypto.randomUUID(),expiresAt:now+PAIR_TTL};
+}
 function validateTransition(previous, next) {
     if(next.status==='replacing') {
         if(previous?.status==='active') {
@@ -88,6 +95,12 @@ function validateTransition(previous, next) {
     }
     if (!previous) {
         if (next.status !== 'pairing') fail();
+        return;
+    }
+    if(previous.status==='pairing' && next.status==='pairing' && next.expiresAt>previous.expiresAt &&
+        next.pairId!==previous.pairId && next.idempotencyKey!==previous.idempotencyKey) {
+        for(const key of Object.keys(previous).filter(k=>!['pairId','expiresAt','idempotencyKey'].includes(k)))
+            if(previous[key]!==next[key])fail();
         return;
     }
     for (const key of Object.keys(previous).filter(k => !['status','mapping','sequence','pending'].includes(k))) {
@@ -118,4 +131,4 @@ function replacementRequest(state) {
     return {request,approvalProof};
 }
 module.exports = { PROJECT_REF, UUID, HEX, PAIR_TTL, digest, exact, integer, matches,
-    bindingFields, bindingDigest, pairingRequest, replacementRequest, validateState, validateMapping, initialState, validateTransition };
+    bindingFields, bindingDigest, pairingRequest, replacementRequest, validateState, validateMapping, initialState, renewPairing, validateTransition };

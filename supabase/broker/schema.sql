@@ -110,7 +110,8 @@ $$;
 create function cinevault_private.cp_approve(p_user uuid,p_session uuid,p_expiry timestamptz,
     p_request jsonb,p_binding bytea,p_proof bytea)
 returns jsonb language plpgsql security definer set search_path='' as $$
-declare instance uuid; pair cinevault_private.cp_pairings;
+declare instance uuid; pair cinevault_private.cp_pairings; c cinevault_private.cp_credentials;
+    server public.servers;
 begin
     perform cinevault_private.cp_request(p_request);
     instance:=(p_request->>'serverInstanceId')::uuid;
@@ -120,11 +121,35 @@ begin
         raise exception 'cp_denied' using errcode='42501'; end if;
     select * into pair from cinevault_private.cp_pairings where instance_id=instance for update;
     if found then
-        if not pair.enabled or pair.request is distinct from p_request or pair.binding_digest is distinct from p_binding
-            or pair.owner_id is distinct from p_user or pair.session_id is distinct from p_session then
+        if not pair.enabled or pair.owner_id is distinct from p_user then
             raise exception 'cp_conflict' using errcode='P0001'; end if;
-        -- Exact approval retry cannot extend grant/session/credential lifetime.
-        if pair.jwt_expires_at<=clock_timestamp() then raise exception 'cp_denied' using errcode='42501'; end if;
+        if pair.request=p_request and pair.binding_digest=p_binding and pair.session_id=p_session then
+            -- Exact retry cannot extend grant/session/credential lifetime.
+            if pair.jwt_expires_at<=clock_timestamp() then raise exception 'cp_denied' using errcode='42501'; end if;
+        else
+            -- Explicit fresh owner approval may renew an expired initial grant,
+            -- never overwrite a live grant or change its saved candidate keys.
+            if pair.expires_at>clock_timestamp() or pair.request->>'pairId'=p_request->>'pairId'
+                or pair.request->>'idempotencyKey'=p_request->>'idempotencyKey'
+                or (pair.request-array['pairId','idempotencyKey','expiresAt','approvalDigest']) is distinct from
+                   (p_request-array['pairId','idempotencyKey','expiresAt','approvalDigest']) then
+                raise exception 'cp_conflict' using errcode='P0001'; end if;
+            select * into c from cinevault_private.cp_credentials where instance_id=instance for update;
+            if found then
+                -- Lost reply: reconcile only the same still-valid initial issue.
+                -- Never revive a revoked/expired/superseded operational credential.
+                if c.id::text is distinct from p_request->>'credentialId' or c.epoch<>1 or c.revoked
+                    or c.expires_at<=clock_timestamp() or encode(c.secret_digest,'hex') is distinct from p_request->>'secretDigest' then
+                    raise exception 'cp_denied' using errcode='42501'; end if;
+                select * into server from public.servers where id=c.server_id for share;
+                if not found or server.owner_user_id is distinct from p_user or server.server_instance_id is distinct from instance then
+                    raise exception 'cp_conflict' using errcode='P0001'; end if;
+            elsif exists(select 1 from public.servers where server_instance_id=instance) then
+                raise exception 'cp_conflict' using errcode='P0001'; end if;
+            update cinevault_private.cp_pairings set pair_id=(p_request->>'pairId')::uuid,request=p_request,
+                binding_digest=p_binding,session_id=p_session,jwt_expires_at=p_expiry,
+                expires_at=to_timestamp((p_request->>'expiresAt')::double precision/1000) where instance_id=instance;
+        end if;
     else
         if exists(select 1 from cinevault_private.cp_credentials where instance_id=instance)
             or exists(select 1 from public.servers where server_instance_id=instance) then
@@ -136,6 +161,7 @@ begin
     end if;
     perform cinevault_private.cp_owner(instance,p_user,p_session,p_expiry);
     perform cinevault_private.cp_request(p_request);
+    if c.id is not null and c.expires_at<=clock_timestamp() then raise exception 'cp_denied' using errcode='42501'; end if;
     return jsonb_build_object('approved',true,'pairId',p_request->>'pairId','expiresAt',(p_request->>'expiresAt')::bigint);
 end;
 $$;

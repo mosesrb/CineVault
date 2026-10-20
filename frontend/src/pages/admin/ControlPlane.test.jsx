@@ -20,7 +20,7 @@ describe('cloud administration page', () => {
     fetch.mockResolvedValueOnce(response({...status,mode:'credential_expired'})).mockResolvedValueOnce(response({csrfToken:'replace-csrf'}))
       .mockResolvedValueOnce(response(setup)).mockResolvedValueOnce(response({...status,mode:'awaiting_replacement_owner'}))
     render(<ControlPlane />); await screen.findByText('Status: credential_expired')
-    const button=screen.getByText('Prepare credential replacement'); expect(button).toBeDisabled()
+    const button=screen.getByText('Prepare owner recovery'); expect(button).toBeDisabled()
     fireEvent.click(screen.getByRole('checkbox')); fireEvent.click(button)
     await screen.findByDisplayValue('replacement-proof')
     expect(fetch.mock.calls[2][0]).toBe('/api/v1/admin/control-plane/recover')
@@ -35,6 +35,16 @@ describe('cloud administration page', () => {
     await screen.findByDisplayValue('synthetic-proof'); expect(fetch.mock.calls[2][1].headers['x-cinevault-csrf']).toBe('synthetic-csrf')
     expect(localStorage.length).toBe(1); expect(localStorage.getItem('cv_token')).toBe('synthetic-local-token')
     expect(fetch.mock.calls.every(([url]) => !url.includes('synthetic-proof'))).toBe(true)
+  })
+  it('requires explicit confirmation to renew expired initial setup without replacement or stored proofs', async () => {
+    const setup={alreadyEnrolled:false,request:{pairId:'renewed-pair'},approvalProof:'renewed-proof',expiresAt:Date.now()+10000}
+    fetch.mockResolvedValueOnce(response({...status,mode:'pairing_expired'})).mockResolvedValueOnce(response({csrfToken:'renew-csrf'}))
+      .mockResolvedValueOnce(response(setup)).mockResolvedValueOnce(response({...status,mode:'awaiting_owner'}))
+    render(<ControlPlane />); await screen.findByText('Status: pairing_expired')
+    const button=screen.getByText('Prepare owner recovery'); expect(button).toBeDisabled()
+    fireEvent.click(screen.getByRole('checkbox')); fireEvent.click(button)
+    await screen.findByDisplayValue('renewed-proof'); expect(fetch.mock.calls[2][0]).toBe('/api/v1/admin/control-plane/recover')
+    expect(screen.getByRole('checkbox')).not.toBeChecked(); expect(localStorage.length).toBe(1)
   })
   it('clears the displayed proof at expiry without auto polling', async () => {
     vi.useFakeTimers(); const setup = { alreadyEnrolled: false, request: {}, approvalProof: 'expire-proof', expiresAt: Date.now() + 1000 }

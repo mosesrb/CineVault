@@ -119,8 +119,14 @@ credential lifetime or advancing epoch again. Expired grants are overwritten and
 expired original enrollment grants removed during real authorized work, no idle
 cleanup timer. If the issued candidate itself expires/is revoked before local
 reconciliation, or protected state is missing/corrupt, manual operator recovery is
-still required. Expired initial pairing without any saved active mapping also
-remains fail-closed; this is not an arbitrary import/bootstrap/repair facility.
+still required. An expired intact initial pairing can now renew only its short
+challenge through explicit local ADMIN recovery and fresh cloud-owner approval.
+The candidate ID/secret/polling capability stay fixed. A live different grant,
+disabled grant or changed candidate denies; a still-valid already-issued initial
+credential reconciles without a new mapping, epoch or lifetime. Issued expired/
+revoked/superseded candidates are never revived. See the
+[recovery runbook](../../docs/CONTROL_PLANE_RECOVERY.md) for the supported paths
+and explicit manual commissioning gates; this is not an import/bootstrap/repair facility.
 
 Tests cover complete local coordinator/transport/HTTP/broker/SQL composition,
 native protected-state reopen/CAS, fresh-page dispatch, admin/CSRF/UI confirmation,

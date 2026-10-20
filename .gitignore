@@ -65,6 +65,7 @@ project-status.md
 docs/*.md
 docs/**/*.md
 !docs/CONTROL_PLANE_SETUP.md
+!docs/CONTROL_PLANE_RECOVERY.md
 docs/archive/
 
 # Internal Temp Media

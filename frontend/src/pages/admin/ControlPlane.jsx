@@ -58,11 +58,12 @@ export default function ControlPlane() {
     <button disabled={busy || !status?.enabled} onClick={() => perform('prepare')}>Prepare one-time setup</button>{' '}
     <button disabled={busy || !status?.enabled} onClick={() => perform('redeem')}>Check owner approval</button>{' '}
     <button disabled={busy || !status?.enabled} onClick={() => perform('retry')}>Retry cloud recovery</button>
-    <p>Credential replacement pauses old cloud activity until you approve the exact saved candidate on the trusted owner page.
-      Server identity and cloud mapping are preserved. Missing/corrupt state requires manual recovery; do not delete it.</p>
+    <p>Owner recovery renews an expired saved setup challenge, or prepares credential replacement for an enrolled server.
+      Replacement pauses old cloud activity until you approve the exact saved candidate on the trusted owner page.
+      Server identity and candidate keys are preserved. Missing/corrupt state requires manual recovery; do not delete it.</p>
     <label><input type="checkbox" checked={confirmRecovery} disabled={busy || !status?.enabled}
-      onChange={event => setConfirmRecovery(event.target.checked)} />I want to prepare or resume owner-approved credential replacement.</label>{' '}
-    <button disabled={busy || !status?.enabled || !confirmRecovery} onClick={() => perform('recover')}>Prepare credential replacement</button>
+      onChange={event => setConfirmRecovery(event.target.checked)} />I want to prepare or resume owner-approved recovery.</label>{' '}
+    <button disabled={busy || !status?.enabled || !confirmRecovery} onClick={() => perform('recover')}>Prepare owner recovery</button>
     {setup && <div>
       <h2>Trusted owner approval</h2>
       <p>Expires: {new Date(setup.expiresAt).toLocaleTimeString()}. Copy this request and proof only
