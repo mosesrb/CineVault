@@ -29,6 +29,7 @@ describe('control-plane local administrator boundary',()=>{
         jest.spyOn(cloud,'redeem').mockResolvedValue({enrolled:true});
         jest.spyOn(cloud,'retry').mockResolvedValue(undefined);
         jest.spyOn(cloud,'recover').mockResolvedValue({alreadyEnrolled:false});
+        jest.spyOn(cloud,'restore').mockResolvedValue({alreadyEnrolled:false});
     });
     afterEach(async()=>{jest.restoreAllMocks();await Session.deleteMany({userId:user._id});await User.deleteOne({_id:user._id});});
     afterAll(()=>{for(const [key,value] of Object.entries(saved)){if(value===undefined)delete process.env[key];else process.env[key]=value;}});
@@ -76,5 +77,13 @@ describe('control-plane local administrator boundary',()=>{
         await request(app).get(url).set('x-auth-token',token);await request(app).get('/health/live');
         await request(app).get('/api/v1/users/me');expect(spy).not.toHaveBeenCalled();
         await request(app).get('/api/v1/users/me').set('x-auth-token',token);expect(spy).toHaveBeenCalledWith('authenticated-request');
+    });
+    it('disaster restore requires exact body and current same-origin CSRF/admin session',async()=>{
+        const body={confirmedInstanceId:'11111111-1111-4111-8111-111111111111',cloudServerId:'22222222-2222-4222-8222-222222222222'};
+        const issued=(await post('/csrf')).body.csrfToken;
+        expect((await post('/restore',issued)).status).toBe(403);
+        const send=()=>request(app).post(url+'/restore').set(headers).set('x-auth-token',token).set('x-cinevault-csrf',issued).send(body);
+        expect((await send()).status).toBe(200);expect(cloud.restore).toHaveBeenCalledWith(body);
+        await Session.deleteMany({userId:user._id});expect((await send()).status).toBe(401);
     });
 });

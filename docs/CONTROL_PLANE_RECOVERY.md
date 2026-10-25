@@ -45,16 +45,54 @@ An initial renewal can reconcile only the **same still-valid initial credential*
 grant, changed installation owner, missing profile, banned/blocked user or missing
 session denies recovery. Do not repeatedly reset setup in response to these denials.
 
-## Stop and escalate: no automatic repair/import facility
+## Explicit disaster restore: missing/damaged state or invalid interrupted issue
 
-These cases intentionally have **no self-service recovery operation** yet:
+Use **Prepare disaster restore** in the local ADMIN control-plane page only when
+ordinary recovery cannot reconcile the saved state. This is a fresh operational
+rotation, not an import of old secrets, identity reset or automatic repair.
 
-- Protected file/directory missing after prior enrollment, invalid JSON/schema,
-  unexpected ACL/link/hardlink, orphan temporary state or untrusted restore.
-- Unknown/mismatched installation, cloud mapping, owner, credential ID or epoch.
-- An issued candidate expired or was revoked before its mapping was saved locally.
-- Initial grant missing/disabled while a cloud mapping already exists, or state
-  cannot prove whether an earlier enrollment occurred.
+1. Obtain this PC's permanent `serverId` from `/api/v1/identity`. Separately verify
+   its existing cloud-server UUID in the intended owner's `servers` record. These
+   are different identifiers; the Supabase project reference is neither one.
+2. Enter both identifiers, confirm the warning, and prepare disaster restore.
+   Safe readable original bytes (including malformed JSON) are preserved in a
+   protected `state.recovery.<sha256>.json` archive before the new candidate is
+   saved. Missing state creates no fabricated backup. No proof is shown before
+   durable persistence; old cloud work pauses. Local login/media are unchanged.
+3. On the separate trusted owner page, sign in as the existing cloud owner and
+   separately confirm both instance and cloud-server IDs. Approve the restore
+   request. No current operational secret, editable metadata or local administrator
+   alone can authorize it. The server/mapping must already exist under that owner.
+4. Check owner approval on the PC. Cloud SQL freezes the actual current credential
+   ID/epoch at approval and rotates it exactly once at redemption. An expired or
+   revoked **old** credential can be replaced; an invalid already-issued **new**
+   candidate cannot be revived. Duplicate/lost-response retries retain the same
+   mapping, new epoch and lifetime while the grant/current owner session is valid.
+5. Reopening a still-valid saved restore shows the same candidate. If that short
+   grant expires, explicitly preparing disaster restore again stages fresh keys
+   and requires new owner approval. This may perform another intentional rotation
+   if the earlier candidate was issued; it is not the ordinary same-key renewal
+   flow. A live different enrollment/replacement/restore grant conflicts rather
+   than being silently overwritten. Owner revocation cancels grant authority
+   immediately, but does not change a live saved local restore candidate: wait
+   for its expiry before preparing fresh keys. Never delete state to bypass it.
+
+The same existing cloud server, permanent instance, users and memberships are
+preserved. Old operational proofs/receipts and grants are invalidated when the new
+issue commits; endpoint verification is withdrawn, never asserted by restore.
+
+Archives contain sensitive old credentials, are owner/SYSTEM ACL-protected (not
+encrypted), and are never sent to the browser or automatically deleted. At most
+eight distinct originals are retained; further staging stops for explicitly
+approved operator maintenance. Do not restore an archive over a newer active
+credential or use it as an arbitrary import facility.
+
+## Stop and escalate: filesystem or ownership trust failure
+
+Unexpected ACLs/reparse points/hardlinks, invalid UTF8, oversized state, orphan
+temporary files, untrusted archives or exhausted archive retention remain blocked.
+No missing cloud mapping, wrong owner or mismatched known cloud-server ID can be
+adopted by this flow. Never relax guards to bypass a denial.
 
 1. Stop cloud retries and leave control-plane configuration disabled during
    investigation; change configuration/restart only through an authorized normal
@@ -68,10 +106,10 @@ These cases intentionally have **no self-service recovery operation** yet:
 4. If exposure is suspected, obtain scoped approval to revoke the exact cloud
    credential/grants and withdraw its endpoints. Do not delete users, memberships,
    the server or its permanent identity. Revocation alone does not restore state.
-5. Stop here until an exact identity-preserving restoration/rebinding design,
-   protected-storage method and affected-row approval have been reviewed. No
-   manual SQL/JSON recipe, new owner bootstrap or secret import is provided by
-   this runbook. These unresolved cases remain commissioning gates.
+5. Stop here until the specific filesystem/ownership problem and exact proposed
+   maintenance have been reviewed/approved. No manual SQL/JSON recipe, ownership
+   transfer or secret import is provided. Recovery implementation is prepared,
+   not proof of actual hosted commissioning or OS power-loss durability.
 
 ## Verification and completion
 

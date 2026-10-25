@@ -30,6 +30,12 @@ function validatePending(pending, state) {
         !['authenticated-request','media-work','admin-retry','startup','shutdown'].includes(pending.activity)) fail();
 }
 function validateState(value, projectRef, serverInstanceId) {
+    if(value?.status==='recovering') {
+        exact(value,['version','status','projectRef','serverInstanceId','cloudServerId','candidate']);
+        if(value.version!==3 || value.projectRef!==projectRef || value.serverInstanceId!==serverInstanceId ||
+            !matches(UUID,value.cloudServerId) || value.candidate?.status!=='pairing')fail();
+        validateState(value.candidate,projectRef,serverInstanceId);return value;
+    }
     if(value?.status==='replacing') {
         exact(value,['version','status','projectRef','serverInstanceId','previous','candidate']);
         if(value.version!==2 || value.projectRef!==projectRef || value.serverInstanceId!==serverInstanceId ||
@@ -74,6 +80,11 @@ function renewPairing(state, now) {
     return {...state,pairId:crypto.randomUUID(),idempotencyKey:crypto.randomUUID(),expiresAt:now+PAIR_TTL};
 }
 function validateTransition(previous, next) {
+    if(previous?.status==='recovering') {
+        if(next.status!=='active' || next.sequence!==0 || next.pending!==null || next.mapping.cloudServerId!==previous.cloudServerId)fail();
+        for(const k of Object.keys(previous.candidate).filter(k=>k!=='status'))if(next[k]!==previous.candidate[k])fail();
+        return;
+    }
     if(next.status==='replacing') {
         if(previous?.status==='active') {
             if(JSON.stringify(next.previous)!==JSON.stringify(previous))fail();
@@ -130,5 +141,15 @@ function replacementRequest(state) {
     request.approvalDigest=digest(approvalProof);
     return {request,approvalProof};
 }
+/** Disaster restore binds the explicitly confirmed existing cloud server. Only
+ * fresh cloud-owner SQL authority can select the current epoch being replaced. */
+function recoveryRequest(state) {
+    validateState(state,state.projectRef,state.serverInstanceId);if(state.status!=='recovering')fail();
+    const request={...pairingRequest(state.candidate).request,recovery:{cloudServerId:state.cloudServerId}};
+    const values=[...bindingFields.slice(0,8).map(k=>request[k]),state.cloudServerId];
+    const approvalProof=crypto.createHmac('sha256',Buffer.from(state.candidate.pollSecret,'hex'))
+        .update('cinevault-restore-v1\n'+JSON.stringify(values)).digest('hex');
+    request.approvalDigest=digest(approvalProof);return {request,approvalProof};
+}
 module.exports = { PROJECT_REF, UUID, HEX, PAIR_TTL, digest, exact, integer, matches,
-    bindingFields, bindingDigest, pairingRequest, replacementRequest, validateState, validateMapping, initialState, renewPairing, validateTransition };
+    bindingFields, bindingDigest, pairingRequest, replacementRequest, recoveryRequest, validateState, validateMapping, initialState, renewPairing, validateTransition };

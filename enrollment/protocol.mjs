@@ -22,8 +22,9 @@ export async function validatePairing(text, proof, instance, now = Date.now()) {
   if (typeof text !== 'string' || text.length > 8192 || typeof proof !== 'string' || !HEX.test(proof) ||
     typeof instance !== 'string' || !UUID.test(instance)) fail()
   const request = JSON.parse(text)
-  const replacing=Object.hasOwn(request,'replacement')
-  exact(request, replacing?[...fields,'replacement']:fields)
+  const replacing=Object.hasOwn(request,'replacement'),restoring=Object.hasOwn(request,'recovery')
+  exact(request, restoring?[...fields,'recovery']:replacing?[...fields,'replacement']:fields)
+  if(restoring){exact(request.recovery,['cloudServerId']);if(typeof request.recovery.cloudServerId!=='string'||!UUID.test(request.recovery.cloudServerId))fail()}
   if(replacing){
     exact(request.replacement,['credentialId','cloudServerId','epoch'])
     if(!['credentialId','cloudServerId'].every(k=>typeof request.replacement[k]==='string'&&UUID.test(request.replacement[k])) ||
@@ -100,11 +101,13 @@ export function createOwnerSession({ config, origin, fetchImpl = fetch, now = Da
       if (validUntil <= now()) { accessToken = null; fail() }
       return { userId: result.user.id, expiresAt: validUntil }
     }),
-    approve: (text, proof, confirmedInstanceId) => exclusive(async () => {
+    approve: (text, proof, confirmedInstanceId, confirmedCloudServerId) => exclusive(async () => {
       if (!accessToken || now() >= validUntil) { accessToken = null; fail() }
       const request = await validatePairing(text, proof, confirmedInstanceId, now())
+      if(request.recovery && confirmedCloudServerId!==request.recovery.cloudServerId)fail()
       const result = await jsonRequest(`${checked.projectUrl}/functions/v1/cinevault-control-plane`,
-        { operation: request.replacement?'approve-replacement':'approve', request, approvalProof: proof, confirmedInstanceId }, accessToken)
+        { operation: request.recovery?'approve-restore':request.replacement?'approve-replacement':'approve', request, approvalProof: proof, confirmedInstanceId,
+          ...(request.recovery?{confirmedCloudServerId}:{}) }, accessToken)
       exact(result, ['approved', 'pairId', 'expiresAt'])
       if (result.approved !== true || result.pairId !== request.pairId || !Number.isSafeInteger(result.expiresAt) ||
         result.expiresAt > request.expiresAt || result.expiresAt <= now() || now() >= validUntil) fail()

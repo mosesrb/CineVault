@@ -22,9 +22,9 @@ function controlPlaneStatus() {
     return coordinator?.status() || {mode:settings?.mode || 'disabled',enabled:false,guidance:
         settings?.mode==='blocked'?'Invalid control-plane configuration or protected storage; local CineVault remains independent.':null};
 }
-async function action(name) {
+async function action(name,value) {
     if(!coordinator)throw Error('control_plane_unavailable');
-    return coordinator[name]();
+    return coordinator[name](value);
 }
 async function stopControlPlane() {
     const current=coordinator;coordinator=null;settings=null;
@@ -32,4 +32,5 @@ async function stopControlPlane() {
 }
 module.exports={initializeControlPlane,stopControlPlane,controlPlaneStatus,
     prepare:()=>action('prepare'),redeem:()=>action('redeem'),retry:()=>action('retry'),recover:()=>action('recover'),
+    restore:value=>action('restore',value),
     noteActivity:kind=>{try{coordinator?.noteActivity(kind);}catch{ /* No cloud failure may deny local service. */ }} };

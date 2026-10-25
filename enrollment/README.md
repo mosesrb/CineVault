@@ -37,7 +37,12 @@ credential while preserving the cloud server. The page sends distinct
 approval is required again after an expired uncertain grant; the PC retains its
 candidate secret and exact mapping. No automatic reset, import, owner transfer,
 secret delivery to this page or publishing is implied. See broker README for the
-intact-state-only recovery boundary and remaining manual cases.
+ordinary intact-state recovery boundary. Requests carrying `recovery` use the
+distinct `approve-restore` operation and require the owner to separately enter
+the expected existing cloud-server UUID. This explicitly rotates the actual
+current operational credential without creating/transferring a server or user.
+See the public recovery runbook and broker disaster-restore section for preserved
+archives, lost-state handling and filesystem/ownership failures that still stop.
 
 ## Commissioning gates
 

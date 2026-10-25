@@ -2,7 +2,7 @@ import { CONFIG } from './config.mjs'
 import { createOwnerSession } from './protocol.mjs'
 const el = id => document.getElementById(id)
 let session, timer, busy = false
-function clearProof() { for (const id of ['request', 'proof', 'instance']) el(id).value = ''; el('confirm').checked = false }
+function clearProof() { for (const id of ['request', 'proof', 'instance', 'cloud']) el(id).value = ''; el('confirm').checked = false }
 function message(text) { el('status').textContent = text }
 function error(text = '') { el('error').textContent = text }
 function controls(disabled) { for (const id of ['signin', 'approve', 'signout']) el(id).disabled = disabled }
@@ -37,7 +37,7 @@ el('approval').addEventListener('submit', async event => {
   event.preventDefault(); if (busy || !session || !el('confirm').checked) return
   busy = true; controls(true); error()
   try {
-    await session.approve(el('request').value, el('proof').value, el('instance').value.trim())
+    await session.approve(el('request').value, el('proof').value, el('instance').value.trim(), el('cloud').value.trim())
     clearProof(); el('approval').hidden = true; el('instructions').hidden = false
     message('Approval acknowledged. Now check owner approval on your PC; keep this page open until it succeeds.')
   } catch { error('Approval unavailable or denied. A lost response may have committed; retry the identical PC request, never reset the identity.'); }

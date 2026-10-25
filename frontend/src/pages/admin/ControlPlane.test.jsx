@@ -21,11 +21,11 @@ describe('cloud administration page', () => {
       .mockResolvedValueOnce(response(setup)).mockResolvedValueOnce(response({...status,mode:'awaiting_replacement_owner'}))
     render(<ControlPlane />); await screen.findByText('Status: credential_expired')
     const button=screen.getByText('Prepare owner recovery'); expect(button).toBeDisabled()
-    fireEvent.click(screen.getByRole('checkbox')); fireEvent.click(button)
+    fireEvent.click(screen.getByRole('checkbox',{name:/I want to prepare/})); fireEvent.click(button)
     await screen.findByDisplayValue('replacement-proof')
     expect(fetch.mock.calls[2][0]).toBe('/api/v1/admin/control-plane/recover')
     expect(fetch.mock.calls[2][1]).toMatchObject({body:'{}',headers:{'x-cinevault-csrf':'replace-csrf'}})
-    expect(screen.getByRole('checkbox')).not.toBeChecked(); expect(localStorage.length).toBe(1)
+    expect(screen.getByRole('checkbox',{name:/I want to prepare/})).not.toBeChecked(); expect(localStorage.length).toBe(1)
   })
   it('obtains fresh CSRF then shows pairing proof only in memory', async () => {
     const setup = { alreadyEnrolled: false, request: { pairId: 'synthetic-pair' }, approvalProof: 'synthetic-proof', expiresAt: Date.now() + 10000 }
@@ -42,9 +42,9 @@ describe('cloud administration page', () => {
       .mockResolvedValueOnce(response(setup)).mockResolvedValueOnce(response({...status,mode:'awaiting_owner'}))
     render(<ControlPlane />); await screen.findByText('Status: pairing_expired')
     const button=screen.getByText('Prepare owner recovery'); expect(button).toBeDisabled()
-    fireEvent.click(screen.getByRole('checkbox')); fireEvent.click(button)
+    fireEvent.click(screen.getByRole('checkbox',{name:/I want to prepare/})); fireEvent.click(button)
     await screen.findByDisplayValue('renewed-proof'); expect(fetch.mock.calls[2][0]).toBe('/api/v1/admin/control-plane/recover')
-    expect(screen.getByRole('checkbox')).not.toBeChecked(); expect(localStorage.length).toBe(1)
+    expect(screen.getByRole('checkbox',{name:/I want to prepare/})).not.toBeChecked(); expect(localStorage.length).toBe(1)
   })
   it('clears the displayed proof at expiry without auto polling', async () => {
     vi.useFakeTimers(); const setup = { alreadyEnrolled: false, request: {}, approvalProof: 'expire-proof', expiresAt: Date.now() + 1000 }
@@ -66,5 +66,18 @@ describe('cloud administration page', () => {
     render(<ControlPlane />); await screen.findByText('Status: not_enrolled'); fireEvent.click(screen.getByText('Retry cloud recovery'))
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Owner recovery required'))
     expect(localStorage.getItem('cv_token')).toBe('synthetic-local-token')
+  })
+  it('disaster restore requires separate confirmation and both identifiers, never credentials', async () => {
+    const setup={alreadyEnrolled:false,request:{recovery:{cloudServerId:'cloud'}},approvalProof:'restore-proof',expiresAt:Date.now()+10000}
+    fetch.mockResolvedValueOnce(response({...status,mode:'recovery_required'})).mockResolvedValueOnce(response({csrfToken:'restore-csrf'}))
+      .mockResolvedValueOnce(response(setup)).mockResolvedValueOnce(response({...status,mode:'awaiting_restore_owner'}))
+    render(<ControlPlane />); await screen.findByText('Status: recovery_required')
+    const button=screen.getByText('Prepare disaster restore'); expect(button).toBeDisabled()
+    fireEvent.change(screen.getByLabelText('Confirmed local instance UUID'),{target:{value:'instance'}})
+    fireEvent.change(screen.getByLabelText('Existing cloud-server UUID'),{target:{value:'cloud'}});expect(button).toBeDisabled()
+    fireEvent.click(screen.getByLabelText('Confirm disaster restore'));fireEvent.click(button)
+    await screen.findByDisplayValue('restore-proof');expect(fetch.mock.calls[2][0]).toBe('/api/v1/admin/control-plane/restore')
+    expect(JSON.parse(fetch.mock.calls[2][1].body)).toEqual({confirmedInstanceId:'instance',cloudServerId:'cloud'})
+    expect(screen.getByLabelText('Confirm disaster restore')).not.toBeChecked();expect(localStorage.length).toBe(1)
   })
 })

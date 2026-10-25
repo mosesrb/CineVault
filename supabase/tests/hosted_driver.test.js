@@ -1,7 +1,7 @@
 // Opt-in real Postgres.js/two-connection qualification on a disposable container.
 // Never a hosted Auth fixture. Only an explicitly configured loopback port.
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
-const {initialState,renewPairing,pairingRequest,replacementRequest,PROJECT_REF}=require('../../services/controlPlane/protocol');
+const {initialState,renewPairing,pairingRequest,replacementRequest,recoveryRequest,PROJECT_REF}=require('../../services/controlPlane/protocol');
 const port=process.env.CV_QA_POSTGRES_PORT;
 test('disposable Postgres17 real driver transactions and concurrency',{skip:!port,timeout:45000},async t=>{
  assert.match(port,/^[0-9]{4,5}$/);assert.ok(Number(port)>1024&&Number(port)<=65535);
@@ -22,6 +22,7 @@ test('disposable Postgres17 real driver transactions and concurrency',{skip:!por
    await setup.unsafe(read('../broker/schema.sql'));
    await setup.unsafe(read('../broker/admission.sql'));
    await setup.unsafe(read('../broker/replacement.sql'));
+   await setup.unsafe(read('../broker/restoration.sql'));
    await setup.unsafe('create role cv_qa_login login; grant cv_control_broker to cv_qa_login;');
   }finally{setup.release();}
   client=postgres({host:'127.0.0.1',port:Number(port),database:'postgres',username:'cv_qa_login',prepare:false,max:2,connect_timeout:3,
@@ -86,6 +87,32 @@ test('disposable Postgres17 real driver transactions and concurrency',{skip:!por
    const register=()=>f.broker.execute({operation:'register',request:setup.request,pollSecret:state.pollSecret},null,null);
    return {...f,renewed:state,setup,mapping,approveRenewal:approve,registerRenewal:register};
   }
+  async function restoreFixture(){
+   const f=await fixture();await f.approve();const mapping=await f.register();
+   const state={version:3,status:'recovering',projectRef:PROJECT_REF,serverInstanceId:f.state.serverInstanceId,cloudServerId:mapping.cloudServerId,
+    candidate:initialState(PROJECT_REF,f.state.serverInstanceId,Date.now())},setup=recoveryRequest(state);
+   return {...f,mapping,recovery:state,setup,approveRestore:()=>f.broker.execute({operation:'approve-restore',...setup,confirmedInstanceId:state.serverInstanceId,confirmedCloudServerId:state.cloudServerId},null,'synthetic'),
+    restore:()=>f.broker.execute({operation:'restore',request:setup.request,pollSecret:state.candidate.pollSecret},null,null)};
+  }
+  await t.test('concurrent owner restore redemptions increment actual epoch exactly once',async()=>{
+   const f=await restoreFixture();await f.approveRestore();const replies=await Promise.all([f.restore(),f.restore()]);assert.deepEqual(replies[0],replies[1]);
+   assert.equal(replies[0].cloudServerId,f.mapping.cloudServerId);assert.equal(replies[0].epoch,2);
+   assert.equal((await admin`select count(*)::int n from public.servers where server_instance_id=${f.state.serverInstanceId}`)[0].n,1);
+  });
+  await t.test('restore behind committed owner-session deletion cannot issue new credential',async()=>{
+   const f=await restoreFixture();await f.approveRestore();const result=await behindGuard(f,tx=>tx`delete from auth.sessions where id=${f.session}`,f.restore);
+   assert.equal(result.error?.kind,'authorization');assert.equal((await admin`select epoch::int epoch from cinevault_private.cp_credentials where instance_id=${f.state.serverInstanceId}`)[0].epoch,1);
+  });
+  await t.test('restore grant cannot follow a credential change committed behind installation guard',async()=>{
+   const f=await restoreFixture();await f.approveRestore();const id=crypto.randomUUID();
+   const result=await behindGuard(f,tx=>tx`update cinevault_private.cp_credentials set id=${id},epoch=epoch+1 where instance_id=${f.state.serverInstanceId}`,f.restore);
+   assert.equal(result.error?.kind,'conflict');assert.equal((await admin`select id from cinevault_private.cp_credentials where instance_id=${f.state.serverInstanceId}`)[0].id,id);
+  });
+  await t.test('concurrent different restore approvals freeze only one unconsumed grant',async()=>{
+   const f=await restoreFixture(),different=recoveryRequest({...f.recovery,candidate:initialState(PROJECT_REF,f.state.serverInstanceId,Date.now())});
+   const results=await Promise.allSettled([f.approveRestore(),f.broker.execute({operation:'approve-restore',...different,confirmedInstanceId:f.state.serverInstanceId,confirmedCloudServerId:f.mapping.cloudServerId},null,'synthetic')]);
+   assert.equal(results.filter(r=>r.status==='fulfilled').length,1);assert.equal(results.filter(r=>r.status==='rejected'&&r.reason.kind==='conflict').length,1);
+  });
   await t.test('concurrent initial grant renewal preserves one issued mapping/epoch/lifetime',async()=>{
    const f=await renewalFixture();const approvals=await Promise.all([f.approveRenewal(),f.approveRenewal()]);assert.deepEqual(approvals[0],approvals[1]);
    const replies=await Promise.all([f.registerRenewal(),f.registerRenewal()]);assert.deepEqual(replies[0],f.mapping);assert.deepEqual(replies[1],f.mapping);

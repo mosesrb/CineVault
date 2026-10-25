@@ -118,8 +118,8 @@ authorize that same already-issued, still-valid candidate without extending its
 credential lifetime or advancing epoch again. Expired grants are overwritten and
 expired original enrollment grants removed during real authorized work, no idle
 cleanup timer. If the issued candidate itself expires/is revoked before local
-reconciliation, or protected state is missing/corrupt, manual operator recovery is
-still required. An expired intact initial pairing can now renew only its short
+reconciliation, or protected state is missing/corrupt, use the separately confirmed
+disaster restore below, not ordinary candidate renewal. An expired intact initial pairing can renew only its short
 challenge through explicit local ADMIN recovery and fresh cloud-owner approval.
 The candidate ID/secret/polling capability stay fixed. A live different grant,
 disabled grant or changed candidate denies; a still-valid already-issued initial
@@ -142,3 +142,26 @@ References: [Supabase database connections](https://supabase.com/docs/guides/fun
 Runtime references: [function-local dependencies](https://supabase.com/docs/guides/functions/dependencies),
 [gateway routing](https://supabase.com/docs/guides/functions/routing),
 [resource limits](https://supabase.com/docs/guides/functions/limits).
+
+## Prepared disaster restore
+
+Apply `restoration.sql` after schema/admission/replacement only in disposable
+tests until exact hosted deployment approval. V3 protected `recovering` state
+binds the permanently identified installation and explicitly confirmed existing
+cloud-server UUID. Separate ADMIN/CSRF and current cloud-owner confirmations are
+required. Fresh HMAC domain `cinevault-restore-v1` binds the entire candidate and
+cloud target. No caller-supplied old epoch, credential import or new server/account.
+
+Private SQL freezes actual old credential/epoch under the installation lock,
+requires the same snapshot on redemption, and advances once. Exact retry retains
+authority/epoch/lifetime; issued invalid candidates never revive. New deliberate
+restore after challenge expiry may rotate again with a fresh candidate/approval.
+Cross-flow live unconsumed grants conflict. Old grants/proofs/receipts and endpoint
+verification are withdrawn on issue. Ordinary broker login cannot invoke renamed
+approval/revoke cores or read the private restore table. Owner revoke cancels it.
+
+Local native staging preserves original safe UTF8 bytes under protected ACLs and
+digest CAS before replacement, retaining at most8 archives without auto-deletion.
+ACL/link/orphan/encoding failures still stop. See the public recovery runbook for
+the supported operation and explicit operator-maintenance boundaries. This is
+prepared/tested code, not deployed restoration, account provisioning or release.

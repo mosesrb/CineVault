@@ -22,8 +22,8 @@ function same(a,b) {
   if (!matches(HEX,a) || !matches(HEX,b)) return false
   return timingSafeEqual(bytes(a),bytes(b))
 }
-function pairing(value,now,replacing=false) {
-  exact(value,replacing?[...FIELDS,'replacement']:FIELDS)
+function pairing(value,now,replacing=false,restoring=false) {
+  exact(value,restoring?[...FIELDS,'recovery']:replacing?[...FIELDS,'replacement']:FIELDS)
   if(value.projectRef!==PROJECT_REF || !['serverInstanceId','pairId','credentialId','idempotencyKey'].every(k=>matches(UUID,value[k])) ||
     !['secretDigest','pollDigest','approvalDigest'].every(k=>matches(HEX,value[k])) || !Number.isSafeInteger(value.expiresAt) ||
     value.expiresAt<=now || value.expiresAt>now+300000)deny()
@@ -33,8 +33,11 @@ function pairing(value,now,replacing=false) {
       value.replacement.credentialId===value.credentialId || !Number.isSafeInteger(value.replacement.epoch) ||
       value.replacement.epoch<1 || value.replacement.epoch>=Number.MAX_SAFE_INTEGER-1)deny()
   }
+  if(restoring){exact(value.recovery,['cloudServerId']);if(!matches(UUID,value.recovery.cloudServerId))deny()}
 }
 const replacementValues=r=>r?[r.credentialId,r.cloudServerId,r.epoch]:[]
+const recoveryValues=r=>r?[r.cloudServerId]:[]
+const contextValues=r=>[...replacementValues(r.replacement),...recoveryValues(r.recovery)]
 function databaseFailure(error) {
   if(error instanceof BrokerFailure)return error
   if(error?.code==='42501')return new BrokerFailure('authorization')
@@ -64,32 +67,33 @@ export function createBroker({database,verifyOwner,admit,now=Date.now}) {
         const started=now()
         if(!Number.isSafeInteger(started) || started<0)deny()
         const operation=input?.operation
-        if(operation==='approve' || operation==='approve-replacement') {
-          const replacing=operation==='approve-replacement'
-          exact(input,['operation','request','approvalProof','confirmedInstanceId']);pairing(input.request,started,replacing)
+        if(['approve','approve-replacement','approve-restore'].includes(operation)) {
+          const replacing=operation==='approve-replacement',restoring=operation==='approve-restore'
+          exact(input,['operation','request','approvalProof','confirmedInstanceId',...(restoring?['confirmedCloudServerId']:[])]);pairing(input.request,started,replacing,restoring)
+          if(restoring && input.confirmedCloudServerId!==input.request.recovery.cloudServerId)deny()
           if(credential!==null || !matches(HEX,input.approvalProof) || input.confirmedInstanceId!==input.request.serverInstanceId ||
             !same(await sha(input.approvalProof),input.request.approvalDigest) || typeof accessToken!=='string' || accessToken.length>8192)deny()
           await admitted('approve',input.request.serverInstanceId)
           const authority=await verifyOwner(accessToken)
           exact(authority,['userId','sessionId','expiresAt'])
           if(!matches(UUID,authority.userId) || !matches(UUID,authority.sessionId) || !Number.isSafeInteger(authority.expiresAt) || authority.expiresAt<=now())deny()
-          pairing(input.request,now(),replacing)
-          const binding=await sha(JSON.stringify([...FIELDS.map(k=>input.request[k]),...replacementValues(input.request.replacement)]))
-          return await database.transaction(tx=>query(tx,replacing?'replaceApprove':'approve',[authority.userId,authority.sessionId,new Date(authority.expiresAt),
+          pairing(input.request,now(),replacing,restoring)
+          const binding=await sha(JSON.stringify([...FIELDS.map(k=>input.request[k]),...contextValues(input.request)]))
+          return await database.transaction(tx=>query(tx,restoring?'restoreApprove':replacing?'replaceApprove':'approve',[authority.userId,authority.sessionId,new Date(authority.expiresAt),
             input.request,bytes(binding),bytes(input.request.approvalDigest)]))
         }
-        if(operation==='register' || operation==='replace') {
-          const replacing=operation==='replace'
-          exact(input,['operation','request','pollSecret']);pairing(input.request,started,replacing)
+        if(['register','replace','restore'].includes(operation)) {
+          const replacing=operation==='replace',restoring=operation==='restore'
+          exact(input,['operation','request','pollSecret']);pairing(input.request,started,replacing,restoring)
           if(credential!==null || accessToken!==null || !matches(HEX,input.pollSecret) ||
             !same(await sha(input.pollSecret),input.request.pollDigest))deny()
           const key=await crypto.subtle.importKey('raw',bytes(input.pollSecret),{name:'HMAC',hash:'SHA-256'},false,['sign'])
-          const proof=hex(await crypto.subtle.sign('HMAC',key,encoder.encode((replacing?'cinevault-replacement-v1\n':'cinevault-approval-v1\n')+
-            JSON.stringify([...FIELDS.slice(0,8).map(k=>input.request[k]),...replacementValues(input.request.replacement)]))))
+          const proof=hex(await crypto.subtle.sign('HMAC',key,encoder.encode((restoring?'cinevault-restore-v1\n':replacing?'cinevault-replacement-v1\n':'cinevault-approval-v1\n')+
+            JSON.stringify([...FIELDS.slice(0,8).map(k=>input.request[k]),...contextValues(input.request)]))))
           if(!same(await sha(proof),input.request.approvalDigest))deny()
-          await admitted('register',input.request.serverInstanceId);pairing(input.request,now(),replacing)
-          const binding=await sha(JSON.stringify([...FIELDS.map(k=>input.request[k]),...replacementValues(input.request.replacement)]))
-          return await database.transaction(tx=>query(tx,replacing?'replace':'register',[input.request,bytes(binding),bytes(input.request.pollDigest),bytes(input.request.approvalDigest)]))
+          await admitted('register',input.request.serverInstanceId);pairing(input.request,now(),replacing,restoring)
+          const binding=await sha(JSON.stringify([...FIELDS.map(k=>input.request[k]),...contextValues(input.request)]))
+          return await database.transaction(tx=>query(tx,restoring?'restore':replacing?'replace':'register',[input.request,bytes(binding),bytes(input.request.pollDigest),bytes(input.request.approvalDigest)]))
         }
         if(operation==='heartbeat') {
           exact(input,['operation','idempotencyKey','sequence','activity','projectRef','serverInstanceId','credentialId','epoch'])
@@ -151,7 +155,7 @@ export function createHandler({broker,approvedOrigin,admitRequest,bodyTimeoutMs=
       let body
       try {body=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(combined))}catch {deny()}
       const auth=request.headers.get('authorization'),credential=request.headers.get('x-cinevault-credential')
-      if(['approve','approve-replacement'].includes(body?.operation) && origin!==approvedOrigin)deny()
+      if(['approve','approve-replacement','approve-restore'].includes(body?.operation) && origin!==approvedOrigin)deny()
       if(auth!==null && !/^Bearer [A-Za-z0-9._-]{1,8192}$/.test(auth))deny()
       const result=await broker.execute(body,credential,auth===null?null:auth.slice(7))
       return result===null?respond({pending:true},202):respond(result,200)

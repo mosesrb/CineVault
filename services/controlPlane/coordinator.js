@@ -1,6 +1,6 @@
 'use strict';
 const crypto = require('node:crypto');
-const { initialState, renewPairing, validateState, validateMapping, pairingRequest, replacementRequest, integer } = require('./protocol');
+const { initialState, renewPairing, validateState, validateMapping, pairingRequest, replacementRequest, recoveryRequest, integer, matches, UUID } = require('./protocol');
 const { CloudFailure } = require('./transport');
 const INTERVAL = 60000;
 const MAX_ATTEMPTS = 5;
@@ -42,7 +42,7 @@ function createCoordinator({ config, serverInstanceId, store, transport, now = D
             state = await read();
             if(stopped)return;
             if(!state){mode='not_enrolled';activity=null;return;}
-            if(state.status==='replacing'){mode='awaiting_replacement_owner';activity=null;return;}
+            if(['replacing','recovering'].includes(state.status)){mode=state.status==='recovering'?'awaiting_restore_owner':'awaiting_replacement_owner';activity=null;return;}
             if(state.status!=='active'){mode=clock()>=state.expiresAt?'pairing_expired':'awaiting_owner';activity=null;return;}
             if(state.mapping.credentialExpiresAt<=clock()){mode='credential_expired';activity=null;return;}
             if(state.pending===null) {
@@ -71,6 +71,7 @@ function createCoordinator({ config, serverInstanceId, store, transport, now = D
             return Object.freeze({mode,enabled:config.mode==='ready',
                 guidance: mode==='paused'?'Resume the existing project in the Supabase dashboard, then retry.':
                     mode==='awaiting_replacement_owner'?'Old cloud activity is paused. Approve the saved replacement on the trusted owner page, then check owner approval.':
+                    mode==='awaiting_restore_owner'?'Cloud activity is paused. Fresh cloud-owner approval must restore this exact existing cloud server; then check owner approval.':
                     mode==='pairing_expired'?'The approval challenge expired. Explicit owner recovery can renew an intact saved candidate; fresh cloud-owner approval is required. Do not delete credentials or reset server identity.':
                     ['authorization','conflict','credential_expired','recovery_required'].includes(mode)?
                         'Owner recovery is required. Do not delete credentials or reset the server identity.':
@@ -83,6 +84,10 @@ function createCoordinator({ config, serverInstanceId, store, transport, now = D
                 try {
                     let state=await read();
                     if(stopped)throw Error('control_plane_stopped');
+                    if(state?.status==='recovering'){
+                        mode='awaiting_restore_owner';if(state.candidate.expiresAt<=clock())throw Error();
+                        return {...recoveryRequest(state),expiresAt:state.candidate.expiresAt,alreadyEnrolled:false};
+                    }
                     if(state===null){state=initialState(config.projectRef,serverInstanceId,clock());await store.writeAtomic(state);}
                     if(stopped)throw Error('control_plane_stopped');
                     if(state.status==='replacing'){
@@ -104,6 +109,17 @@ function createCoordinator({ config, serverInstanceId, store, transport, now = D
                     const state=await read();
                     if(stopped)throw Error('control_plane_stopped');
                     if(!state)throw Error();
+                    if(state.status==='recovering'){
+                        if(state.candidate.expiresAt<=clock()){mode='pairing_expired';throw Error();}
+                        controller=new AbortController();
+                        const mapping=await transport.restore(recoveryRequest(state).request,state.candidate.pollSecret,controller.signal);
+                        if(stopped || controller.signal.aborted)throw Error();
+                        if(mapping===null){mode='awaiting_restore_owner';return {enrolled:false};}
+                        validateMapping(mapping,state.candidate);
+                        if(mapping.cloudServerId!==state.cloudServerId || mapping.credentialExpiresAt<=clock() || state.candidate.expiresAt<=clock())throw Error();
+                        await store.writeAtomic({...state.candidate,status:'active',mapping,sequence:0,pending:null});
+                        lastReport=-INTERVAL;mode='connected';return {enrolled:true};
+                    }
                     if(state.status==='replacing'){
                         if(state.candidate.expiresAt<=clock()){mode='pairing_expired';throw Error();}
                         controller=new AbortController();
@@ -155,6 +171,27 @@ function createCoordinator({ config, serverInstanceId, store, transport, now = D
                     }
                     mode='awaiting_replacement_owner';
                     return {...replacementRequest(state),expiresAt:state.candidate.expiresAt,alreadyEnrolled:false};
+                }catch(error){classify(error);throw Error('control_plane_recovery_required');}
+            });
+        },
+        async restore({confirmedInstanceId,cloudServerId}={}) {
+            if(timer!==null){cancel(timer);timer=null;}activity=null;
+            return serialized(async()=>{
+                if(stopped || config.mode!=='ready')throw Error('control_plane_disabled');
+                try {
+                    if(confirmedInstanceId!==serverInstanceId || !matches(UUID,cloudServerId))throw Error();
+                    const current=await store.readForRecovery();if(stopped)throw Error();
+                    if(timer!==null){cancel(timer);timer=null;}activity=null;attempts=0;
+                    const known=current?.status==='active'?current.mapping.cloudServerId:
+                        current?.status==='replacing'?current.previous.mapping.cloudServerId:current?.cloudServerId;
+                    if(known && known!==cloudServerId)throw Error();
+                    if(current?.status==='recovering' && current.candidate.expiresAt>clock()){
+                        mode='awaiting_restore_owner';return {...recoveryRequest(current),expiresAt:current.candidate.expiresAt,alreadyEnrolled:false};
+                    }
+                    const state={version:3,status:'recovering',projectRef:config.projectRef,serverInstanceId,cloudServerId,
+                        candidate:initialState(config.projectRef,serverInstanceId,clock())};
+                    await store.writeRecoveryAtomic(state);if(stopped)throw Error();
+                    mode='awaiting_restore_owner';return {...recoveryRequest(state),expiresAt:state.candidate.expiresAt,alreadyEnrolled:false};
                 }catch(error){classify(error);throw Error('control_plane_recovery_required');}
             });
         },

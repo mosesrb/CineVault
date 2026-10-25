@@ -49,4 +49,9 @@ for(const operation of ['prepare','redeem','retry','recover'])router.post('/'+op
     try {const result=await cloud[operation]();res.json(result || cloud.controlPlaneStatus());}
     catch {res.status(503).json({error:'Control plane unavailable; check cloud status for owner recovery guidance.'});}
 });
+router.post('/restore',async(req,res)=>{
+    try {exact(req.body,['confirmedInstanceId','cloudServerId']);validateCsrf(req);}catch{return res.status(403).json({error:'Cloud administration denied.'});}
+    try {res.json(await cloud.restore(req.body));}
+    catch {res.status(503).json({error:'Restore unavailable. Preserve protected state and verify both server identifiers with the owner.'});}
+});
 module.exports=router;

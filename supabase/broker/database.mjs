@@ -8,6 +8,8 @@ const queries = Object.freeze({
   register: ['select cinevault_private.cp_register($1,$2,$3,$4) as result',4],
   replaceApprove: ['select cinevault_private.cp_replace_approve($1,$2,$3,$4,$5,$6) as result',6],
   replace: ['select cinevault_private.cp_replace($1,$2,$3,$4) as result',4],
+  restoreApprove: ['select cinevault_private.cp_restore_approve($1,$2,$3,$4,$5,$6) as result',6],
+  restore: ['select cinevault_private.cp_restore($1,$2,$3,$4) as result',4],
   verifier: ['select cinevault_private.cp_verifier($1) as result',1],
   heartbeat: ['select cinevault_private.cp_heartbeat($1,$2,$3) as result',3]
 })

@@ -6,7 +6,7 @@ const {createTransport,CloudFailure}=require('../../services/controlPlane/transp
 const uuid=()=>crypto.randomUUID(),read=file=>fs.readFileSync(path.join(__dirname,file),'utf8');
 
 function localFixture(){
- let time=Date.now(),saved=p.initialState(p.PROJECT_REF,uuid(),Date.now());const instance=saved.serverInstanceId;
+ let time=Date.now(),saved=p.initialState(p.PROJECT_REF,uuid(),time);const instance=saved.serverInstanceId;
  const store={read:async()=>structuredClone(saved),writeAtomic:async next=>{
   p.validateState(next,p.PROJECT_REF,instance);p.validateTransition(saved,next);saved=structuredClone(next);
  }};

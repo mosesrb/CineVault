@@ -88,12 +88,12 @@ namespace CineVaultControlPlane {
         static string Hash(byte[] bytes) {
             using (SHA256 sha = SHA256.Create()) return BitConverter.ToString(sha.ComputeHash(bytes)).Replace("-", "").ToLowerInvariant();
         }
-        static string Current(string path, SecurityIdentifier owner, out string revision) {
+        static string Current(string path, SecurityIdentifier owner, out string revision, bool allowEmpty = false) {
             revision = null;
             if (!File.Exists(path) && !System.IO.Directory.Exists(path)) return null;
             using (SafeFileHandle handle = OpenFile(path, OpenExisting, Read, owner))
             using (FileStream file = new FileStream(handle, FileAccess.Read)) {
-                if (file.Length < 1 || file.Length > Limit) throw Fail();
+                if ((!allowEmpty && file.Length < 1) || file.Length > Limit) throw Fail();
                 byte[] bytes = new byte[(int)file.Length]; int offset = 0;
                 while (offset < bytes.Length) { int n = file.Read(bytes, offset, bytes.Length - offset); if (n == 0) throw Fail(); offset += n; }
                 revision = Hash(bytes); return new UTF8Encoding(false, true).GetString(bytes);
@@ -112,7 +112,7 @@ namespace CineVaultControlPlane {
         // Fault checkpoint is available only to the disposable native test harness;
         // the stdin helper never accepts it from requests.
         public static Dictionary<string, object> Run(string directory, string action, string payload, string expectedRevision, Action<string> checkpoint) {
-            if (action != "read" && action != "write") throw Fail();
+            if (action != "read" && action != "write" && action != "recover" && action != "read_recovery") throw Fail();
             if (String.IsNullOrEmpty(directory) || directory.Length > 220 || directory.StartsWith("\\\\") ||
                 directory.IndexOf(':', 2) >= 0 || directory.IndexOf("..", StringComparison.Ordinal) >= 0 ||
                 !Path.IsPathRooted(directory) || !String.Equals(directory, Path.GetFullPath(directory), StringComparison.OrdinalIgnoreCase)) throw Fail();
@@ -131,9 +131,15 @@ namespace CineVaultControlPlane {
                 string temporary = Path.Combine(directory, "state.tmp");
                 using (SafeFileHandle mutex = OpenFile(lockPath, OpenAlways, Read | Write, owner)) {
                     if (File.Exists(temporary) || System.IO.Directory.Exists(temporary)) throw Fail();
-                    string revision; string current = Current(target, owner, out revision);
-                    if (action == "read") return new Dictionary<string, object> { {"ok", true}, {"payload", current}, {"revision", revision} };
+                    string revision; string current = Current(target, owner, out revision, action == "read_recovery" || action == "recover");
+                    if (action == "read" || action == "read_recovery") return new Dictionary<string, object> { {"ok", true}, {"payload", current}, {"revision", revision} };
                     if (!String.Equals(revision ?? "", expectedRevision ?? "", StringComparison.Ordinal)) throw Fail();
+                    // BEGIN OWNER RECOVERY: preserve before replacing; never repair ACLs or links.
+                    if (action == "recover" && current != null) {
+                        Archive(directory, current, revision, owner);
+                        if (checkpoint != null) checkpoint("archived");
+                    }
+                    // END OWNER RECOVERY
                     byte[] bytes = new UTF8Encoding(false, true).GetBytes(payload);
                     if (bytes.Length < 1 || bytes.Length > Limit) throw Fail();
                     using (SafeFileHandle handle = OpenFile(temporary, CreateNew, Read | Write, owner))
@@ -152,5 +158,21 @@ namespace CineVaultControlPlane {
                 }
             } finally { for (int i = pins.Count - 1; i >= 0; i--) pins[i].Dispose(); }
         }
+        // BEGIN OWNER RECOVERY: bounded, protected, create-only original-byte archives.
+        static void Archive(string directory, string current, string revision, SecurityIdentifier owner) {
+            string archive = Path.Combine(directory, "state.recovery." + revision + ".json");
+            if (File.Exists(archive) || System.IO.Directory.Exists(archive)) {
+                string existingRevision;
+                if (Current(archive, owner, out existingRevision, true) != current || existingRevision != revision) throw Fail();
+                return;
+            }
+            if (System.IO.Directory.GetFileSystemEntries(directory, "state.recovery.*.json").Length >= 8) throw Fail();
+            byte[] bytes = new UTF8Encoding(false, true).GetBytes(current);
+            using (SafeFileHandle handle = OpenFile(archive, CreateNew, Read | Write, owner))
+            using (FileStream file = new FileStream(handle, FileAccess.ReadWrite)) { file.Write(bytes, 0, bytes.Length); file.Flush(true); }
+            string savedRevision;
+            if (Current(archive, owner, out savedRevision, true) != current || savedRevision != revision) throw Fail();
+        }
+        // END OWNER RECOVERY
     }
 }

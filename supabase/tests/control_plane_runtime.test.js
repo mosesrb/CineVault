@@ -41,12 +41,19 @@ test('opt-in rejects wrong project, private/project-secret keys, redirects and u
         {CV_CONTROL_PLANE_ADMIN_ORIGIN:'http://192.168.1.2:3000'},{CV_CONTROL_PLANE_ADMIN_ORIGIN:'https://host.example/callback'}])
         assert.equal(configuration({...env(),...change}).mode,'blocked');
 });
-test('protected native core is identical to reviewed prototype except comment and namespace',()=>{
+test('protected native core preserves reviewed prototype outside explicit recovery additions',()=>{
     const original=fs.readFileSync(path.join(__dirname,'../../scripts/prototypes/ProtectedState.cs'),'utf8')
         .replace('// Isolated Windows/NTFS research adapter. No application or network entrypoint.',
             '// Windows/NTFS protected atomic state. No network entrypoint; caller validates payload.')
         .replace('namespace CineVaultPrototype {','namespace CineVaultControlPlane {').replace(/\r\n/g,'\n').trim();
-    assert.equal(fs.readFileSync(path.join(__dirname,'../../services/controlPlane/ProtectedState.cs'),'utf8').replace(/\r\n/g,'\n').trim(),original);
+    const production=fs.readFileSync(path.join(__dirname,'../../services/controlPlane/ProtectedState.cs'),'utf8').replace(/\r\n/g,'\n')
+        .replace(/^\s*\/\/ BEGIN OWNER RECOVERY[^\n]*\n[\s\S]*?^\s*\/\/ END OWNER RECOVERY\n/gm,'')
+        .replace(' && action != "recover" && action != "read_recovery"','')
+        .replace('out string revision, bool allowEmpty = false','out string revision')
+        .replace('(!allowEmpty && file.Length < 1)','file.Length < 1')
+        .replace('out revision, action == "read_recovery" || action == "recover"','out revision')
+        .replace('action == "read" || action == "read_recovery"','action == "read"').trim();
+    assert.equal(production,original);
 });
 test('pairing is durable before proof, repeat setup is identical and no transport is called',async()=>{
     const f=fixture(),c=f.factory();const first=await c.prepare(),second=await c.prepare();

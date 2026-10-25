@@ -62,3 +62,65 @@ nativeTest('production native replacement candidate/previous mapping survive reo
     await current.writeAtomic({...candidate,status:'active',mapping:{...f.active.mapping,credentialId:candidate.credentialId,epoch:2},sequence:0,pending:null});
     const saved=await createStore(f.options).read();assert.equal(saved.secret,candidate.secret);assert.equal(saved.mapping.cloudServerId,f.active.mapping.cloudServerId);assert.equal(saved.mapping.epoch,2);
 });
+const restoring=f=>({version:3,status:'recovering',projectRef:PROJECT_REF,serverInstanceId:f.state.serverInstanceId,
+    cloudServerId:f.active.mapping.cloudServerId,candidate:initialState(PROJECT_REF,f.state.serverInstanceId,Date.now())});
+nativeTest('explicit native restore archives damaged bytes before replacement and survives reopen',async t=>{
+    const f=await fixture(t),raw='{damaged-synthetic-json';await fs.writeFile(path.join(f.directory,'state.json'),raw);
+    await assert.rejects(f.store.read());assert.equal(await f.store.readForRecovery(),null);
+    const state=restoring(f);await f.store.writeRecoveryAtomic(state);assert.deepEqual(await createStore(f.options).read(),state);
+    const archive='state.recovery.'+crypto.createHash('sha256').update(raw).digest('hex')+'.json';
+    assert.equal(await fs.readFile(path.join(f.directory,archive),'utf8'),raw);
+    const current=createStore(f.options);await current.read();await current.writeAtomic({...state.candidate,status:'active',mapping:{...f.active.mapping,credentialId:state.candidate.credentialId,epoch:2},sequence:0,pending:null});
+    assert.equal((await createStore(f.options).read()).mapping.cloudServerId,f.active.mapping.cloudServerId);
+});
+nativeTest('explicit native restore stale raw digest cannot overwrite concurrent normal write',async t=>{
+    const f=await fixture(t),stale=createStore(f.options);await stale.readForRecovery();await f.store.writeAtomic(f.active);
+    await assert.rejects(stale.writeRecoveryAtomic(restoring(f)));assert.deepEqual(await stale.read(),f.active);
+    assert.equal((await fs.readdir(f.directory)).filter(n=>n.startsWith('state.recovery.')).length,0);
+});
+nativeTest('explicit native restore never bypasses orphan temporary or invalid UTF8 state',async t=>{
+    const f=await fixture(t);await fs.writeFile(path.join(f.directory,'state.tmp'),'synthetic-orphan');
+    await assert.rejects(f.store.readForRecovery());await assert.rejects(f.store.writeRecoveryAtomic(restoring(f)));
+    await fs.unlink(path.join(f.directory,'state.tmp'));await fs.writeFile(path.join(f.directory,'state.json'),Buffer.from([0xff,0xfe,0xff]));
+    await assert.rejects(f.store.readForRecovery());await assert.rejects(f.store.writeRecoveryAtomic(restoring(f)));
+    assert.deepEqual(await fs.readFile(path.join(f.directory,'state.json')),Buffer.from([0xff,0xfe,0xff]));
+});
+nativeTest('restore archives are bounded and never automatically deleted',async t=>{
+    const f=await fixture(t);let store=f.store;
+    for(let i=0;i<8;i++){await store.readForRecovery();await store.writeRecoveryAtomic(restoring(f));store=createStore(f.options);}
+    const before=await store.read();await store.readForRecovery();await assert.rejects(store.writeRecoveryAtomic(restoring(f)));
+    assert.deepEqual(await store.read(),before);assert.equal((await fs.readdir(f.directory)).filter(n=>n.startsWith('state.recovery.')).length,8);
+});
+nativeTest('explicit restore of missing state stages a new candidate without fabricating an archive',async t=>{
+    const f=await fixture(t);await fs.unlink(path.join(f.directory,'state.json'));assert.equal(await f.store.readForRecovery(),null);
+    const state=restoring(f);await f.store.writeRecoveryAtomic(state);assert.deepEqual(await createStore(f.options).read(),state);
+    assert.equal((await fs.readdir(f.directory)).filter(n=>n.startsWith('state.recovery.')).length,0);
+});
+nativeTest('an existing untrusted archive blocks restore without overwriting original bytes',async t=>{
+    const f=await fixture(t),before=await fs.readFile(path.join(f.directory,'state.json'));
+    const archive='state.recovery.'+crypto.createHash('sha256').update(before).digest('hex')+'.json';
+    await fs.writeFile(path.join(f.directory,archive),'synthetic-untrusted');await f.store.readForRecovery();
+    await assert.rejects(f.store.writeRecoveryAtomic(restoring(f)));assert.deepEqual(await fs.readFile(path.join(f.directory,'state.json')),before);
+    assert.equal(await fs.readFile(path.join(f.directory,archive),'utf8'),'synthetic-untrusted');
+});
+nativeTest('process exit after archive flush leaves original state intact before atomic replacement',async t=>{
+    const f=await fixture(t),before=await fs.readFile(path.join(f.directory,'state.json'));
+    const revision=crypto.createHash('sha256').update(before).digest('hex'),exe=path.join(process.env.SystemRoot||'C:/Windows','System32/WindowsPowerShell/v1.0/powershell.exe');
+    const child=require('node:child_process').spawnSync(exe,['-NoLogo','-NoProfile','-NonInteractive','-File',path.join(__dirname,'restore_crash_probe.ps1')],
+        {windowsHide:true,encoding:'utf8',timeout:15000,input:JSON.stringify({directory:f.directory,payload:JSON.stringify(restoring(f)),revision})});
+    assert.equal(child.status,75,child.error?.code||child.stderr);assert.deepEqual(await fs.readFile(path.join(f.directory,'state.json')),before);
+    assert.deepEqual(await fs.readFile(path.join(f.directory,'state.recovery.'+revision+'.json')),before);
+    assert.deepEqual(await createStore(f.options).read(),f.state);
+});
+nativeTest('empty truncated state remains blocked normally but explicit recovery preserves an empty archive',async t=>{
+    const f=await fixture(t);await fs.writeFile(path.join(f.directory,'state.json'),'');await assert.rejects(f.store.read());
+    assert.equal(await f.store.readForRecovery(),null);await f.store.writeRecoveryAtomic(restoring(f));
+    const emptyHash=crypto.createHash('sha256').update('').digest('hex');
+    assert.equal((await fs.readFile(path.join(f.directory,'state.recovery.'+emptyHash+'.json'))).length,0);
+    assert.equal((await createStore(f.options).read()).status,'recovering');
+});
+nativeTest('bounded damaged control-character bytes survive escaped native response and exact archive',async t=>{
+    const f=await fixture(t),raw=Buffer.alloc(8192,0);await fs.writeFile(path.join(f.directory,'state.json'),raw);
+    await assert.rejects(f.store.read());assert.equal(await f.store.readForRecovery(),null);await f.store.writeRecoveryAtomic(restoring(f));
+    const digest=crypto.createHash('sha256').update(raw).digest('hex');assert.deepEqual(await fs.readFile(path.join(f.directory,'state.recovery.'+digest+'.json')),raw);
+});
