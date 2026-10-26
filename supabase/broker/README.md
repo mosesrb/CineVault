@@ -6,6 +6,13 @@ ordinary CineVault server. It is **not commissioned** or a tracked migration;
 the schema requires CLI-generated migration identity after review/qualification.
 Do not deploy the disposable `scripts/prototypes` lab SQL instead.
 
+CLI-created candidate `../migrations/20261026045823_control_plane_broker_commissioning.sql`
+now packages all five preparation sources in one atomic transaction. It remains
+unapplied pending exact hosted approval/current inventory. Catalog parity and
+late-conflict rollback have local SQL coverage. Apply the approved tracked
+candidate once, not the five standalone files again. It leaves the dedicated
+login NOLOGIN/passwordless and deploys no runtime, account or owner binding.
+
 The HTTP API accepts approve/register/heartbeat plus the separate human-approved
 approve-replacement/replace flow described below. Human approval requires
 exact configured Pages origin, signed fixed-project JWT, fresh Auth/user read,

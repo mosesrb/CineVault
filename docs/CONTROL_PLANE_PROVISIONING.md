@@ -26,7 +26,8 @@ password, service-role key, broker database password or the owner's refresh toke
    setup. Public `/api/v1/identity` is identification, not proof of ownership.
    Confirm the project is `uouydbapluktfrylligo`. Review the current hosted schema,
    migration history, role privileges and security advisors before applying the
-   CLI-created, reviewed migration. No production migration is supplied here.
+   CLI-created, reviewed migration. The local candidate is
+   `20261026045823_control_plane_broker_commissioning.sql`, not yet applied.
 4. In the trusted operator's bounded transaction, invoke the private function
    using parameterized values: `cp_provision_installation(project, owner UUID,
    installation UUID, display name)`. Use `cinevault_private` as its explicit
@@ -76,6 +77,22 @@ ownership or repair a disabled/corrupt mapping; investigate and authorize an exa
 maintenance operation instead of changing rows or resetting the local identity.
 
 ## Remaining commissioning gates
+
+The first proposed hosted step is **database preparation only** in project
+`uouydbapluktfrylligo` (`ap-southeast-2`): apply the CLI-created migration above,
+SHA256 `89db474fbaff9874d33182f53394654e7f5cd9ad58db5a5cc17da7784f131c42`.
+It bundles the existing five broker SQL sources in one transaction. Local tests
+compare the resulting functions, tables, constraints, columns, grants and roles
+with sequential source application, and prove a late role conflict rolls back
+all new objects. Unknown existing role/schema objects must fail rather than be
+adopted or overwritten. Inspect hosted migrations/schema/advisors again when
+the resumed project is ready before applying the approved candidate.
+
+This step creates only private broker objects, quota state and the passwordless
+NOLOGIN role. It does not create an Auth user, bind an installation, enable LOGIN,
+issue a password, deploy a function or page, or enable local cloud integration.
+Those operations require subsequent exact commissioning approval. Never apply
+the five standalone preparation files a second time after this migration.
 
 Permanent Auth user creation/selection, actual binding and hosted login activation
 have not been performed. Exact free Pages origin, password-vs-PKCE protocol,
