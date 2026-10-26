@@ -80,6 +80,15 @@ named PG options plus the synthetic port/loopback, never unrestricted permission
 The node suite adds actual SQL budgets/full composition and the separate driver
 suite races global/per-install counters across real connections.
 
+Prepared `provisioning.sql` adds operator-only invoker provisioning for a confirmed
+permanent Auth owner and explicitly selected installation, plus a passwordless
+NOLOGIN dedicated role. It is not an account creator or ordinary-client RPC;
+concurrent duplicate/competing provisioning, policy preservation and actual login
+permissions have disposable test coverage. Apply after the other prepared SQL
+only in disposable tests. See the [provisioning workflow](../../docs/CONTROL_PLANE_PROVISIONING.md).
+Actual permanent account/binding, password/LOGIN activation and hosted secret
+storage still require exact approval; no secret-bearing SQL template is supplied.
+
 Secret provisioning/Pages origin, gateway settings/actual route compatibility,
 effective deployed headers/CORS and real hosted pool/runtime/Auth qualification
 remain commissioning gates. No arbitrary SQL proxy or automatic owner bootstrap.

@@ -17,17 +17,82 @@ test('disposable Postgres17 real driver transactions and concurrency',{skip:!por
   const setup=await admin.reserve();
   try {
    await setup.unsafe(read('bootstrap.sql'));
-   await setup.unsafe('alter table auth.users add is_anonymous boolean default false,add banned_until timestamptz,add deleted_at timestamptz; create table auth.sessions(id uuid primary key,user_id uuid not null,not_after timestamptz);');
+   await setup.unsafe('alter table auth.users add is_anonymous boolean default false,add banned_until timestamptz,add deleted_at timestamptz,add email text,add email_confirmed_at timestamptz; create table auth.sessions(id uuid primary key,user_id uuid not null,not_after timestamptz);');
    await setup.unsafe(read('../migrations/20261004161756_control_plane_foundation.sql'));
    await setup.unsafe(read('../broker/schema.sql'));
    await setup.unsafe(read('../broker/admission.sql'));
    await setup.unsafe(read('../broker/replacement.sql'));
    await setup.unsafe(read('../broker/restoration.sql'));
-   await setup.unsafe('create role cv_qa_login login; grant cv_control_broker to cv_qa_login;');
+   await setup.unsafe(read('../broker/provisioning.sql'));
   }finally{setup.release();}
-  client=postgres({host:'127.0.0.1',port:Number(port),database:'postgres',username:'cv_qa_login',prepare:false,max:2,connect_timeout:3,
+  await t.test('prepared dedicated login cannot connect until explicitly enabled',async()=>{
+   const disabled=postgres({host:'127.0.0.1',port:Number(port),database:'postgres',username:'cv_control_broker_login',prepare:false,max:1,connect_timeout:3});
+   try{await assert.rejects(disabled`select 1`,e=>e.code==='28000');}finally{await disabled.end({timeout:3});}
+  });
+  // Synthetic loopback trust fixture only, never a production password procedure.
+  await admin.unsafe('alter role cv_control_broker_login login');
+  client=postgres({host:'127.0.0.1',port:Number(port),database:'postgres',username:'cv_control_broker_login',prepare:false,max:2,connect_timeout:3,
    connection:{statement_timeout:'8000',lock_timeout:'2000',idle_in_transaction_session_timeout:'8000',transaction_timeout:'10000'}});
   const database=createTransactionAdapter(client);
+  async function provisionFixture(){
+   const owner=crypto.randomUUID(),instance=crypto.randomUUID();
+   await admin`insert into auth.users(id,email,email_confirmed_at) values(${owner},'synthetic-owner@example.invalid',clock_timestamp())`;
+   const provision=(user=owner)=>admin`select cinevault_private.cp_provision_installation(${PROJECT_REF},${user},${instance},'Owner') result`.then(r=>r[0].result);
+   return {owner,instance,provision};
+  }
+  await t.test('concurrent initial provisioning commits one profile/binding and stable result',async()=>{
+   const f=await provisionFixture(),answers=await Promise.all([f.provision(),f.provision()]);assert.deepEqual(answers[0],answers[1]);
+   assert.equal((await admin`select count(*)::int n from public.profiles where id=${f.owner}`)[0].n,1);
+   assert.equal((await admin`select count(*)::int n from cinevault_private.cp_installations where instance_id=${f.instance}`)[0].n,1);
+   assert.equal((await admin`select count(*)::int n from public.servers where server_instance_id=${f.instance}`)[0].n,0);
+  });
+  await t.test('different owners racing the absent installation cannot both bind or leave losing profile',async()=>{
+   const f=await provisionFixture(),other=crypto.randomUUID();await admin`insert into auth.users(id,email,email_confirmed_at) values(${other},'synthetic-other@example.invalid',clock_timestamp())`;
+   const answers=await Promise.allSettled([f.provision(),f.provision(other)]);
+   assert.equal(answers.filter(v=>v.status==='fulfilled').length,1);assert.equal(answers.filter(v=>v.status==='rejected'&&v.reason.code==='P0001').length,1);
+   const winner=(await admin`select owner_id from cinevault_private.cp_installations where instance_id=${f.instance}`)[0].owner_id;
+   assert.equal((await admin`select count(*)::int n from public.profiles where id in (${f.owner},${other})`)[0].n,1);
+   assert.equal((await admin`select id from public.profiles where id in (${f.owner},${other})`)[0].id,winner);
+  });
+  async function provisionAfterMutation(f,lock,mutation){
+   const locked=Promise.withResolvers(),release=Promise.withResolvers();
+   const holding=admin.begin(async tx=>{await lock(tx);await mutation(tx);locked.resolve();await release.promise;});
+   await locked.promise;let settled=false;const pending=f.provision().then(value=>({value}),error=>({error})).finally(()=>{settled=true;});
+   try{await new Promise(r=>setTimeout(r,100));assert.equal(settled,false);}finally{release.resolve();await holding;}
+   return pending;
+  }
+  await t.test('first provisioning waiting on Auth lock sees committed owner ban and writes nothing',async()=>{
+   const f=await provisionFixture(),result=await provisionAfterMutation(f,tx=>tx`select id from auth.users where id=${f.owner} for update`,
+    tx=>tx`update auth.users set banned_until=clock_timestamp()+interval '1 day' where id=${f.owner}`);
+   assert.equal(result.error?.code,'42501');assert.equal((await admin`select count(*)::int n from public.profiles where id=${f.owner}`)[0].n,0);
+   assert.equal((await admin`select count(*)::int n from cinevault_private.cp_installations where instance_id=${f.instance}`)[0].n,0);
+  });
+  await t.test('provision retry behind installation lock preserves committed disable instead of re-enabling',async()=>{
+   const f=await provisionFixture();await f.provision();const result=await provisionAfterMutation(f,
+    tx=>tx`select instance_id from cinevault_private.cp_installations where instance_id=${f.instance} for update`,
+    tx=>tx`update cinevault_private.cp_installations set enabled=false where instance_id=${f.instance}`);
+   assert.equal(result.error?.code,'P0001');assert.equal((await admin`select enabled from cinevault_private.cp_installations where instance_id=${f.instance}`)[0].enabled,false);
+  });
+  await t.test('operator transaction failure rolls both profile and installation back',async()=>{
+   const f=await provisionFixture();await assert.rejects(admin.begin(async tx=>{
+    await tx`select cinevault_private.cp_provision_installation(${PROJECT_REF},${f.owner},${f.instance},'Owner')`;
+    throw Error('synthetic-operator-rollback');
+   }),/synthetic-operator-rollback/);
+   assert.equal((await admin`select count(*)::int n from public.profiles where id=${f.owner}`)[0].n,0);
+   assert.equal((await admin`select count(*)::int n from cinevault_private.cp_installations where instance_id=${f.instance}`)[0].n,0);
+  });
+  await t.test('enabled dedicated login has no provisioning/direct table powers; SET ROLE reaches only broker allowlist',async()=>{
+   const f=await provisionFixture();
+   await assert.rejects(client`select cinevault_private.cp_provision_installation(${PROJECT_REF},${f.owner},${f.instance},'Owner')`,e=>e.code==='42501');
+   await assert.rejects(client.unsafe('select * from public.profiles'),e=>e.code==='42501');
+   await assert.rejects(client.begin(async tx=>{await tx.unsafe('set local role cv_control_broker');
+    await tx`select cinevault_private.cp_provision_installation(${PROJECT_REF},${f.owner},${f.instance},'Owner')`;
+   }),e=>e.code==='42501');
+   assert.equal((await client`select current_user u`)[0].u,'cv_control_broker_login');
+   assert.equal((await admin`select count(*)::int n from public.profiles where id=${f.owner}`)[0].n,0);
+   // A missing installation is a valid false result, not a permission error.
+   assert.equal(await database.transaction(tx=>tx.call('admit',['register',f.instance])),false);
+  });
   async function fixture() {
    const owner=crypto.randomUUID(),session=crypto.randomUUID(),state=initialState(PROJECT_REF,crypto.randomUUID(),Date.now());
    const {request,approvalProof}=pairingRequest(state);
