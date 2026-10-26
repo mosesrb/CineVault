@@ -17,6 +17,8 @@ node_modules/
 # Keystores & Android Local Secrets
 *.keystore
 *.jks
+*.p12
+*.pfx
 local.properties
 .gradle/
 **/build/
@@ -65,6 +67,7 @@ project-status.md
 docs/*.md
 docs/**/*.md
 !docs/CONTROL_PLANE_PROVISIONING.md
+!docs/RELEASE_CREDENTIAL_ROTATION.md
 !docs/CONTROL_PLANE_SETUP.md
 !docs/CONTROL_PLANE_RECOVERY.md
 docs/archive/
