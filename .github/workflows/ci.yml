@@ -62,6 +62,9 @@ jobs:
     - name: Run Static Analysis
       run: npm run lint
 
+    - name: Verify dependency security backport and Jest resolution
+      run: npm run test:dependency-guards
+
     - name: Run Frontend Tests (Vitest)
       run: npm test --prefix frontend
 

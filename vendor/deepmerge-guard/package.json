@@ -1,0 +1,13 @@
+{
+  "name": "@cinevault/deepmerge-guard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Development-only deepmerge4.3.1 compatibility backport for CVE-2026-93753",
+  "main": "index.js",
+  "license": "MIT",
+  "files": [
+    "index.js",
+    "LICENSE",
+    "README.md"
+  ]
+}

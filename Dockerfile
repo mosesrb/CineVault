@@ -17,6 +17,7 @@ RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
 
 # Install backend dependencies
 COPY package*.json ./
+COPY .npmrc ./
 RUN npm ci --omit=dev
 
 # Copy backend source code
