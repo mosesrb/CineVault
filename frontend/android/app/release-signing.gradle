@@ -1,0 +1,43 @@
+// Configuration gate only. Android's signing task still validates the actual
+// keystore, alias and passwords; the finished artifact needs signature checks.
+def signingValues = [
+    CINEVAULT_KEYSTORE_PATH: System.getenv('CINEVAULT_KEYSTORE_PATH'),
+    CINEVAULT_KEYSTORE_PASSWORD: System.getenv('CINEVAULT_KEYSTORE_PASSWORD'),
+    CINEVAULT_KEY_ALIAS: System.getenv('CINEVAULT_KEY_ALIAS'),
+    CINEVAULT_KEY_PASSWORD: System.getenv('CINEVAULT_KEY_PASSWORD')
+]
+
+def verifyReleaseSigning = tasks.register('verifyCineVaultReleaseSigning') {
+    group = 'verification'
+    description = 'Require explicit signing configuration before release packaging.'
+    doLast {
+        def missing = signingValues.findAll { name, value ->
+            value == null || value.trim().isEmpty()
+        }.keySet()
+        if (!missing.isEmpty()) {
+            throw new GradleException('Release signing is not configured. Set ' +
+                missing.join(', ') + ' in a protected signing session. ' +
+                'See docs/RELEASE_CREDENTIAL_ROTATION.md. Values are not logged.')
+        }
+        def keystore = file(signingValues.CINEVAULT_KEYSTORE_PATH)
+        if (!keystore.isFile() || !keystore.canRead()) {
+            throw new GradleException('Release signing requires a readable keystore file. ' +
+                'Check CINEVAULT_KEYSTORE_PATH privately. Values are not logged.')
+        }
+    }
+}
+
+// Wire each actual release variant, including future product flavors. Do not
+// gate preBuild: CI intentionally checks the release manifest without signing.
+ext.cinevaultRequireReleaseSigning = { String variantName ->
+    def suffix = variantName.substring(0, 1).toUpperCase(java.util.Locale.ROOT) + variantName.substring(1)
+    def packagingTasks = [
+        "validateSigning${suffix}", "package${suffix}", "package${suffix}Bundle",
+        "sign${suffix}Bundle", "assemble${suffix}", "bundle${suffix}", "install${suffix}"
+    ].collect { it.toString() }.toSet()
+    tasks.configureEach { task ->
+        if (packagingTasks.contains(task.name)) {
+            task.dependsOn(verifyReleaseSigning)
+        }
+    }
+}

@@ -129,6 +129,9 @@ jobs:
     - name: Sync Capacitor Android project
       run: cd frontend && npx cap sync android
 
+    - name: Verify release signing configuration guard without credentials
+      run: node scripts/verify_android_release_signing.js
+
     - name: Compile debug app and validate release manifest
       working-directory: frontend/android
       run: |

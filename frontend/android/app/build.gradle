@@ -1,10 +1,13 @@
 apply plugin: 'com.android.application'
+apply from: 'release-signing.gradle'
 
 def releaseKeystorePath = System.getenv('CINEVAULT_KEYSTORE_PATH')
 def releaseStorePassword = System.getenv('CINEVAULT_KEYSTORE_PASSWORD')
 def releaseKeyAlias = System.getenv('CINEVAULT_KEY_ALIAS')
 def releaseKeyPassword = System.getenv('CINEVAULT_KEY_PASSWORD')
-def hasReleaseSigning = releaseKeystorePath && releaseStorePassword && releaseKeyAlias && releaseKeyPassword
+def hasReleaseSigning = [releaseKeystorePath, releaseStorePassword, releaseKeyAlias, releaseKeyPassword].every {
+    it != null && !it.trim().isEmpty()
+}
 
 android {
     namespace = "com.cinevault.app"
@@ -45,6 +48,9 @@ android {
 
     // Rename exported APKs to CineVault
     applicationVariants.all { variant ->
+        if (variant.buildType.name == 'release') {
+            cinevaultRequireReleaseSigning(variant.name)
+        }
         variant.outputs.all { output ->
             def name = "CineVault-${variant.name}-${variant.versionName}.apk"
             outputFileName = name

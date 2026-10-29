@@ -1,8 +1,9 @@
 # Release credentials: owner checklist
 
 This is a preparation checklist. No key/password/token has been created, changed,
-used for signing, revoked or published by preparing it. Current local sign-in,
-installed apps and CI remain unchanged. Account/key operations need the owner's
+used for signing, revoked or published by preparing it. Current local sign-in and
+installed apps remain unchanged. CI tests the signing-configuration guard with
+synthetic files, without release credentials. Account/key operations need the owner's
 approval for the exact target and distribution plan.
 
 ## What the repository establishes
@@ -17,9 +18,16 @@ approval for the exact target and distribution plan.
 - CI assembles debug and processes the release manifest. It does not assemble
   or sign a release, publish npm packages, or reference npm auth/signing secrets.
   A passing debug job is not release-signing evidence.
-- Gradle assigns release signing only when all four values are present. An
-  unsigned release output is possible when configuration is missing. Never infer
-  successful signing from a build exit code or an APK filename.
+- Gradle assigns release signing only when all four values are nonblank. Release
+  APK/bundle packaging and install tasks require those values and a readable
+  keystore file; missing configuration fails the build. Debug and release-manifest
+  checks remain available without production credentials. This configuration
+  guard is not signature verification: Android must validate the key/passwords,
+  then the finished artifact needs independent signature/certificate checks.
+- `node scripts/verify_android_release_signing.js` tests the guard using the real
+  Gradle task graph in an isolated synthetic project. It clears inherited signing
+  values, creates no keys and does not build or sign an APK. Run it with a Java
+  version supported by the pinned wrapper (CI uses Java 21).
 - Local APKs include an older, verifiably signed release file. Its build commit
   and actual distribution are unverified. Public certificate fingerprints can be
   recorded privately; they are not private keys or passwords.
