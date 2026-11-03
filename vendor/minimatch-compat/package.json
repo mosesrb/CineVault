@@ -1,0 +1,11 @@
+{
+  "name": "@cinevault/minimatch-compat",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Callable minimatch interface for CineVault's legacy lint consumers",
+  "main": "index.js",
+  "files": ["index.js", "README.md"],
+  "dependencies": {
+    "minimatch-modern": "npm:minimatch@11.0.1"
+  }
+}
