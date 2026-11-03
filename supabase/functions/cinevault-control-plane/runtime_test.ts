@@ -26,7 +26,7 @@ Deno.test({name:'Deno pinned Postgres.js transaction/role/JSON transport on disp
  assert(typeof port==='string'&&/^[0-9]{4,5}$/.test(port)&&Number(port)>1024&&Number(port)<=65535)
  // Explicit synthetic identity/password; the runner permits only the pinned
  // driver's named PG option reads, never arbitrary environment access.
- const sql=postgres({host:'127.0.0.1',port:Number(port),database:'postgres',username:'cv_qa_login',password:'synthetic-only',
+ const sql=postgres({host:'127.0.0.1',port:Number(port),database:'postgres',username:'cv_control_broker_login',password:'synthetic-only',
   prepare:false,max:1,connect_timeout:3,ssl:false})
  const adapter=createTransactionAdapter(sql)
  type Transaction={call:(operation:string,args:unknown[])=>Promise<unknown>}
