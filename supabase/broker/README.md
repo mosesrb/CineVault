@@ -1,17 +1,16 @@
-# Hosted broker preparation — not deployed
+# Hosted broker database and runtime
 
 This directory implements the narrow hosted SQL/HTTP/driver boundary for the
 existing PC transport and trusted owner page. Nothing here is imported by the
-ordinary CineVault server. It is **not commissioned** or a tracked migration;
-the schema requires CLI-generated migration identity after review/qualification.
+ordinary CineVault server. The database schema is deployed. Runtime commissioning
+and owner provisioning are pending.
 Do not deploy the disposable `scripts/prototypes` lab SQL instead.
 
-CLI-created candidate `../migrations/20261026045823_control_plane_broker_commissioning.sql`
-now packages all five preparation sources in one atomic transaction. It remains
-unapplied pending exact hosted approval/current inventory. Catalog parity and
-late-conflict rollback have local SQL coverage. Apply the approved tracked
-candidate once, not the five standalone files again. It leaves the dedicated
-login NOLOGIN/passwordless and deploys no runtime, account or owner binding.
+Migration `../migrations/20261104022207_control_plane_broker_commissioning.sql`
+packages all five sources in one atomic transaction. Supabase recorded this
+version on November 4, 2026. Catalog parity and late-conflict rollback have local
+SQL coverage. Use the tracked migration for fresh environments. The dedicated
+role starts as NOLOGIN and passwordless.
 
 The HTTP API accepts approve/register/heartbeat plus the separate human-approved
 approve-replacement/replace flow described below. Human approval requires

@@ -44,6 +44,9 @@ history; foundation SQL is unchanged from its original `20261004000100` version.
 The hardening file was generated with pinned CLI2.119.0 before deployment, then
 renamed from `20261004161210` to the actual hosted version. Do not reapply either
 file to this project; verify remote migration history before any future CLI push.
+The broker database migration was also applied through MCP. Its filename uses
+the hosted version `20261104022207`; the SQL is identical to the reviewed
+candidate originally numbered `20261026045823`.
 
 - Profiles: authenticated users read their own profile, including blocked status.
 - Memberships: unblocked users read only their own assignments; disabled users can

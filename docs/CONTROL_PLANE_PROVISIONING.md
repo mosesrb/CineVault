@@ -1,8 +1,8 @@
 # Cloud owner and installation provisioning
 
-This is a prepared operator workflow, not an enabled account-registration screen.
-`supabase/broker/provisioning.sql` is tested locally and is **not a tracked
-migration or deployed change**. Existing local CineVault sign-in remains in use.
+This operator workflow uses the private provisioning function installed by
+migration `20261104022207_control_plane_broker_commissioning.sql`. Hosted owner
+and installation provisioning is pending.
 
 The Supabase dashboard account and a user in the project's **Authentication →
 Users** list are different identities. Dashboard access alone does not create a
@@ -25,9 +25,8 @@ password, service-role key, broker database password or the owner's refresh toke
 3. Independently confirm the installation's permanent UUID from local ADMIN
    setup. Public `/api/v1/identity` is identification, not proof of ownership.
    Confirm the project is `uouydbapluktfrylligo`. Review the current hosted schema,
-   migration history, role privileges and security advisors before applying the
-   CLI-created, reviewed migration. The local candidate is
-   `20261026045823_control_plane_broker_commissioning.sql`, not yet applied.
+   migration history, role privileges and security advisors. Confirm that hosted
+   history contains version `20261104022207` before provisioning.
 4. In the trusted operator's bounded transaction, invoke the private function
    using parameterized values: `cp_provision_installation(project, owner UUID,
    installation UUID, display name)`. Use `cinevault_private` as its explicit
@@ -50,7 +49,7 @@ reviving expired/revoked operational credentials.
 
 ## Dedicated hosted database login
 
-The prepared SQL creates `cv_control_broker_login` **NOLOGIN**, with no password,
+The hosted migration created `cv_control_broker_login` **NOLOGIN**, with no password,
 no automatic inherited broker privileges, no superuser/role/database creation,
 replication or RLS bypass, and a four-connection cap. Its sole membership permits
 explicit `SET LOCAL ROLE cv_control_broker`, without ADMIN or INHERIT options.

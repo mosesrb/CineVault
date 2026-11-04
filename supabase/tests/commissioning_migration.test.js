@@ -3,7 +3,7 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),fs=requir
 const {PGlite}=require('@electric-sql/pglite');
 const inputs=['schema.sql','admission.sql','replacement.sql','restoration.sql','provisioning.sql'];
 const read=name=>fs.readFileSync(path.join(__dirname,name),'utf8').replaceAll('\r\n','\n');
-const migration=()=>read('../migrations/20261026045823_control_plane_broker_commissioning.sql');
+const migration=()=>read('../migrations/20261104022207_control_plane_broker_commissioning.sql');
 async function fixture(){
  const db=await PGlite.create();try{
   await db.exec(read('bootstrap.sql'));
