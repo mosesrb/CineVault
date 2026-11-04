@@ -77,21 +77,12 @@ maintenance operation instead of changing rows or resetting the local identity.
 
 ## Remaining commissioning gates
 
-The first proposed hosted step is **database preparation only** in project
-`uouydbapluktfrylligo` (`ap-southeast-2`): apply the CLI-created migration above,
-SHA256 `89db474fbaff9874d33182f53394654e7f5cd9ad58db5a5cc17da7784f131c42`.
-It bundles the existing five broker SQL sources in one transaction. Local tests
-compare the resulting functions, tables, constraints, columns, grants and roles
-with sequential source application, and prove a late role conflict rolls back
-all new objects. Unknown existing role/schema objects must fail rather than be
-adopted or overwritten. Inspect hosted migrations/schema/advisors again when
-the resumed project is ready before applying the approved candidate.
-
-This step creates only private broker objects, quota state and the passwordless
-NOLOGIN role. It does not create an Auth user, bind an installation, enable LOGIN,
-issue a password, deploy a function or page, or enable local cloud integration.
-Those operations require subsequent exact commissioning approval. Never apply
-the five standalone preparation files a second time after this migration.
+Database preparation is complete for project `uouydbapluktfrylligo`
+(`ap-southeast-2`). The hosted migration bundles the five broker SQL sources in
+one transaction and creates the private broker objects, quota state and
+passwordless NOLOGIN role. Its SHA256 is
+`89db474fbaff9874d33182f53394654e7f5cd9ad58db5a5cc17da7784f131c42`.
+Use the tracked migration as the database history record.
 
 Permanent Auth user creation/selection, actual binding and hosted login activation
 have not been performed. Exact free Pages origin, password-vs-PKCE protocol,
