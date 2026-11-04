@@ -1,8 +1,8 @@
 # Cloud owner and installation provisioning
 
 This operator workflow uses the private provisioning function installed by
-migration `20261104022207_control_plane_broker_commissioning.sql`. Hosted owner
-and installation provisioning is pending.
+migration `20261104022207_control_plane_broker_commissioning.sql`. The first
+hosted owner and installation binding has been verified.
 
 The Supabase dashboard account and a user in the project's **Authentication →
 Users** list are different identities. Dashboard access alone does not create a
@@ -84,11 +84,10 @@ passwordless NOLOGIN role. Its SHA256 is
 `89db474fbaff9874d33182f53394654e7f5cd9ad58db5a5cc17da7784f131c42`.
 Use the tracked migration as the database history record.
 
-Permanent Auth user creation/selection, actual binding and hosted login activation
-have not been performed. Exact free Pages origin, password-vs-PKCE protocol,
-credential lifetime/admission policy, CLI migrations/deployment and hosted
-enrollment/activity/outage/pause recovery remain required. No artificial keepalive
-or premium plan is introduced. Device and release qualification are separate.
+Hosted broker login activation, the exact free Pages origin, the owner sign-in
+protocol, credential lifetime and admission policy, and runtime deployment are
+pending. Then verify hosted enrollment, activity reporting, and recovery from
+outages and pauses. Device and release qualification are separate.
 
 References: [Supabase users](https://supabase.com/docs/guides/auth/users),
 [database roles](https://supabase.com/docs/guides/database/postgres/roles),
