@@ -1,9 +1,10 @@
-# Trusted owner approval candidate — not deployed
+# Trusted owner approval page
 
-This directory is a dependency-free static Cloudflare Pages candidate. The owner
-approved preparation, not publishing, account creation, Auth settings or broker
-deployment. Source config has blank public key/origin and denies all sign-in.
-There is no workflow or automatic hosting/push. Pages carries no media/tunnel.
+The approved production page is hosted at
+`https://cinevault-owner-approval.pages.dev`. Its generated configuration uses
+the exact production origin and the Supabase publishable key. The source config
+keeps those fields blank. Hosted broker commissioning and live enrollment
+verification are pending.
 
 The separate exact HTTPS Pages origin keeps owner passwords/Auth tokens outside
 CineVault PC app code. Password Auth goes straight to the fixed Supabase project;
@@ -21,7 +22,7 @@ PKCE**. It avoids OAuth provider/SMTP configuration and automatic user creation,
 matching the current admin-managed password direction. Supabase documents
 [password sign-in](https://supabase.com/docs/reference/javascript/auth-signinwithpassword)
 separately from [PKCE callback exchange](https://supabase.com/docs/guides/auth/sessions/pkce-flow).
-Owner approval of this explicit protocol choice is required before deployment.
+The owner approved this protocol for the exact production Pages origin.
 If OAuth/email links are selected instead, implement/test PKCE + state/nonce +
 exact redirect separately; do not reuse this password implementation as proof.
 
