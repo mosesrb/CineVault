@@ -2,8 +2,9 @@
 
 This directory implements the narrow hosted SQL/HTTP/driver boundary for the
 existing PC transport and trusted owner page. Nothing here is imported by the
-ordinary CineVault server. The database schema is deployed. Runtime commissioning
-and owner provisioning are pending.
+ordinary CineVault server. The database schema and owner binding are in place.
+Supabase Edge Function `cinevault-control-plane` is deployed with broker
+activation pending. The live endpoint returns a disabled response.
 Do not deploy the disposable `scripts/prototypes` lab SQL instead.
 
 Migration `../migrations/20261104022207_control_plane_broker_commissioning.sql`
@@ -53,7 +54,7 @@ guard tests exercise committed profile/session/credential revocation, not every
 privileged Auth cascade/deadlock permutation. Request bodies have a five-second
 side-effect-free read bound; trusted admission/runtime construction is still gated.
 
-The prepared `supabase/functions/cinevault-control-plane` entry composes one
+The `supabase/functions/cinevault-control-plane` entry composes one
 pool/verifier per isolate, exact provider-internal route and the existing guards.
 It requires all five hosted `CV_BROKER_*` configuration values: ENABLED must be
 literal `true`, PROJECT_REF fixed, DATABASE_URL the dedicated hosted pool secret,
