@@ -92,6 +92,8 @@ test('prepared owner verifier + HTTP boundary',async t=>{
   for(const value of [good.replace('6543','5432'),good.replace(PROJECT_REF,'wrong'),good.replace('aws-0-ap-southeast-2.pooler.supabase.com','127.0.0.1'),good+'?sslmode=disable'])
    assert.throws(()=>createDatabase({postgres:factory,databaseUrl:value}));
   createDatabase({postgres:factory,databaseUrl:good});assert.equal(config.options.prepare,false);assert.equal(config.options.max,2);assert.equal(config.options.ssl.rejectUnauthorized,true);
+  const certificate=new crypto.X509Certificate(config.options.ssl.ca);
+  assert.equal(certificate.fingerprint256.replaceAll(':',''),'807025AD50D4ED219D2C9C7D299C004F824EB00CF7F65AFEF607D07B72E6CAFA');
  });
  await t.test('transaction timeout after settled COMMIT is unavailable, not assumed rollback',async()=>{
   let now=Date.now(),committed=false;

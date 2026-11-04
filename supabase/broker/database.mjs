@@ -1,6 +1,7 @@
 import { Buffer } from 'node:buffer'
 import { performance } from 'node:perf_hooks'
 import { BrokerFailure, PROJECT_REF } from './broker.mjs'
+import { poolerCa } from './pooler-ca.mjs'
 const queries = Object.freeze({
   admitRequest: ['select cinevault_private.cp_admit_request() as result',0],
   admit: ['select cinevault_private.cp_admit($1,$2) as result',2],
@@ -23,7 +24,7 @@ export function createDatabase({postgres,databaseUrl,now=Date.now}) {
     !/^aws-\d+-ap-southeast-2\.pooler\.supabase\.com$/.test(url.hostname) || url.port!=='6543' ||
     decodeURIComponent(url.username)!==`cv_control_broker_login.${PROJECT_REF}` || url.password.length<32 ||
     url.pathname!=='/postgres' || url.search || url.hash)throw Error('broker_configuration_invalid')
-  const sql=postgres(databaseUrl,{prepare:false,max:2,ssl:{rejectUnauthorized:true},connect_timeout:5,
+  const sql=postgres(databaseUrl,{prepare:false,max:2,ssl:{ca:poolerCa,rejectUnauthorized:true},connect_timeout:5,
     idle_timeout:20,max_lifetime:60,connection:{application_name:'cinevault-control-plane',
       statement_timeout:'8000',lock_timeout:'2000',idle_in_transaction_session_timeout:'8000',transaction_timeout:'10000'}})
   return createTransactionAdapter(sql,now)

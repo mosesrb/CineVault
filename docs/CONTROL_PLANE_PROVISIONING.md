@@ -65,6 +65,9 @@ ordinary PC environment or evidence. Copy the actual regional pool host from the
 provider Connect dialog; do not guess its cluster index. The runtime requires
 the custom `cv_control_broker_login.uouydbapluktfrylligo` shared-pool username,
 transaction port6543, certificate-verified TLS and prepared statements disabled.
+The broker uses the public CA supplied in the project's Supabase Database
+Settings. An operator using `psql` should use that CA with `sslmode=verify-full`
+on the session pooler and set the dedicated password with `\password`.
 Test actual pool authentication, transaction-local role reset and effective
 permissions before enabling the broker. The disposable loopback fixture uses
 trust authentication and does not qualify production passwords, TLS or Supavisor.
