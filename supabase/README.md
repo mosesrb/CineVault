@@ -47,6 +47,9 @@ file to this project; verify remote migration history before any future CLI push
 The broker database migration was also applied through MCP. Its filename uses
 the hosted version `20261104022207`; the SQL is identical to the reviewed
 candidate originally numbered `20261026045823`.
+The operator commissioning migration `20261105122309_broker_login_activation.sql`
+requires the dedicated SCRAM password to be set privately before application.
+It enables the restricted login after checking its attributes and membership.
 
 - Profiles: authenticated users read their own profile, including blocked status.
 - Memberships: unblocked users read only their own assignments; disabled users can

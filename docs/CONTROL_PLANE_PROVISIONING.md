@@ -57,6 +57,10 @@ The existing broker driver already uses that transaction-local role and its
 allowlisted private functions. The login has no owner-provisioning permission.
 Existing role names cause SQL to fail rather than overwrite an unknown role.
 
+Migration `20261105122309_broker_login_activation.sql` enables LOGIN after
+checking the privately set SCRAM password, restricted attributes and exact
+reviewed membership. It preserves the password and existing grants.
+
 After separate exact approval, a trusted operator must generate a strong dedicated
 password in a secure secret workflow, configure SCRAM authentication, enable LOGIN
 and place only the dedicated connection URL in hosted function secret storage.
