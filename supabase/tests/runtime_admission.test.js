@@ -130,3 +130,19 @@ test('per-isolate admission has no queue and close prevents post-admission conti
  const a=app.handle(req({})),b=app.handle(req({}));await began.promise;const third=await app.handle(req({}));assert.equal(third.status,429);assert.equal(calls,2);
  await app.close();assert.equal(closed,true);release.resolve();assert.equal((await a).status,503);assert.equal((await b).status,503);assert.equal(calls,2);
 });
+
+test('startup diagnostics contain fixed failure codes and never configuration secrets',async t=>{
+ const [{createRuntime}]=await mods;
+ const logged=t.mock.method(console,'error',()=>{});
+ const password='sensitive-fixture-password-never-for-logs';
+ const configuration={...config(),databaseUrl:config().databaseUrl.replace('q'.repeat(32),password)};
+ const app=createRuntime({configuration,postgres:()=>{throw Error(configuration.databaseUrl);}});
+ assert.equal(app.configured,false);
+ assert.equal((await app.handle(req({}))).status,503);
+ assert.deepEqual(logged.mock.calls.map(call=>call.arguments),
+  [['CineVault broker startup rejected','broker_dependency_initialization_failed']]);
+ const short=createRuntime({configuration:{...configuration,databaseUrl:configuration.databaseUrl.replace(password,'short')},postgres:()=>{throw Error('must not construct');}});
+ assert.equal(short.configured,false);
+ assert.deepEqual(logged.mock.calls.at(-1).arguments,
+  ['CineVault broker startup rejected','broker_database_password_policy']);
+});

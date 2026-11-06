@@ -19,11 +19,12 @@ const queries = Object.freeze({
  * Driver is supplied by pinned runtime package, not caller input. */
 export function createDatabase({postgres,databaseUrl,now=Date.now}) {
   let url
-  try {url=new URL(databaseUrl)} catch {throw Error('broker_configuration_invalid')}
+  try {url=new URL(databaseUrl)} catch {throw Error('broker_database_url_invalid')}
   if(typeof postgres!=='function' || url.protocol!=='postgresql:' ||
     !/^aws-\d+-ap-southeast-2\.pooler\.supabase\.com$/.test(url.hostname) || url.port!=='6543' ||
-    decodeURIComponent(url.username)!==`cv_control_broker_login.${PROJECT_REF}` || url.password.length<32 ||
-    url.pathname!=='/postgres' || url.search || url.hash)throw Error('broker_configuration_invalid')
+    decodeURIComponent(url.username)!==`cv_control_broker_login.${PROJECT_REF}` ||
+    url.pathname!=='/postgres' || url.search || url.hash)throw Error('broker_database_target_invalid')
+  if(url.password.length<32)throw Error('broker_database_password_policy')
   const sql=postgres(databaseUrl,{prepare:false,max:2,ssl:{ca:poolerCa,rejectUnauthorized:true},connect_timeout:5,
     idle_timeout:20,max_lifetime:60,connection:{application_name:'cinevault-control-plane',
       statement_timeout:'8000',lock_timeout:'2000',idle_in_transaction_session_timeout:'8000',transaction_timeout:'10000'}})
