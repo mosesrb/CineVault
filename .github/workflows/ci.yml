@@ -65,6 +65,9 @@ jobs:
     - name: Verify dependency security backport and Jest resolution
       run: npm run test:dependency-guards
 
+    - name: Verify read-only identity migration planning
+      run: npm run test:identity-migration
+
     - name: Run Frontend Tests (Vitest)
       run: npm test --prefix frontend
 

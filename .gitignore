@@ -70,6 +70,7 @@ docs/**/*.md
 !docs/RELEASE_CREDENTIAL_ROTATION.md
 !docs/CONTROL_PLANE_SETUP.md
 !docs/CONTROL_PLANE_RECOVERY.md
+!docs/IDENTITY_MIGRATION.md
 docs/archive/
 
 # Internal Temp Media
