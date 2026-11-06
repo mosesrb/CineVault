@@ -1,6 +1,7 @@
 param([switch]$DatabaseOnly)
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'local_tcp_ready.ps1')
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $runtimeRoot = Join-Path $repoRoot 'runtime'
@@ -12,7 +13,7 @@ $nodeExecutable = 'C:\Program Files\nodejs\node.exe'
 New-Item -ItemType Directory -Path $mongoRuntime -Force | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $mongoRuntime 'data') -Force | Out-Null
 
-if (-not (Get-NetTCPConnection -LocalPort 27018 -State Listen -ErrorAction SilentlyContinue)) {
+if (-not (Test-CineVaultTcpPort -Port 27018)) {
     if (-not (Test-Path -LiteralPath $mongoExecutable)) {
         throw "CineVault MongoDB executable is missing: $mongoExecutable"
     }
@@ -25,7 +26,7 @@ if (-not (Get-NetTCPConnection -LocalPort 27018 -State Listen -ErrorAction Silen
     $mongoReady = $false
     for ($attempt = 0; $attempt -lt 20; $attempt++) {
         Start-Sleep -Milliseconds 500
-        if (Get-NetTCPConnection -LocalPort 27018 -State Listen -ErrorAction SilentlyContinue) {
+        if (Test-CineVaultTcpPort -Port 27018) {
             $mongoReady = $true
             break
         }
@@ -39,7 +40,7 @@ if ($DatabaseOnly) {
     return
 }
 
-if (-not (Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue)) {
+if (-not (Test-CineVaultTcpPort -Port 3000)) {
     $serverProcess = Start-Process `
         -FilePath $nodeExecutable `
         -ArgumentList @('index.js') `
@@ -52,7 +53,7 @@ if (-not (Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction Silent
     $serverReady = $false
     for ($attempt = 0; $attempt -lt 90; $attempt++) {
         Start-Sleep -Milliseconds 500
-        if (Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue) {
+        if (Test-CineVaultTcpPort -Port 3000) {
             $serverReady = $true
             break
         }
