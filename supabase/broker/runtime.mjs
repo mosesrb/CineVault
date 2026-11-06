@@ -47,7 +47,8 @@ export function createRuntime({configuration,postgres,fetchImpl=fetch,now=Date.n
     // provider request or successful endpoint. No identity/credentials generated.
     if(configuration?.enabled==='true'){
       const codes=['broker_configuration_invalid','broker_database_url_invalid',
-        'broker_database_target_invalid','broker_database_password_policy']
+        'broker_database_target_invalid','broker_database_password_policy',
+        ...Array.from({length:32},(_,length)=>`broker_database_password_policy_length_${length}`)]
       console.error('CineVault broker startup rejected',
         codes.includes(error?.message)?error.message:'broker_dependency_initialization_failed')
     }

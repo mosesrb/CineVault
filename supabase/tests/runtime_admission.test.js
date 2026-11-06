@@ -144,5 +144,9 @@ test('startup diagnostics contain fixed failure codes and never configuration se
  const short=createRuntime({configuration:{...configuration,databaseUrl:configuration.databaseUrl.replace(password,'short')},postgres:()=>{throw Error('must not construct');}});
  assert.equal(short.configured,false);
  assert.deepEqual(logged.mock.calls.at(-1).arguments,
-  ['CineVault broker startup rejected','broker_database_password_policy']);
+  ['CineVault broker startup rejected','broker_database_password_policy_length_5']);
+ const hostile=createRuntime({configuration,postgres:()=>{throw Error('broker_database_password_policy_length_999_'+password);}});
+ assert.equal(hostile.configured,false);
+ assert.deepEqual(logged.mock.calls.at(-1).arguments,
+  ['CineVault broker startup rejected','broker_dependency_initialization_failed']);
 });
