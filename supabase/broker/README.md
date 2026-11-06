@@ -96,6 +96,15 @@ named PG options plus the synthetic port/loopback, never unrestricted permission
 The node suite adds actual SQL budgets/full composition and the separate driver
 suite races global/per-install counters across real connections.
 
+Hosted Deno 2.1 reports a P-256 key's curve as `p256`; Node reports
+`prime256v1`. The owner verifier accepts this alias only for an actual EC key
+with JWK curve `P-256`, then normalizes metadata for jsonwebtoken's own curve
+check. Signature, issuer, audience and fresh Auth checks remain required.
+Independent Web Crypto fixtures cover valid signatures, wrong keys/curves and
+revoked Auth on modern and hosted-compatible Deno. The v4 compatibility lock
+retains the primary lock's runtime versions/integrity and adds only the older
+runtime's TypeScript declarations. See [Deno 2.1.4 key metadata](https://github.com/denoland/deno/blob/v2.1.4/ext/node/ops/crypto/keys.rs).
+
 Prepared `provisioning.sql` adds operator-only invoker provisioning for a confirmed
 permanent Auth owner and explicitly selected installation, plus a passwordless
 NOLOGIN dedicated role. It is not an account creator or ordinary-client RPC;

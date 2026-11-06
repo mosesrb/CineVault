@@ -12,6 +12,11 @@ function signed() {
   exp:Math.floor(Date.now()/1000)+300,iss:base,aud:'authenticated',...overrides},pair.privateKey,{algorithm:'ES256',keyid:'qa-key'});
  return {key,sign};
 }
+
+test('independent Web Crypto signatures, wrong keys/curves and live Auth denial',async()=>{
+ const {qualifyOwnerCrypto}=await import('./fixtures/owner_crypto.mjs');
+ assert.equal(await qualifyOwnerCrypto(),4);
+});
 test('prepared owner verifier + HTTP boundary',async t=>{
  const [{createOwnerVerifier},{createHandler,BrokerFailure},{createDatabase,createTransactionAdapter}]=await modules;
  const make=(opts={})=>{const keys=signed(),calls=[];let currentUser={id:user,is_anonymous:false};

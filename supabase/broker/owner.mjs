@@ -46,7 +46,16 @@ export function createOwnerVerifier({publishableKey,fetchImpl=fetch,now=Date.now
           !['ES256','RS256'].includes(value.alg)||['d','p','q','dp','dq','qi','oth','k'].some(k=>k in value))fail()
         if(value.key_ops!==undefined&&(!Array.isArray(value.key_ops)||value.key_ops.length!==1||value.key_ops[0]!=='verify'))fail()
         const key=createPublicKey({key:value,format:'jwk'})
-        if(value.alg==='ES256'&&(key.asymmetricKeyType!=='ec'||key.asymmetricKeyDetails.namedCurve!=='prime256v1'))fail()
+        if(value.alg==='ES256'){
+          const details=key.asymmetricKeyDetails
+          if(value.kty!=='EC'||value.crv!=='P-256'||key.asymmetricKeyType!=='ec'||
+            !['prime256v1','p256'].includes(details?.namedCurve))fail()
+          // Deno 2.1 (hosted Edge Runtime) names the same verified P-256 key
+          // "p256". jsonwebtoken expects Node's name for its own curve check.
+          // Normalize only that metadata; keep the actual key and signature checks.
+          if(details.namedCurve==='p256')Object.defineProperty(key,'asymmetricKeyDetails',{
+            value:Object.freeze({...details,namedCurve:'prime256v1'})})
+        }
         if(value.alg==='RS256'&&(key.asymmetricKeyType!=='rsa'||key.asymmetricKeyDetails.modulusLength<2048||key.asymmetricKeyDetails.modulusLength>4096))fail()
         next.set(value.kid,{key,algorithm:value.alg})
       }

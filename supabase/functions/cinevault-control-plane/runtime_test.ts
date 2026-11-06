@@ -5,6 +5,7 @@ import {generateKeyPairSync,randomUUID} from 'node:crypto'
 import {createRuntime} from '../../broker/runtime.mjs'
 import {createOwnerVerifier} from '../../broker/owner.mjs'
 import {createTransactionAdapter} from '../../broker/database.mjs'
+import {qualifyOwnerCrypto} from '../../tests/fixtures/owner_crypto.mjs'
 const assert=(value:unknown)=>{if(!value)throw Error('qualification_failed')}
 
 Deno.test('Deno loads the pinned modules and disabled runtime makes no network/database calls',async()=>{
@@ -20,6 +21,9 @@ Deno.test('Deno Node crypto/JWT and WebCrypto verify fixed-project asymmetric ow
  const verify=createOwnerVerifier({publishableKey:'sb_publishable_'+'q'.repeat(32),fetchImpl:async(input:RequestInfo|URL)=>
   Response.json(String(input).endsWith('/jwks.json')?{keys:[key]}:{id:user,is_anonymous:false})})
  const result=await verify(token);assert(result?.userId===user&&result?.sessionId===session)
+})
+Deno.test('Deno independent Web Crypto verifies owner and rejects wrong key/curve/revocation',async()=>{
+ assert(await qualifyOwnerCrypto()===4)
 })
 const port=Deno.env.get('CV_QA_POSTGRES_PORT')
 Deno.test({name:'Deno pinned Postgres.js transaction/role/JSON transport on disposable loopback fixture',ignore:!port,fn:async()=>{

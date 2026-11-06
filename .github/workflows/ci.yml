@@ -89,6 +89,14 @@ jobs:
         deno audit --lock supabase/functions/cinevault-control-plane/deno.lock
         deno test --frozen --config supabase/functions/cinevault-control-plane/deno.json --allow-env=CV_QA_POSTGRES_PORT,PGAPPNAME,PGSSLNEGOTIATION,PGIDLE_TIMEOUT,PGMAX_LIFETIME,PGMAX_PIPELINE,PGBACKOFF,PGKEEP_ALIVE,PGDEBUG,PGFETCH_TYPES,PGPUBLICATIONS,PGTARGET_SESSION_ATTRS,PGTARGETSESSIONATTRS --allow-net=127.0.0.1 supabase/functions/cinevault-control-plane/runtime_test.ts
 
+    - name: Use Hosted-Compatible Deno Crypto Runtime
+      uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+      with:
+        deno-version: '2.1.4'
+
+    - name: Qualify Hosted-Compatible Owner Crypto
+      run: deno test --frozen --config supabase/functions/cinevault-control-plane/deno.json --lock=supabase/functions/cinevault-control-plane/deno.compat.lock --allow-env=CV_QA_POSTGRES_PORT --filter 'independent Web Crypto' supabase/functions/cinevault-control-plane/runtime_test.ts
+
     - name: Build Frontend
       run: npm run build --prefix frontend
 
