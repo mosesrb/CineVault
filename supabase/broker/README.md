@@ -3,8 +3,10 @@
 This directory implements the narrow hosted SQL/HTTP/driver boundary for the
 existing PC transport and trusted owner page. Nothing here is imported by the
 ordinary CineVault server. The database schema and owner binding are in place.
-Supabase Edge Function `cinevault-control-plane` is deployed with broker
-activation pending. The live endpoint returns a disabled response.
+Supabase Edge Function `cinevault-control-plane` is deployed and activation is
+enabled. Live commissioning remains in progress. A generic HTTP 503 can indicate
+startup configuration rejection or an unavailable dependency; activation alone
+does not establish successful database authentication or enrollment.
 Do not deploy the disposable `scripts/prototypes` lab SQL instead.
 
 Migration `../migrations/20261104022207_control_plane_broker_commissioning.sql`
@@ -40,6 +42,13 @@ Supavisor transaction pool and dedicated login; TLS verifies certificates,
 prepare=false/max2, bounded connect/statement/lock/transaction timeouts. Transaction
 errors settle rollback, with no implicit retry or Promise.race around writes.
 Late/lost COMMIT response is uncertain; replay the same durable operation.
+
+Enabled startup failures log only an allowlisted diagnostic code. Neither the
+connection URI, dependency exception text nor credentials are logged or returned.
+The saved URI's password field must contain at least 32 characters. If the actual
+broker password already meets this requirement, correct only the saved URI.
+Otherwise set a longer dedicated broker password privately and save the matching
+URI. Do not change the project database administrator password for this check.
 
 `npm test --prefix supabase/tests` includes synthetic signed-JWT/HTTP and actual
 PostgreSQL/WASM cases. Separately, `CV_QA_POSTGRES_PORT=<temporary loopback port>
