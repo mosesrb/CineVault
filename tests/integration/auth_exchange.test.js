@@ -114,6 +114,7 @@ describe('Supabase session exchange through the application', () => {
             user = undefined;
         }
         if (owner) {
+            await Session.deleteMany({ userId: owner._id });
             await User.deleteOne({ _id: owner._id });
             owner = undefined;
         }
@@ -233,6 +234,37 @@ describe('Supabase session exchange through the application', () => {
             const stream = await request(app).get('/api/v1/stream').set('Host', 'localhost')
                 .query({ path: vaultPath, token: ticket.body.ticket });
             expect(stream.status).toBe(401);
+        } finally {
+            await Movie.deleteOne({ _id: movie._id });
+        }
+    });
+
+    test('administrator sign-out rejects stale Supabase sessions and tickets while permitting a fresh exchange', async () => {
+        mockCloud();
+        owner = await User.create({ email: `admin-${randomUUID()}@test.invalid`, name: 'Local administrator',
+            password: 'fixture-password', isApproved: true, isAdmin: true });
+        const adminToken = owner.generateAuthToken();
+        await Session.create({ userId: owner._id, token: adminToken });
+        const first = await exchange();
+        expect(first.status).toBe(200);
+        const path = randomUUID() + '.mp4';
+        const movie = await Movie.create({ title: 'Revocation fixture', year: 2026, vaultPath: path });
+        try {
+            const issued = await request(app).post('/api/v1/stream/ticket').set('Host', 'localhost')
+                .set('x-auth-token', first.body.token).send({ path });
+            expect(issued.status).toBe(200);
+            const revoke = await request(app).post(`/api/v1/users/${user._id}/revoke-sessions`).set('Host', 'localhost')
+                .set('x-auth-token', adminToken);
+            expect(revoke.status).toBe(204);
+            await Session.create({ userId: user._id, token: first.body.token });
+            const profile = token => request(app).get('/api/v1/users/me').set('Host', 'localhost').set('x-auth-token', token);
+            expect((await profile(first.body.token)).status).toBe(401);
+            const stream = await request(app).get('/api/v1/stream').set('Host', 'localhost')
+                .query({ path, token: issued.body.ticket });
+            expect(stream.status).toBe(401);
+            const fresh = await exchange();
+            expect(fresh.status).toBe(200);
+            expect((await profile(fresh.body.token)).status).toBe(200);
         } finally {
             await Movie.deleteOne({ _id: movie._id });
         }

@@ -156,6 +156,7 @@ router.post('/ticket', auth, async (req, res) => {
                 mediaId: resource.mediaId,
                 iat: now,
                 exp: expiresAt,
+                sessionGeneration: req.user.sessionGeneration,
                 ...(req.auth.cloudBinding && {
                     cloudBinding: req.auth.cloudBinding,
                     parentSessionId: String(req.auth.sessionId)

@@ -9,7 +9,7 @@ router.post('/', async (req, res) => {
     const { error } = validateLogin(req.body);
     if (error) return res.status(400).send(error.details[0].message);
 
-    const user = await User.findOne({ email: req.body.email });
+    const user = await User.findOne({ email: req.body.email }).select('+sessionGeneration');
     if (!user) return res.status(401).send('Invalid email or password.');
 
     const validPassword = await bcrypt.compare(req.body.password, user.password);
@@ -29,9 +29,10 @@ router.post('/', async (req, res) => {
                 : `Your account has been permanently banned. Reason: ${user.banReason || 'N/A'}`;
             return res.status(403).send(msg);
         }
-        // Temp ban expired — lift it automatically
-        user.isBanned = false;
-        user.banExpiresAt = null;
+        // Clear only the expired ban observed by this login.
+        await User.updateOne({ _id: user._id, isBanned: true, banExpiresAt: user.banExpiresAt,
+            sessionGeneration: user.sessionGeneration ?? { $exists: false } },
+        { $set: { isBanned: false, banExpiresAt: null } });
     }
 
     user.lastLoginAt = new Date();

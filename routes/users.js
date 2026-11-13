@@ -1,4 +1,6 @@
 const express = require('express');
+const { randomUUID } = require('node:crypto');
+const Joi = require('joi');
 const router = express.Router();
 
 const auth = require('../middleware/auth');
@@ -10,7 +12,28 @@ const { Movie } = require('../models/movie');
 const { TVShow } = require('../models/tvShow');
 const { Genre } = require('../models/genre');
 const { authorizeMediaReference, ContentAccessError } = require('../services/contentPolicyService');
-const { createSessionForRequest, revokeUserSessions } = require('../services/sessionService');
+const { createSessionForRequest, revokeUserSessions, deleteSessionGeneration } = require('../services/sessionService');
+const { readServerIdentity } = require('../services/serverIdentityService');
+const { isLinkedUser } = require('../services/identityMigrationPlan');
+const { rollbackIdentityLink } = require('../services/identityMigrationApply');
+const { UUID, matches } = require('../services/controlPlane/protocol');
+
+const privateIdentity = '-supabaseUserId -authSchemaVersion -identityMigration -identityLinkBackup';
+const resetPasswordSchema = Joi.object({ password: Joi.string().min(5).max(72, 'utf8').required() }).required();
+
+async function rotateUserSessions(filter, update = {}) {
+    // Stale login requests can finish after the write, but their tokens still carry the old generation.
+    const previous = await User.findOneAndUpdate(filter, {
+        $set: { ...update, sessionGeneration: randomUUID() }
+    }).select('_id +sessionGeneration');
+    if (previous) await deleteSessionGeneration(previous);
+    return previous;
+}
+
+async function missingManagedUser(id, res) {
+    if (await User.exists({ _id: id, isAdmin: true })) return res.status(403).send('Cannot manage access for an administrator here.');
+    return res.status(404).send('User not found.');
+}
 
 async function authorizeReference(req, res, mediaType, mediaId, episodeId = null) {
     try {
@@ -71,7 +94,7 @@ router.post('/register', async (req, res) => {
 // ─── GET /api/users/me — Current user profile ─────────────────
 router.get('/me', auth, async (req, res) => {
     const user = await User.findById(req.user._id)
-        .select('-password')
+        .select(`-password ${privateIdentity}`)
         .populate('allowedGenres', 'name slug');
     
     if (!user) return res.status(404).send('User not found.');
@@ -160,15 +183,18 @@ router.put('/me/profile', auth, async (req, res) => {
     const update = {};
     if (req.body.name) update.name = req.body.name;
     if (req.body.profilePicUrl !== undefined) update.profilePicUrl = req.body.profilePicUrl;
-    if (req.body.password) update.password = await hashPassword(req.body.password);
+    if (req.body.password) {
+        update.password = await hashPassword(req.body.password);
+        const previous = await rotateUserSessions({ _id: req.user._id }, update);
+        if (!previous) return res.status(404).send('User not found.');
+        return res.send(await User.findById(previous._id).select(`-password ${privateIdentity}`));
+    }
 
     const user = await User.findByIdAndUpdate(
         req.user._id,
         { $set: update },
         { new: true }
-    ).select('-password');
-
-    if (req.body.password) await revokeUserSessions(req.user._id);
+    ).select(`-password ${privateIdentity}`);
 
     res.send(user);
 });
@@ -286,14 +312,24 @@ router.post('/me/history', auth, async (req, res) => {
 
 // GET /api/users — List all users
 router.get('/', [auth, admin], async (req, res) => {
-    const users = await User.find().select('-password').populate('allowedGenres', 'name slug');
-    res.send(users);
+    const users = await User.find().select('-password').populate('allowedGenres', 'name slug').lean();
+    const installation = users.some(user => user.authSchemaVersion === 2) ? await readServerIdentity() : null;
+    res.set('Cache-Control', 'no-store');
+    res.send(users.map(({ supabaseUserId, authSchemaVersion, identityMigration, identityLinkBackup, ...user }) => {
+        const cloudLinked = Boolean(installation && isLinkedUser({ supabaseUserId, authSchemaVersion, identityMigration }, installation.serverId));
+        const generation = identityLinkBackup?.generation;
+        return {
+            ...user,
+            cloudLinked,
+            cloudLinkGeneration: cloudLinked && !user.isAdmin && matches(UUID, generation) ? generation : undefined
+        };
+    }));
 });
 
 // GET /api/users/:id
 router.get('/:id', [auth, admin, validateObjectId], async (req, res) => {
     const user = await User.findById(req.params.id)
-        .select('-password')
+        .select(`-password ${privateIdentity}`)
         .populate('allowedGenres', 'name slug');
     if (!user) return res.status(404).send('User not found.');
     res.send(user);
@@ -303,6 +339,7 @@ router.get('/:id', [auth, admin, validateObjectId], async (req, res) => {
 router.post('/', [auth, admin], async (req, res) => {
     const { error } = validateUser(req.body);
     if (error) return res.status(400).send(error.details[0].message);
+    if (Buffer.byteLength(req.body.password, 'utf8') > 72) return res.status(400).send('Password must fit within 72 UTF-8 bytes.');
 
     const exists = await User.findOne({ email: req.body.email });
     if (exists) return res.status(409).send('Email already in use.');
@@ -316,8 +353,49 @@ router.post('/', [auth, admin], async (req, res) => {
         isApproved: true // Admin-created users are auto-approved
     });
 
-    await user.save();
+    try {
+        await user.save();
+    } catch (error) {
+        if (error.code === 11000) return res.status(409).send('Email already in use.');
+        throw error;
+    }
     res.status(201).send({ _id: user._id, name: user.name, email: user.email });
+});
+
+router.put('/:id/password', [auth, admin, validateObjectId], async (req, res) => {
+    const { error, value } = resetPasswordSchema.validate(req.body);
+    if (error) return res.status(400).send(error.details[0].message);
+
+    const password = await hashPassword(value.password);
+    const user = await rotateUserSessions({ _id: req.params.id, isAdmin: { $ne: true } }, { password });
+    if (!user) return missingManagedUser(req.params.id, res);
+    res.sendStatus(204);
+});
+
+router.post('/:id/revoke-sessions', [auth, admin, validateObjectId], async (req, res) => {
+    const user = await rotateUserSessions({ _id: req.params.id, isAdmin: { $ne: true } });
+    if (!user) return missingManagedUser(req.params.id, res);
+    res.sendStatus(204);
+});
+
+router.delete('/:id/cloud-link/:generation', [auth, admin, validateObjectId], async (req, res) => {
+    const { id, generation } = req.params;
+    if (!matches(UUID, generation)) return res.sendStatus(400);
+    const user = await User.findById(id).select('isAdmin identityLinkBackup').lean();
+    if (!user || user.isAdmin) return missingManagedUser(id, res);
+    const backup = user.identityLinkBackup;
+    if (backup?.generation !== generation || !matches(UUID, backup.operationId)) {
+        return res.status(409).send('Cloud link changed. Refresh the user list before trying again.');
+    }
+    const { serverId } = await readServerIdentity();
+    try {
+        await rollbackIdentityLink({ db: User.db.db, serverInstanceId: serverId, localUserId: String(user._id),
+            operationId: backup.operationId, generation, standardUserOnly: true });
+    } catch (error) {
+        if (error.message !== 'rollback_conflict' && error.message !== 'wrong_installation') throw error;
+        return res.status(409).send('Cloud link changed. Refresh the user list before trying again.');
+    }
+    res.sendStatus(204);
 });
 
 // PUT /api/users/:id — Admin updates user
@@ -328,18 +406,19 @@ router.put('/:id', [auth, admin, validateObjectId], async (req, res) => {
     const update = {};
     if (req.body.name) update.name = req.body.name;
     if (req.body.isAdmin !== undefined) update.isAdmin = req.body.isAdmin;
+    if (req.body.password && resetPasswordSchema.validate({ password: req.body.password }).error) {
+        return res.status(400).send('Password must be at least 5 characters and fit within 72 UTF-8 bytes.');
+    }
     if (req.body.password) update.password = await hashPassword(req.body.password);
     if (req.body.isApproved !== undefined) update.isApproved = req.body.isApproved;
 
-    const updated = await User.findByIdAndUpdate(
-        req.params.id,
-        { $set: update },
-        { new: true }
-    ).select('-password');
+    const publicFields = `-password ${privateIdentity}`;
     if (req.body.isAdmin !== undefined || req.body.password || req.body.isApproved !== undefined) {
-        await revokeUserSessions(req.params.id);
+        const previous = await rotateUserSessions({ _id: user._id }, update);
+        if (!previous) return res.status(404).send('User not found.');
+        return res.send(await User.findById(user._id).select(publicFields));
     }
-    res.send(updated);
+    res.send(await User.findByIdAndUpdate(user._id, { $set: update }, { new: true }).select(publicFields));
 });
 
 // DELETE /api/users/:id — Admin deletes user
@@ -354,23 +433,14 @@ router.delete('/:id', [auth, admin, validateObjectId], async (req, res) => {
 // Body: { ban: true, reason: "...", expiresAt: "2026-12-31" }
 // Body: { ban: false }  to lift ban
 router.put('/:id/ban', [auth, admin, validateObjectId], async (req, res) => {
-    const user = await User.findById(req.params.id);
-    if (!user) return res.status(404).send('User not found.');
-    if (user.isAdmin) return res.status(403).send('Cannot ban an admin account.');
-
-    if (req.body.ban === false) {
-        user.isBanned = false;
-        user.banExpiresAt = null;
-        user.banReason = '';
-    } else {
-        user.isBanned = true;
-        user.banReason = req.body.reason || '';
-        user.banExpiresAt = req.body.expiresAt ? new Date(req.body.expiresAt) : null;
-    }
-
-    await user.save();
-    if (req.body.ban !== false) await revokeUserSessions(user._id);
-    res.send({ _id: user._id, isBanned: user.isBanned, banExpiresAt: user.banExpiresAt });
+    const isBanned = req.body.ban !== false;
+    const banExpiresAt = isBanned && req.body.expiresAt ? new Date(req.body.expiresAt) : null;
+    if (banExpiresAt && !Number.isFinite(banExpiresAt.getTime())) return res.status(400).send('Invalid ban expiration.');
+    const filter = { _id: req.params.id, isAdmin: { $ne: true } };
+    const update = { isBanned, banExpiresAt, banReason: isBanned ? req.body.reason || '' : '' };
+    const user = isBanned ? await rotateUserSessions(filter, update) : await User.findOneAndUpdate(filter, { $set: update });
+    if (!user) return missingManagedUser(req.params.id, res);
+    res.send({ _id: user._id, isBanned, banExpiresAt });
 });
 
 // ─── PUT /api/users/:id/genres — Admin sets genre restrictions ─
@@ -395,14 +465,11 @@ router.put('/:id/genres', [auth, admin, validateObjectId], async (req, res) => {
 
 // ─── PUT /api/users/:id/approve — Admin approves user ─────────
 router.put('/:id/approve', [auth, admin, validateObjectId], async (req, res) => {
-    const user = await User.findById(req.params.id);
-    if (!user) return res.status(404).send('User not found.');
-
-    user.isApproved = req.body.approve !== false; // Default to true
-    await user.save();
-    await revokeUserSessions(user._id);
-
-    res.send({ _id: user._id, isApproved: user.isApproved });
+    const { approve = true } = req.body || {};
+    if (typeof approve !== 'boolean') return res.status(400).send('approve must be a boolean.');
+    const user = await rotateUserSessions({ _id: req.params.id, isAdmin: { $ne: true } }, { isApproved: approve });
+    if (!user) return missingManagedUser(req.params.id, res);
+    res.send({ _id: user._id, isApproved: approve });
 });
 
 module.exports = router;

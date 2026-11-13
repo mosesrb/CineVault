@@ -24,7 +24,7 @@ function isCurrentlyBanned(user) {
 
 async function loadAuthoritativeUser(userId) {
     const user = await User.findById(userId)
-        .select('_id isAdmin isApproved isBanned banExpiresAt allowedGenres');
+        .select('_id isAdmin isApproved isBanned banExpiresAt allowedGenres +sessionGeneration');
     if (!user) return { status: 401, message: 'User account no longer exists.' };
     if (!user.isApproved) return { status: 403, message: 'User account is not approved.' };
     if (isCurrentlyBanned(user)) return { status: 403, message: 'User account is suspended.' };
@@ -87,6 +87,9 @@ module.exports = async function (req, res, next) {
             }
             const current = await loadAuthoritativeUser(decoded._id);
             if (!current.user) return res.status(current.status).send(current.message);
+            if (current.user.sessionGeneration !== decoded.sessionGeneration) {
+                return res.status(401).send('Session has been revoked or expired.');
+            }
             req.user = current.user;
             req.auth = {
                 kind: 'stream-ticket',
@@ -126,6 +129,9 @@ module.exports = async function (req, res, next) {
             return res.status(403).send('Download access denied.');
         }
         if (!current.user) return res.status(current.status).send(current.message);
+        if (current.user.sessionGeneration !== decoded.sessionGeneration) {
+            return res.status(401).send('Session has been revoked or expired.');
+        }
 
         let changed = false;
         if (!session.tokenDigest || session.token) {

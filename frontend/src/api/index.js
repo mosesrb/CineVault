@@ -57,7 +57,7 @@ api.interceptors.response.use(
     if (res.config.cloudSession && res.data && 'isAdmin' in Object(res.data)) {
       res.data = { ...res.data, isAdmin: false }
     }
-    if (res.config.method === 'get' && !res.config.cloudSession) {
+    if (res.config.method === 'get' && !res.config.cloudSession && !res.config.liveOnly) {
       const url = axios.getUri(res.config)
       OfflineCacheService.setCache(url, res.data).catch(console.error)
     }
@@ -80,7 +80,7 @@ api.interceptors.response.use(
       window.dispatchEvent(new CustomEvent('cv_server_status', { detail: { online: false } }));
 
       // If it's a GET request, try searching the cache
-      if (config.method === 'get') {
+      if (config.method === 'get' && !config.liveOnly) {
         const url = axios.getUri(config);
         const cachedData = await OfflineCacheService.getCache(url);
         if (cachedData) {
@@ -195,7 +195,7 @@ export const removeFromWatchlist = mediaId =>
   api.delete(`/users/me/watchlist/${mediaId}`)
 export const saveProgress     = data => api.post('/users/me/history', data)
 
-export const getUsers         = () => api.get('/users')
+export const getUsers         = () => api.get('/users', { liveOnly: true })
 export const getUser          = id => api.get(`/users/${id}`)
 export const createUser       = data => api.post('/users', data)
 export const updateUser       = (id, data) => api.put(`/users/${id}`, data)
@@ -203,6 +203,9 @@ export const deleteUser       = id => api.delete(`/users/${id}`)
 export const banUser          = (id, data) => api.put(`/users/${id}/ban`, data)
 export const setUserGenres    = (id, genreIds) => api.put(`/users/${id}/genres`, { genreIds })
 export const approveUser      = (id, approve = true) => api.put(`/users/${id}/approve`, { approve })
+export const resetUserPassword = (id, password) => api.put(`/users/${id}/password`, { password })
+export const revokeUserSessions = id => api.post(`/users/${id}/revoke-sessions`)
+export const unlinkUser = (id, generation) => api.delete(`/users/${id}/cloud-link/${generation}`)
 
 // ── Admin Sessions ─────────────────────────────────────────────
 export const getSessions      = () => api.get('/admin/sessions')

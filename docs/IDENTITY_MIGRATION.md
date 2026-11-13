@@ -103,6 +103,21 @@ session administration.
 The pilot covers ordinary account and media access. Administrator routes
 and local password changes require a legacy CineVault session during the pilot.
 
+### Administrator account controls
+
+Open **Administration → Users** with a local administrator account. You can
+create an approved standard local account, enable or disable access, reset a
+local password, or sign a user out of all devices. Reset, disable and sign-out
+invalidate previously issued CineVault sessions and media tickets for that user.
+Sign-out allows a new login when the account is enabled. An administrator can
+also remove a supported Supabase link from the account's **Manage** panel. That
+removes cloud-backed CineVault access for the current link and preserves the
+local account and its data.
+
+Provision Supabase accounts and memberships separately. Apply new links through
+the reviewed explicit-ID procedure below. The local password controls apply to
+the CineVault password. Supabase passwords are managed in Supabase.
+
 ### Apply and roll back one account link
 
 Review a manifest with exactly one explicit local/cloud account pair. Run

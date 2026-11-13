@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const Joi = require('joi');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const { randomUUID } = require('node:crypto');
 
 const watchlistItemSchema = new mongoose.Schema({
     mediaId: { type: mongoose.Schema.Types.ObjectId, required: true },
@@ -43,6 +44,7 @@ const userSchema = new mongoose.Schema({
     },
     isAdmin: { type: Boolean, default: false },
     isApproved: { type: Boolean, default: false },
+    sessionGeneration: { type: String, select: false },
     profilePicUrl: { type: String, default: '' },
 
     // --- Access Control ---
@@ -64,10 +66,11 @@ const userSchema = new mongoose.Schema({
 
 userSchema.methods.generateAuthToken = function () {
     const token = jwt.sign(
-        { _id: this._id, tokenType: 'access' },
+        { _id: this._id, tokenType: 'access', sessionGeneration: this.sessionGeneration },
         config.get('jwtPrivateKey'),
         {
             expiresIn: '72h',
+            jwtid: randomUUID(),
             issuer: 'cinevault',
             audience: 'cinevault-api'
         }

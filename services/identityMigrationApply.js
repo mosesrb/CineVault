@@ -94,7 +94,7 @@ async function readIdentityLinkReceipt(options) {
         operationId: options.operationId, generation: user.identityLinkBackup.generation };
 }
 
-async function rollbackIdentityLink({ db, serverInstanceId, localUserId, operationId, generation }) {
+async function rollbackIdentityLink({ db, serverInstanceId, localUserId, operationId, generation, standardUserOnly = false }) {
     const user = await readAppliedLink({ db, serverInstanceId, localUserId, operationId });
     const backup = user.identityLinkBackup;
     requireCondition(backup.generation === generation, 'rollback_conflict');
@@ -106,6 +106,7 @@ async function rollbackIdentityLink({ db, serverInstanceId, localUserId, operati
     else $set.supabaseUserId = null;
     const result = await db.collection('users').updateOne({
         _id: user._id,
+        ...(standardUserOnly && { isAdmin: { $ne: true } }),
         $expr: { $and: [
             exactField('authSchemaVersion', 2),
             exactField('supabaseUserId', user.supabaseUserId),

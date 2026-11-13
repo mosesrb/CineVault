@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { getUsers, banUser, setUserGenres, deleteUser, getGenres, approveUser } from '../../api'
-import { Settings, Ban, Tag, Check, ChevronUp, Users, Trash2, ShieldCheck, AlertCircle, Clock, ChevronLeft } from 'lucide-react'
+import { getUsers, banUser, setUserGenres, deleteUser, getGenres, approveUser, createUser, resetUserPassword, revokeUserSessions, unlinkUser } from '../../api'
+import { Settings, Ban, Tag, Check, ChevronUp, Users, Trash2, ChevronLeft } from 'lucide-react'
+
+const emptyAccount = { name: '', email: '', password: '' }
 
 export default function AdminUsers() {
   const [users, setUsers]   = useState([])
@@ -10,11 +12,17 @@ export default function AdminUsers() {
   const [search, setSearch] = useState('')
   const [expanded, setExpanded] = useState(null)
   const [banForm, setBanForm]   = useState({ reason: '', expiresAt: '' })
+  const [creating, setCreating] = useState(false)
+  const [account, setAccount] = useState(emptyAccount)
+  const [password, setPassword] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [feedback, setFeedback] = useState(null)
 
   useEffect(() => {
-    Promise.all([getUsers(), getGenres()])
-      .then(([uRes, gRes]) => { setUsers(uRes.data); setGenres(gRes.data) })
+    getUsers().then(({ data }) => setUsers(data))
+      .catch(() => setFeedback({ error: true, message: 'Could not load users.' }))
       .finally(() => setLoading(false))
+    getGenres().then(({ data }) => setGenres(data)).catch(() => {})
   }, [])
 
   const filtered = users.filter(u =>
@@ -42,9 +50,53 @@ export default function AdminUsers() {
     setUsers(us => us.filter(u => u._id !== id))
   }
 
-  async function handleApprove(userId) {
-    const r = await approveUser(userId, true)
-    setUsers(us => us.map(u => u._id === userId ? { ...u, isApproved: r.data.isApproved } : u))
+  async function manageAccount(action, message) {
+    setBusy(true)
+    setFeedback(null)
+    try {
+      await action()
+      setFeedback({ message })
+    } catch (error) {
+      const detail = error.response?.data
+      setFeedback({ error: true, message: error.response?.status < 500 && typeof detail === 'string'
+        ? detail : 'Could not complete the account change. Refresh the user list before retrying.' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleCreate(event) {
+    event.preventDefault()
+    await manageAccount(async () => {
+      const { data } = await createUser({ ...account, name: account.name.trim(), email: account.email.trim() })
+      setUsers(current => [...current, { ...data, isApproved: true }])
+      setCreating(false)
+    }, 'Local account created.')
+    setAccount(current => ({ ...current, password: '' }))
+  }
+
+  function handleAccess(user, approve) {
+    if (!approve && !confirm(`Disable access for ${user.name} and sign them out?`)) return
+    return manageAccount(async () => {
+      const { data } = await approveUser(user._id, approve)
+      setUsers(current => current.map(row => row._id === user._id ? { ...row, isApproved: data.isApproved } : row))
+    }, approve ? 'Access enabled.' : 'Access disabled and sessions revoked.')
+  }
+
+  async function handleReset(event, user) {
+    event.preventDefault()
+    if (!confirm(`Reset the local password for ${user.name} and sign them out?`)) return
+    await manageAccount(() => resetUserPassword(user._id, password), 'Local password reset and sessions revoked.')
+    setPassword('')
+  }
+
+  function handleUnlink(user) {
+    if (!confirm(`Remove Supabase sign-in for ${user.name} on this server?`)) return
+    return manageAccount(async () => {
+      await unlinkUser(user._id, user.cloudLinkGeneration)
+      setUsers(current => current.map(row => row._id === user._id
+        ? { ...row, cloudLinked: false, cloudLinkGeneration: undefined } : row))
+    }, 'Supabase sign-in removed from this account.')
   }
 
   return (
@@ -64,7 +116,30 @@ export default function AdminUsers() {
           onChange={e => setSearch(e.target.value)}
           style={{width:240}}
         />
+        <button className="btn btn-primary btn-sm" disabled={busy || loading} aria-expanded={creating}
+          onClick={() => { setCreating(!creating); setAccount(emptyAccount) }}>
+          {creating ? 'Cancel' : 'Create local account'}
+        </button>
       </div>
+
+      {feedback && <p role={feedback.error ? 'alert' : 'status'}>{feedback.message}</p>}
+      {creating && (
+        <form className="card" onSubmit={handleCreate} style={{padding:'var(--sp-4)', marginBottom:'var(--sp-4)'}}>
+          <label className="field">Name
+            <input className="input" autoComplete="off" required minLength={2} maxLength={255} value={account.name}
+              onChange={event => setAccount({ ...account, name: event.target.value })} />
+          </label>
+          <label className="field">Email
+            <input className="input" type="email" autoComplete="off" required maxLength={255} value={account.email}
+              onChange={event => setAccount({ ...account, email: event.target.value })} />
+          </label>
+          <label className="field">Initial local password
+            <input className="input" type="password" autoComplete="new-password" required minLength={5} maxLength={72}
+              value={account.password} onChange={event => setAccount({ ...account, password: event.target.value })} />
+          </label>
+          <button className="btn btn-primary btn-sm" disabled={busy}>Create account</button>
+        </form>
+      )}
 
       {loading
         ? <div className="loading-center"><div className="spinner"/></div>
@@ -96,9 +171,10 @@ export default function AdminUsers() {
                       {u.isAdmin && <span className="badge badge-accent">Admin</span>}
                       {u.isApproved === false && (
                         <span className="badge" style={{background:'rgba(245,158,11,0.15)', color:'#f59e0b', border:'1px solid rgba(245,158,11,0.3)'}}>
-                          Pending
+                          Access disabled
                         </span>
                       )}
+                      {u.cloudLinked && <span className="badge badge-muted">Supabase linked</span>}
                       {u.isBanned && (
                         <span className="badge badge-danger">
                           Banned{u.banExpiresAt ? ` until ${new Date(u.banExpiresAt).toLocaleDateString()}` : ' (perma)'}
@@ -115,20 +191,23 @@ export default function AdminUsers() {
 
                   {/* Actions */}
                   <div style={{display:'flex', gap:'var(--sp-2)', alignItems: 'center', marginLeft: 'auto'}}>
-                    {!u.isApproved && (
+                    {!u.isAdmin && u.isApproved === false && (
                       <button
                         className="btn btn-primary btn-sm"
-                        onClick={() => handleApprove(u._id)}
+                        disabled={busy}
+                        onClick={() => handleAccess(u, true)}
                       >
-                        <Check size={14} /> Approve
+                        <Check size={14} /> Enable access
                       </button>
                     )}
-                    <button
+                    {!u.isAdmin && <button
                       className="btn btn-ghost btn-sm"
-                      onClick={() => setExpanded(expanded === u._id ? null : u._id)}
+                      disabled={busy}
+                      aria-expanded={expanded === u._id}
+                      onClick={() => { setExpanded(expanded === u._id ? null : u._id); setPassword('') }}
                     >
                       {expanded === u._id ? <><ChevronUp size={14} /> Close</> : <><Settings size={14} /> Manage</>}
-                    </button>
+                    </button>}
                     {!u.isAdmin && (
                       <button
                         className="btn btn-danger btn-sm"
@@ -143,6 +222,24 @@ export default function AdminUsers() {
                 {/* ── Expanded controls ── */}
                 {expanded === u._id && !u.isAdmin && (
                   <div style={{marginTop:'var(--sp-5)', display:'flex', flexDirection:'column', gap:'var(--sp-6)', paddingTop:'var(--sp-4)', borderTop:'1px solid var(--border)'}}>
+                    <div style={{display:'flex', flexWrap:'wrap', gap:'var(--sp-2)'}}>
+                      {u.isApproved && <button className="btn btn-danger btn-sm" disabled={busy}
+                        onClick={() => handleAccess(u, false)}>Disable access</button>}
+                      <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => {
+                        if (confirm(`Sign ${u.name} out of all CineVault sessions?`)) {
+                          manageAccount(() => revokeUserSessions(u._id), 'CineVault sessions revoked.')
+                        }
+                      }}>Sign out all devices</button>
+                      {u.cloudLinkGeneration && <button className="btn btn-ghost btn-sm" disabled={busy}
+                        onClick={() => handleUnlink(u)}>Remove Supabase link</button>}
+                    </div>
+                    <form onSubmit={event => handleReset(event, u)}>
+                      <label className="field">New local password
+                        <input className="input" type="password" autoComplete="new-password" required minLength={5} maxLength={72}
+                          value={password} onChange={event => setPassword(event.target.value)} />
+                      </label>
+                      <button className="btn btn-ghost btn-sm" disabled={busy}>Reset local password</button>
+                    </form>
 
                     {/* Ban / Unban */}
                     <div>

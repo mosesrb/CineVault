@@ -64,7 +64,8 @@ router.post('/', async (req, res) => {
         const expiresAt = Math.min(now + sessionLifetimeSeconds, cloud.expiresAt);
         if (expiresAt <= now) return res.sendStatus(401);
         const token = jwt.sign({
-            _id: String(link._id), tokenType: 'access', cloudBinding, iat: now, exp: expiresAt
+            _id: String(link._id), tokenType: 'access', cloudBinding, iat: now, exp: expiresAt,
+            sessionGeneration: current.user.sessionGeneration
         }, config.get('jwtPrivateKey'), {
             algorithm: 'HS256', issuer: 'cinevault', audience: 'cinevault-api', jwtid: randomUUID()
         });

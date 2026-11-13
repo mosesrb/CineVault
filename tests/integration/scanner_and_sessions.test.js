@@ -1,4 +1,7 @@
 const request = require('supertest');
+const { randomUUID } = require('node:crypto');
+const { ensureServerIdentity } = require('../../services/serverIdentityService');
+const { MIGRATION_ID } = require('../../services/identityMigrationPlan');
 const { parseFilename } = require('../../services/scannerService');
 const { ensureGenres } = require('../../services/genreService');
 const { Genre } = require('../../models/genre');
@@ -8,6 +11,7 @@ let app;
 let adminToken;
 let userToken;
 let adminUser;
+let regularUser;
 
 describe('Phase 4: Scanner, Genres & Admin Sessions', () => {
     beforeEach(async () => {
@@ -27,7 +31,7 @@ describe('Phase 4: Scanner, Genres & Admin Sessions', () => {
         adminToken = adminUser.generateAuthToken();
         await new Session({ userId: adminUser._id, token: adminToken, ip: '127.0.0.1' }).save();
 
-        const regularUser = new User({
+        regularUser = new User({
             name: 'Regular Joe',
             email: 'joe@test.com',
             password: 'password123',
@@ -43,6 +47,69 @@ describe('Phase 4: Scanner, Genres & Admin Sessions', () => {
         await Genre.deleteMany({});
         await User.deleteMany({});
         await Session.deleteMany({});
+    });
+
+    describe('Administrator account access', () => {
+        const profile = '/api/v1/users/me';
+        const users = '/api/v1/users';
+        const auth = '/api/v1/auth';
+
+        it('creates a local account, resets its password and signs out existing sessions', async () => {
+            const account = { name: 'New Viewer', email: 'viewer@test.com', password: 'original-password' };
+            expect((await request(app).post(users).set('x-auth-token', userToken).send(account)).status).toBe(403);
+            const created = await request(app).post(users).set('x-auth-token', adminToken).send(account);
+            expect(created.status).toBe(201);
+            expect(created.body).not.toHaveProperty('password');
+            const credentials = { email: account.email, password: account.password };
+            const original = await request(app).post(auth).send(credentials);
+            expect(original.status).toBe(200);
+            const reset = `${users}/${created.body._id}/password`;
+            expect((await request(app).put(reset).set('x-auth-token', adminToken).send({ password: 'é'.repeat(37) })).status).toBe(400);
+            expect((await request(app).put(reset).set('x-auth-token', adminToken).send({ password: 'replacement-password' })).status).toBe(204);
+            expect((await request(app).get(profile).set('x-auth-token', original.body.token)).status).toBe(401);
+            expect((await request(app).post(auth).send(credentials)).status).toBe(401);
+            const updated = await request(app).post(auth).send({ ...credentials, password: 'replacement-password' });
+            expect(updated.status).toBe(200);
+            expect((await request(app).get(profile).set('x-auth-token', updated.body.token)).status).toBe(200);
+            expect((await request(app).get(profile).set('x-auth-token', userToken)).status).toBe(200);
+        });
+
+        it('keeps stale sessions invalid across a disable and re-enable, including a session saved after rotation', async () => {
+            const access = `${users}/${regularUser._id}/approve`;
+            const revoke = `${users}/${regularUser._id}/revoke-sessions`;
+            expect((await request(app).post(revoke).set('x-auth-token', userToken)).status).toBe(403);
+            expect((await request(app).post(`${users}/${adminUser._id}/revoke-sessions`).set('x-auth-token', adminToken)).status).toBe(403);
+            expect((await request(app).put(access).set('x-auth-token', adminToken).send({ approve: false })).status).toBe(200);
+            expect((await request(app).put(access).set('x-auth-token', adminToken).send({ approve: true })).status).toBe(200);
+            await new Session({ userId: regularUser._id, token: userToken }).save();
+            expect((await request(app).get(profile).set('x-auth-token', userToken)).status).toBe(401);
+            expect((await request(app).post(revoke).set('x-auth-token', adminToken)).status).toBe(204);
+            expect((await request(app).get(profile).set('x-auth-token', adminToken)).status).toBe(200);
+        });
+
+        it('shows a linked account without exposing cloud identity data and only removes the requested generation', async () => {
+            const { serverId } = await ensureServerIdentity();
+            const generation = randomUUID();
+            const supabaseUserId = randomUUID();
+            await User.collection.updateOne({ _id: regularUser._id }, { $set: {
+                supabaseUserId, authSchemaVersion: 2,
+                identityMigration: { id: MIGRATION_ID, version: 1, serverInstanceId: serverId },
+                identityLinkBackup: { operationId: randomUUID(), generation, appliedSubject: supabaseUserId,
+                    versionWasMissing: true, subjectWasMissing: true }
+            } });
+            const list = await request(app).get(users).set('x-auth-token', adminToken);
+            expect(list.status).toBe(200);
+            const target = list.body.find(user => user._id === String(regularUser._id));
+            expect(target).toMatchObject({ cloudLinked: true, cloudLinkGeneration: generation });
+            expect(target).not.toHaveProperty('supabaseUserId');
+            expect(target).not.toHaveProperty('identityLinkBackup');
+            const unlink = `${users}/${regularUser._id}/cloud-link`;
+            expect((await request(app).delete(`${unlink}/${randomUUID()}`).set('x-auth-token', adminToken)).status).toBe(409);
+            expect((await request(app).delete(`${unlink}/${generation}`).set('x-auth-token', adminToken)).status).toBe(204);
+            const unlinked = await User.collection.findOne({ _id: regularUser._id });
+            expect(unlinked).not.toHaveProperty('supabaseUserId');
+            expect((await request(app).get(profile).set('x-auth-token', userToken)).status).toBe(200);
+        });
     });
 
     describe('Scanner Service Title Normalization', () => {

@@ -27,6 +27,7 @@ const sessionSchema = new mongoose.Schema({
         index: true,
         select: false
     },
+    sessionGeneration: { type: String, select: false },
     ip: String,
     userAgent: String,
     device: {

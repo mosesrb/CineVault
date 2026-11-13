@@ -16,6 +16,7 @@ async function createSessionForRequest(user, token, req) {
     return new Session({
         userId: user._id,
         token,
+        sessionGeneration: user.sessionGeneration,
         ip: requestIp(req),
         userAgent,
         device: {
@@ -31,4 +32,8 @@ async function revokeUserSessions(userId) {
     return result.deletedCount;
 }
 
-module.exports = { createSessionForRequest, revokeUserSessions, requestIp };
+async function deleteSessionGeneration(user) {
+    await Session.deleteMany({ userId: user._id, sessionGeneration: user.sessionGeneration ?? { $exists: false } });
+}
+
+module.exports = { createSessionForRequest, revokeUserSessions, deleteSessionGeneration, requestIp };
