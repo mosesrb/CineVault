@@ -9,6 +9,10 @@ export default defineConfig({
     host: true,
     allowedHosts: 'all', // Support dynamic cloudflare tunnel URLs
     proxy: {
+      '/api/v1/auth/exchange': {
+        target: 'http://127.0.0.1:3000',
+        xfwd: true
+      },
       // Cloud administration binds CSRF to the PC browser's exact Host/Origin.
       '/api/v1/admin/control-plane': {
         target: 'http://localhost:3000',

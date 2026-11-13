@@ -15,7 +15,7 @@ import './Profile.css'
 const isCapacitor = typeof window !== 'undefined' && !!(window.Capacitor?.isNativePlatform?.())
 
 export default function Profile() {
-  const { user, setUser } = useAuth()
+  const { user, setUser, cloudSession } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const activeTab = searchParams.get('tab') || 'profile'
 
@@ -251,6 +251,7 @@ export default function Profile() {
                 </div>
               )}
 
+              {!cloudSession && <>
               <hr style={{borderColor:'var(--border)', margin:'var(--sp-4) 0'}} />
               <p className="text-sm text-muted" style={{marginBottom:'var(--sp-4)'}}>Leave password fields blank to keep existing password.</p>
 
@@ -263,12 +264,14 @@ export default function Profile() {
                 <label htmlFor="ppwc">Confirm Password</label>
                 <input id="ppwc" type="password" className="input" placeholder="Repeat new password" value={confirm} onChange={e => setConfirm(e.target.value)} />
               </div>
+              </>}
 
               <button type="submit" className="btn btn-primary" disabled={saving}>
                 {saving ? 'Saving…' : 'Save Changes'}
               </button>
             </form>
 
+            {!cloudSession && <>
             {/* Server Configuration — for Android/Cloudflare Tunnel */}
             <hr style={{borderColor:'var(--border)', margin:'var(--sp-8) 0 var(--sp-6)'}} />
             <h3 style={{marginBottom:'var(--sp-2)', fontSize:'var(--fs-base)', display:'flex', alignItems:'center', gap:'8px'}}>
@@ -315,6 +318,7 @@ export default function Profile() {
                 Currently using: <strong>{localStorage.getItem('cv_server_url')}</strong>
               </p>
             )}
+            </>}
 
             {/* Offline Cache Management */}
             <hr style={{borderColor:'var(--border)', margin:'var(--sp-8) 0 var(--sp-6)'}} />

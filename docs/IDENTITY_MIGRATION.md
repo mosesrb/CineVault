@@ -75,6 +75,14 @@ An installation can test an existing version 2 link through
 and outside tunnel and reverse proxy forwarding during this test. Use the
 existing control-plane project and publishable key configuration.
 
+For the sign-in screen, build the frontend with `npm run build:frontend`,
+then open the direct backend URL `http://127.0.0.1:3000/login` on the server PC.
+Choose **Supabase account** under **Sign-in method** and use the linked account's
+Supabase credentials. The option appears when the direct backend reports pilot
+availability. The browser keeps the CineVault session in memory for up to five
+minutes. Reloading the page requires sign-in again. Use **Sign out** to end the
+session on the server. A separate CineVault account option supports local sign-in.
+
 Send the Supabase access token in the Authorization bearer header on an
 empty POST. CineVault checks the token with the configured Supabase Auth
 endpoint and reads current membership under the same user's row-level

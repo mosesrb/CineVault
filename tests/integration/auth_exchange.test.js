@@ -51,6 +51,30 @@ describe('Supabase session exchange through the application', () => {
     let owner;
     let token;
 
+    test('exposes only the publishable configuration to the enabled direct listener', async () => {
+        const config = () => request(app).get('/api/v1/auth/exchange/config').set('Host', 'localhost');
+        const direct = await config();
+        expect(direct.body).toEqual({ publishableKey: settings.CV_CONTROL_PLANE_PUBLISHABLE_KEY });
+        expect(direct.headers['cache-control']).toBe('no-store');
+        expect((await config().set('X-Forwarded-Host', 'localhost')).status).toBe(404);
+        delete process.env.CV_AUTH_EXCHANGE_ENABLED;
+        expect((await config()).status).toBe(404);
+    });
+
+    test('signs out only the current cloud-backed local session', async () => {
+        mockCloud();
+        const first = await exchange();
+        const second = await exchange();
+        expect(first.status).toBe(200);
+        expect(second.status).toBe(200);
+        const signOut = await request(app).post('/api/v1/auth/exchange/logout').set('Host', 'localhost')
+            .set('x-auth-token', first.body.token);
+        expect(signOut.status).toBe(204);
+        const profile = token => request(app).get('/api/v1/users/me').set('Host', 'localhost').set('x-auth-token', token);
+        expect((await profile(first.body.token)).status).toBe(401);
+        expect((await profile(second.body.token)).status).toBe(200);
+    });
+
     beforeAll(async () => {
         if (mongoose.connection.name !== 'cinevault_test') throw Error('Isolated test database required');
         ({ serverId } = await ensureServerIdentity());

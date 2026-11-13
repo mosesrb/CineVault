@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { login } from '../api'
 import { getNetworkInfo } from '../api'
 import { useAuth } from '../context/AuthContext'
-import { getMe } from '../api'
+import { cloudSignInError, getCloudSignInConfig, signInWithCloud } from '../api/cloudSignIn'
 import BrandIcon from '../components/BrandIcon'
 import GearIcon from '../components/GearIcon'
 import { Server, Wifi, Check, Trash2, X } from 'lucide-react'
@@ -11,12 +11,20 @@ import { openLegalModal } from '../components/LegalViewerModal'
 import './Login.css'
 
 export default function Login() {
-  const { loginUser } = useAuth()
+  const { loginUser, loginCloudUser } = useAuth()
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [cloudKey, setCloudKey] = useState(null)
+  const [useCloud, setUseCloud] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    getCloudSignInConfig().then(key => { if (active) setCloudKey(key) })
+    return () => { active = false }
+  }, [])
 
   // Server Configuration
   const [showServerConfig, setShowServerConfig] = useState(false)
@@ -29,16 +37,19 @@ export default function Login() {
     setError('')
     setLoading(true)
     try {
-      const { data } = await login(email, password)
-      // Save token first
-      localStorage.setItem('cv_token', data.token)
-
-      // Use user data returned from login instead of calling getMe
-      loginUser(data.token, data.user)
+      if (useCloud) {
+        loginCloudUser(await signInWithCloud(email, password, cloudKey))
+      } else {
+        const { data } = await login(email, password)
+        loginUser(data.token, data.user)
+      }
       navigate('/')
     } catch (err) {
-      setError(err.response?.data || 'Login failed. Please try again.')
+      const message = err.response?.data
+      setError(useCloud ? cloudSignInError(err) :
+        typeof message === 'string' ? message : 'Login failed. Please try again.')
     } finally {
+      if (useCloud) setPassword('')
       setLoading(false)
     }
   }
@@ -254,7 +265,20 @@ export default function Login() {
         )}
 
         <form className="login-form" onSubmit={handleSubmit}>
-          {error && <div className="alert alert-error">{error}</div>}
+          {error && <div className="alert alert-error" role="alert">{error}</div>}
+          {cloudKey && <div className="field">
+            <label htmlFor="sign-in-method">Sign-in method</label>
+            <select id="sign-in-method" className="input" value={useCloud ? 'cloud' : 'local'}
+              disabled={loading} onChange={event => {
+                setUseCloud(event.target.value === 'cloud')
+                setEmail('')
+                setPassword('')
+                setError('')
+              }}>
+              <option value="local">CineVault account</option>
+              <option value="cloud">Supabase account</option>
+            </select>
+          </div>}
 
           <div className="field">
             <label htmlFor="email">Email address</label>
@@ -291,7 +315,7 @@ export default function Login() {
             disabled={loading}
           >
             {loading ? <span className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} /> : null}
-            {loading ? 'Signing in…' : 'Sign In'}
+            {loading ? 'Signing in…' : useCloud ? 'Sign in with Supabase' : 'Sign In'}
           </button>
 
           <div style={{ display: 'flex', alignItems: 'center', margin: 'var(--sp-4) 0' }}>

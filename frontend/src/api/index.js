@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { Network } from '@capacitor/network'
 import { OfflineCacheService } from '../services/OfflineCacheService'
+import { clearCloudSession, getCloudSession } from './cloudSession'
 
 // Dynamic base URL:
 // 1. Check localStorage for a custom server URL (set via in-app Settings)
@@ -35,7 +36,10 @@ const api = axios.create({
 // Attach JWT token to every request
 api.interceptors.request.use(config => {
   config.baseURL = getBaseURL()
-  const token = localStorage.getItem('cv_token')
+  const cloud = getCloudSession()
+  if (cloud && config.legacySyncOnly) throw new Error('Offline sync requires a CineVault account session.')
+  const token = cloud?.token || localStorage.getItem('cv_token')
+  if (cloud) config.cloudSession = true
   if (token) {
     config.headers['x-auth-token'] = token
     config.headers['Authorization'] = `Bearer ${token}`
@@ -46,8 +50,14 @@ api.interceptors.request.use(config => {
 // Auto-logout on 401
 api.interceptors.response.use(
   res => {
+    if (res.config.cloudSession && getCloudSession()?.token !== res.config.headers['x-auth-token']) {
+      return Promise.reject(new Error('Cloud session ended.'))
+    }
     // Cache successful GET responses
-    if (res.config.method === 'get') {
+    if (res.config.cloudSession && res.data && 'isAdmin' in Object(res.data)) {
+      res.data = { ...res.data, isAdmin: false }
+    }
+    if (res.config.method === 'get' && !res.config.cloudSession) {
       const url = axios.getUri(res.config)
       OfflineCacheService.setCache(url, res.data).catch(console.error)
     }
@@ -57,6 +67,12 @@ api.interceptors.response.use(
   },
   async err => {
     const config = err.config;
+    if (config?.cloudSession) {
+      if (err.response?.status === 401 && clearCloudSession(config.headers['x-auth-token'])) {
+        window.dispatchEvent(new Event('cv_cloud_session_revoked'))
+      }
+      return Promise.reject(err)
+    }
     
     // If we are offline or the request failed network-wise (e.g. server shut down)
     if (!err.response || err.code === 'ERR_NETWORK' || err.code === 'ECONNABORTED' || err.response?.status >= 502) {

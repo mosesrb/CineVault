@@ -1,5 +1,6 @@
 import { openDB } from 'idb';
 import api from '../api';
+import { getCloudSession } from '../api/cloudSession';
 
 const DB_NAME = 'cinevault-offline';
 const DB_VERSION = 2; // Bumped version for new stores
@@ -80,6 +81,7 @@ export const OfflineCacheService = {
     console.log(`[Sync] Processing queue of ${queue.length} items...`);
 
     for (const item of queue) {
+      if (getCloudSession()) return;
       try {
         // We use the raw axios instance or the exported api to avoid interceptor recursion if any
         await api.post('/users/me/history', {
@@ -88,7 +90,7 @@ export const OfflineCacheService = {
           episodeId: item.episodeId,
           progressSeconds: item.progressSeconds,
           completed: item.completed
-        });
+        }, { legacySyncOnly: true });
         
         // Remove from queue if successful
         await db.delete(SYNC_STORE, item.id);

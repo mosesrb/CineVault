@@ -7,10 +7,30 @@ const { readServerIdentity } = require('../services/serverIdentityService');
 const { verifyCloudMembership, ExchangeFailure } = require('../services/supabaseExchangeAuthority');
 const { findCloudLinkedUser, isLocalExchangeRequest } = require('../services/cloudIdentityLink');
 const { createSessionForRequest } = require('../services/sessionService');
-const { loadAuthoritativeUser } = require('../middleware/auth');
+const auth = require('../middleware/auth');
+const { loadAuthoritativeUser } = auth;
+const { Session } = require('../models/session');
 
 const router = express.Router();
 const sessionLifetimeSeconds = 300;
+
+router.get('/config', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const settings = configuration();
+    if (!isLocalExchangeRequest(req) || settings.mode !== 'ready') return res.sendStatus(404);
+    return res.json({ publishableKey: settings.publishableKey });
+});
+
+router.post('/logout', auth, async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    if (!req.auth?.cloudBinding) return res.sendStatus(403);
+    try {
+        await Session.deleteOne({ _id: req.auth.sessionId, userId: req.user._id });
+        return res.sendStatus(204);
+    } catch {
+        return res.sendStatus(503);
+    }
+});
 
 router.post('/', async (req, res) => {
     res.set('Cache-Control', 'no-store');
