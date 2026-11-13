@@ -11,7 +11,7 @@ async function findCloudLinkedUser(binding) {
     // Read the stored types directly and consider every owner of this subject,
     // including inconsistent rows. A duplicate blocks the exchange.
     const users = await User.collection.find({ supabaseUserId: binding.subject }, {
-        projection: { _id: 1, supabaseUserId: 1, authSchemaVersion: 1, identityMigration: 1 },
+        projection: { _id: 1, supabaseUserId: 1, authSchemaVersion: 1, identityMigration: 1, identityLinkBackup: 1 },
         maxTimeMS: 3000
     }).limit(2).toArray();
     const user = users[0];
@@ -21,7 +21,8 @@ async function findCloudLinkedUser(binding) {
 
 async function matchesCloudLinkedUser(userId, binding) {
     const linkedUser = await findCloudLinkedUser(binding);
-    return linkedUser !== null && String(linkedUser._id) === userId;
+    return linkedUser !== null && String(linkedUser._id) === userId &&
+        linkedUser.identityLinkBackup?.generation === binding.generation;
 }
 
 function isLocalExchangeRequest(req) {

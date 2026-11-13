@@ -35,7 +35,7 @@ async function loadManifest(filePath) {
     } finally { await file.close(); }
 }
 
-async function inspectConfiguredDatabase() {
+async function withConfiguredDatabase(action) {
     if (process.env.NODE_ENV !== 'test') require('../../startup/environment')();
     const config = require('config');
     const { MongoClient } = require('mongoose').mongo;
@@ -44,8 +44,12 @@ async function inspectConfiguredDatabase() {
         socketTimeoutMS: 5000, waitQueueTimeoutMS: 5000, maxPoolSize: 1, retryReads: false, retryWrites: false });
     try {
         await client.connect();
-        return await readIdentityInventory(client.db());
+        return await action(client.db());
     } finally { await client.close(); }
+}
+
+function inspectConfiguredDatabase() {
+    return withConfiguredDatabase(readIdentityInventory);
 }
 
 async function run({ argv = process.argv.slice(2), inspect = inspectConfiguredDatabase,
@@ -70,4 +74,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { run, parseArguments, loadManifest, MAX_MANIFEST_BYTES };
+module.exports = { run, parseArguments, loadManifest, withConfiguredDatabase, MAX_MANIFEST_BYTES };

@@ -46,7 +46,7 @@ existing links and unknown/inconsistent user schema states block the proposal.
 An identical existing supported mapping is reported as `already_linked`.
 
 Local legacy users have absent `authSchemaVersion` (interpreted as version 1).
-The proposed future linked state has `authSchemaVersion: 2`, `supabaseUserId`, and
+The linked state has `authSchemaVersion: 2`, `supabaseUserId`, and
 `identityMigration: { id: "004_supabase_identity_links", version: 1,
 serverInstanceId: "..." }`. This document defines that contract; this preflight
 does not deploy user fields or apply the transition.
@@ -63,12 +63,8 @@ database selection and reads have five-second limits. Reports contain stable
 identity IDs, so keep actual reports private. No report is saved automatically.
 `--apply`, URI arguments and unknown flags are rejected before connecting.
 
-Before any future apply/cutover: verify current cloud identity and enabled server
-membership, review exact local mappings, back up and prove restoration, re-read
-current state with compare-and-set/unique ownership guards, record a durable
-versioned migration result and qualify rollback. Existing role, approval, bans,
-history and watchlist remain local authority. Clearing test users/sessions and
-switching Supabase-primary login require their own concrete execution boundary.
+Before cutover, verify a real account exchange and rehearse rollback. Existing
+roles, approvals, bans, history and watchlists remain under local authority.
 
 ## Local session exchange
 
@@ -99,7 +95,33 @@ session administration.
 The pilot covers ordinary account and media access. Administrator routes
 and local password changes require a legacy CineVault session during the pilot.
 
-Live testing requires a verified stored link and enabled membership.
-The preflight reports candidate links for review. Applying links,
-validating real-account exchange, and switching the sign-in UI are
-subsequent rollout steps.
+### Apply and roll back one account link
+
+Review a manifest with exactly one explicit local/cloud account pair. Run
+the read-only preflight and save its snapshot digest. Confirm the target
+cloud user has enabled membership for this installation. Choose an operation
+UUID and keep it with the manifest and preflight result.
+
+Run the apply command with the target user's fresh Supabase access token
+supplied as raw text on standard input by a private credential source.
+
+```text
+npm run migrate:identity-link-write -- apply <manifest-path> <snapshot-digest> <operation-uuid>
+```
+
+The command verifies the membership with Supabase, rechecks the reviewed
+inventory, and creates the unique subject index. The account update writes
+the link and a minimal before-image together with a journaled write. The
+receipt includes the installation, local account, operation and link
+generation IDs. Keep the receipt for rollback. After interrupted output, use
+the read-only receipt command to recover those IDs before deciding to retry.
+
+```text
+npm run migrate:identity-link-write -- receipt <installation-uuid> <local-user-id> <operation-uuid>
+npm run migrate:identity-link-write -- rollback <installation-uuid> <local-user-id> <operation-uuid> <generation-uuid>
+```
+
+Rollback restores the identity fields for the exact recorded link. It
+preserves unrelated account edits and the uniqueness index. Existing pilot
+sessions and media tickets lose access when their link generation disappears.
+Validate exchange using the linked account before switching the sign-in UI.

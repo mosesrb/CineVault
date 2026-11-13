@@ -21,12 +21,14 @@ function userId(value) {
 function validateManifest(manifest) {
     if (!exactKeys(manifest, ['schemaVersion', 'migrationId', 'serverInstanceId', 'links']) ||
         manifest.schemaVersion !== 1 || manifest.migrationId !== MIGRATION_ID ||
-        !UUID.test(manifest.serverInstanceId) || !Array.isArray(manifest.links) || manifest.links.length > MAX_LINKS) {
+        typeof manifest.serverInstanceId !== 'string' || !UUID.test(manifest.serverInstanceId) ||
+        !Array.isArray(manifest.links) || manifest.links.length > MAX_LINKS) {
         invalid('identity_manifest_invalid');
     }
     for (const link of manifest.links) {
         if (!exactKeys(link, ['localUserId', 'supabaseUserId']) ||
-            !OBJECT_ID.test(link.localUserId) || !UUID.test(link.supabaseUserId)) invalid('identity_manifest_invalid');
+            typeof link.localUserId !== 'string' || !OBJECT_ID.test(link.localUserId) ||
+            typeof link.supabaseUserId !== 'string' || !UUID.test(link.supabaseUserId)) invalid('identity_manifest_invalid');
     }
 }
 

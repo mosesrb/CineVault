@@ -1,7 +1,9 @@
 'use strict';
 
 const { MAX_USERS } = require('./identityMigrationPlan');
-const USER_PROJECTION = Object.freeze({ _id: 1, email: 1, authSchemaVersion: 1, supabaseUserId: 1, identityMigration: 1 });
+const USER_PROJECTION = Object.freeze({
+    _id: 1, email: 1, authSchemaVersion: 1, supabaseUserId: 1, identityMigration: 1, identityLinkBackup: 1
+});
 
 // Native reads deliberately avoid User/Session model imports and automatic
 // Mongoose collection/index creation. This function has no write path.

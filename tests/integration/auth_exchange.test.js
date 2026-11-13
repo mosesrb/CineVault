@@ -11,7 +11,7 @@ const { Movie } = require('../../models/movie');
 const mongoose = require('mongoose');
 
 const base = `https://${PROJECT_REF}.supabase.co`;
-const subject = randomUUID();
+let subject;
 let serverId;
 const { privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
 const settings = {
@@ -23,10 +23,6 @@ const settings = {
     CV_CONTROL_PLANE_ADMIN_ORIGIN: 'http://localhost:5180'
 };
 const original = Object.fromEntries(Object.keys(settings).map(key => [key, process.env[key]]));
-const member = {
-    user_id: subject, enabled: true, download_allowed: false,
-    profile: { id: subject, blocked: false, must_change_password: false }
-};
 
 function cloudToken(overrides = {}) {
     return jwt.sign({
@@ -37,7 +33,10 @@ function cloudToken(overrides = {}) {
 }
 
 function currentMember() {
-    return { ...member, server: { server_instance_id: serverId } };
+    return {
+        user_id: subject, enabled: true, download_allowed: false, server: { server_instance_id: serverId },
+        profile: { id: subject, blocked: false, must_change_password: false }
+    };
 }
 
 function mockCloud(rows = [currentMember()]) {
@@ -65,6 +64,7 @@ describe('Supabase session exchange through the application', () => {
     beforeEach(async () => {
         Object.assign(process.env, settings);
         app = createApp();
+        subject = randomUUID();
         token = cloudToken();
         user = await User.create({
             email: `exchange-${randomUUID()}@test.invalid`, name: 'Exchange fixture', password: 'fixture-password',
@@ -76,7 +76,7 @@ describe('Supabase session exchange through the application', () => {
                 identityMigration: { id: MIGRATION_ID, version: 1, serverInstanceId: serverId }
             }
         });
-    });
+    }, 20000);
 
     afterEach(async () => {
         jest.restoreAllMocks();
@@ -116,7 +116,9 @@ describe('Supabase session exchange through the application', () => {
         const download = await request(app).post('/api/v1/stream/ticket').set('Host', 'localhost')
             .set('x-auth-token', local).send({ path: 'fixture.mp4', operation: 'download' });
         expect(download.status).toBe(403);
-        await User.collection.updateOne({ _id: user._id }, { $unset: { identityMigration: 1 } });
+        await User.collection.updateOne({ _id: user._id }, { $set: { identityLinkBackup: { generation: randomUUID() } } });
+        expect((await getAccount()).status).toBe(401);
+        await User.collection.updateOne({ _id: user._id }, { $unset: { identityMigration: 1, identityLinkBackup: 1 } });
         expect((await getAccount()).status).toBe(401);
         expect(upstream.mock.calls).toHaveLength(2);
     });
@@ -132,7 +134,8 @@ describe('Supabase session exchange through the application', () => {
     });
 
     test('denies a reset-required profile or a mismatched server membership', async () => {
-        const upstream = mockCloud([{ ...currentMember(), profile: { ...member.profile, must_change_password: true } }]);
+        const membership = currentMember();
+        const upstream = mockCloud([{ ...membership, profile: { ...membership.profile, must_change_password: true } }]);
         expect((await exchange()).status).toBe(403);
         upstream.mockRestore();
         mockCloud([{ ...currentMember(), server: { server_instance_id: randomUUID() } }]);
