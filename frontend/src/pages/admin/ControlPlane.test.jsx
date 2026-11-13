@@ -7,19 +7,20 @@ describe('cloud administration page', () => {
   afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
   it('reads live no-store status without shared API cache or custom remote server selection', async () => {
     localStorage.setItem('cv_server_url', 'https://foreign.example'); fetch.mockResolvedValue(response(status))
-    render(<ControlPlane />); await screen.findByText('Status: not_enrolled')
+    render(<ControlPlane />); await screen.findByText('Not enrolled')
     expect(fetch.mock.calls[0][0]).toBe('/api/v1/admin/control-plane')
     expect(fetch.mock.calls[0][1]).toMatchObject({ cache: 'no-store', redirect: 'error', credentials: 'omit' })
   })
   it('keeps all mutation buttons disabled while cloud is disabled', async () => {
     fetch.mockResolvedValue(response({ mode: 'disabled', enabled: false })); render(<ControlPlane />)
-    await screen.findByText('Status: disabled'); for (const button of screen.getAllByRole('button')) expect(button).toBeDisabled()
+    await screen.findByText('Disabled'); for (const button of screen.getAllByRole('button')) expect(button).toBeDisabled()
   })
   it('requires explicit replacement confirmation and sends only same-origin CSRF action', async () => {
     const setup={alreadyEnrolled:false,request:{replacement:{epoch:1}},approvalProof:'replacement-proof',expiresAt:Date.now()+10000}
     fetch.mockResolvedValueOnce(response({...status,mode:'credential_expired'})).mockResolvedValueOnce(response({csrfToken:'replace-csrf'}))
       .mockResolvedValueOnce(response(setup)).mockResolvedValueOnce(response({...status,mode:'awaiting_replacement_owner'}))
-    render(<ControlPlane />); await screen.findByText('Status: credential_expired')
+    render(<ControlPlane />); await screen.findByText('Credential expired')
+    fireEvent.click(screen.getByText('Owner-approved recovery'))
     const button=screen.getByText('Prepare owner recovery'); expect(button).toBeDisabled()
     fireEvent.click(screen.getByRole('checkbox',{name:/I want to prepare/})); fireEvent.click(button)
     await screen.findByDisplayValue('replacement-proof')
@@ -31,7 +32,7 @@ describe('cloud administration page', () => {
     const setup = { alreadyEnrolled: false, request: { pairId: 'synthetic-pair' }, approvalProof: 'synthetic-proof', expiresAt: Date.now() + 10000 }
     fetch.mockResolvedValueOnce(response(status)).mockResolvedValueOnce(response({ csrfToken: 'synthetic-csrf' }))
       .mockResolvedValueOnce(response(setup)).mockResolvedValueOnce(response({ ...status, mode: 'awaiting_owner' }))
-    render(<ControlPlane />); await screen.findByText('Status: not_enrolled'); fireEvent.click(screen.getByText('Prepare one-time setup'))
+    render(<ControlPlane />); await screen.findByText('Not enrolled'); fireEvent.click(screen.getByText('Prepare one-time setup'))
     await screen.findByDisplayValue('synthetic-proof'); expect(fetch.mock.calls[2][1].headers['x-cinevault-csrf']).toBe('synthetic-csrf')
     expect(localStorage.length).toBe(1); expect(localStorage.getItem('cv_token')).toBe('synthetic-local-token')
     expect(fetch.mock.calls.every(([url]) => !url.includes('synthetic-proof'))).toBe(true)
@@ -40,7 +41,8 @@ describe('cloud administration page', () => {
     const setup={alreadyEnrolled:false,request:{pairId:'renewed-pair'},approvalProof:'renewed-proof',expiresAt:Date.now()+10000}
     fetch.mockResolvedValueOnce(response({...status,mode:'pairing_expired'})).mockResolvedValueOnce(response({csrfToken:'renew-csrf'}))
       .mockResolvedValueOnce(response(setup)).mockResolvedValueOnce(response({...status,mode:'awaiting_owner'}))
-    render(<ControlPlane />); await screen.findByText('Status: pairing_expired')
+    render(<ControlPlane />); await screen.findByText('Setup request expired')
+    fireEvent.click(screen.getByText('Owner-approved recovery'))
     const button=screen.getByText('Prepare owner recovery'); expect(button).toBeDisabled()
     fireEvent.click(screen.getByRole('checkbox',{name:/I want to prepare/})); fireEvent.click(button)
     await screen.findByDisplayValue('renewed-proof'); expect(fetch.mock.calls[2][0]).toBe('/api/v1/admin/control-plane/recover')
@@ -63,7 +65,7 @@ describe('cloud administration page', () => {
   it('failed mutation leaves current login untouched and surfaces owner guidance', async () => {
     fetch.mockResolvedValueOnce(response(status)).mockResolvedValueOnce(response({ csrfToken: 'csrf' }))
       .mockResolvedValueOnce(response({ error: 'Owner recovery required' }, false)).mockResolvedValueOnce(response({ ...status, mode: 'conflict' }))
-    render(<ControlPlane />); await screen.findByText('Status: not_enrolled'); fireEvent.click(screen.getByText('Retry cloud recovery'))
+    render(<ControlPlane />); await screen.findByText('Not enrolled'); fireEvent.click(screen.getByText('Retry cloud recovery'))
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Owner recovery required'))
     expect(localStorage.getItem('cv_token')).toBe('synthetic-local-token')
   })
@@ -71,7 +73,10 @@ describe('cloud administration page', () => {
     const setup={alreadyEnrolled:false,request:{recovery:{cloudServerId:'cloud'}},approvalProof:'restore-proof',expiresAt:Date.now()+10000}
     fetch.mockResolvedValueOnce(response({...status,mode:'recovery_required'})).mockResolvedValueOnce(response({csrfToken:'restore-csrf'}))
       .mockResolvedValueOnce(response(setup)).mockResolvedValueOnce(response({...status,mode:'awaiting_restore_owner'}))
-    render(<ControlPlane />); await screen.findByText('Status: recovery_required')
+    render(<ControlPlane />); await screen.findByText('Recovery required')
+    const restoreDetails = screen.getByText('Disaster restore for an existing server')
+    expect(restoreDetails.closest('details')).not.toHaveAttribute('open')
+    fireEvent.click(restoreDetails)
     const button=screen.getByText('Prepare disaster restore'); expect(button).toBeDisabled()
     fireEvent.change(screen.getByLabelText('Confirmed local instance UUID'),{target:{value:'instance'}})
     fireEvent.change(screen.getByLabelText('Existing cloud-server UUID'),{target:{value:'cloud'}});expect(button).toBeDisabled()

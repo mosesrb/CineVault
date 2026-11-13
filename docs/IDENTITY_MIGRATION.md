@@ -120,6 +120,17 @@ the CineVault password. Supabase passwords are managed in Supabase.
 
 ### Apply and roll back one account link
 
+Before a wider migration, stop application writes while taking the MongoDB
+backup with `npm run backup:mongo`. The backup includes private user and session
+records. Keep it in restricted storage. Rehearse `npm run restore:mongo` with
+`--source`, `--uri` and `--database` against an empty isolated target. Run the
+dry run first to validate file hashes and document counts, then repeat with
+`--apply`. Compare the restored preflight digest and verify indexes and account
+data before considering a cutover. Use the link-specific rollback below for an
+individual link. A full restore can bring older sessions and authorization
+state back. Before serving a fully restored database, rotate the local JWT
+signing key and invalidate the restored sessions.
+
 Review a manifest with exactly one explicit local/cloud account pair. Run
 the read-only preflight and save its snapshot digest. Confirm the target
 cloud user has enabled membership for this installation. Choose an operation

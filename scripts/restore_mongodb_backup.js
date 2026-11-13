@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
+const { createHash } = require('node:crypto');
 const mongoose = require('mongoose');
 const { EJSON } = require('bson');
 
@@ -9,8 +10,34 @@ function argument(name) {
     return index >= 0 ? process.argv[index + 1] : undefined;
 }
 
+async function verifyBackup(source, manifest) {
+    if (manifest?.format !== 'cinevault-mongodb-ejsonl-v1' || !Array.isArray(manifest.collections)) {
+        throw new Error('Unsupported backup format.');
+    }
+    const seen = new Set();
+    for (const metadata of manifest.collections) {
+        const { name, file, sha256, count } = metadata;
+        const expectedCount = Number(count);
+        if (typeof name !== 'string' || !name || /[\\/:\0]/.test(name) || name.startsWith('system.') ||
+            file !== `${name}.jsonl` || seen.has(name) || !/^[a-f0-9]{64}$/.test(sha256 || '') ||
+            !Number.isSafeInteger(expectedCount) || expectedCount < 0 || !Array.isArray(metadata.indexes)) {
+            throw new Error('Invalid collection metadata.');
+        }
+        seen.add(name);
+        const digest = createHash('sha256');
+        let lines = 0;
+        for await (const chunk of fs.createReadStream(path.join(source, file))) {
+            digest.update(chunk);
+            for (const byte of chunk) if (byte === 10) lines++;
+        }
+        if (digest.digest('hex') !== sha256 || lines !== expectedCount) {
+            throw new Error('Backup checksum or document count did not match.');
+        }
+    }
+}
+
 async function restoreCollection(database, source, metadata) {
-    const collection = database.collection(metadata.name);
+    const collection = await database.createCollection(metadata.name);
     const input = readline.createInterface({
         input: fs.createReadStream(path.join(source, metadata.file), 'utf8'),
         crlfDelay: Infinity
@@ -41,18 +68,17 @@ async function restoreCollection(database, source, metadata) {
 }
 
 async function run() {
-    const source = path.resolve(argument('--source') || '');
+    const sourceArgument = argument('--source');
     const uri = argument('--uri');
     const databaseName = argument('--database');
     const apply = process.argv.includes('--apply');
-    if (!source || !uri || !databaseName) {
+    if (!sourceArgument || !uri || !databaseName) {
         throw new Error('--source, --uri, and --database are required.');
     }
+    const source = path.resolve(sourceArgument);
 
-    const manifest = EJSON.parse(
-        fs.readFileSync(path.join(source, 'manifest.json'), 'utf8'),
-        { relaxed: false }
-    );
+    const manifest = EJSON.parse(fs.readFileSync(path.join(source, 'manifest.json'), 'utf8'));
+    await verifyBackup(source, manifest);
     console.log(`Restore plan: ${manifest.collections.length} collection(s) into ${databaseName}.`);
     if (!apply) {
         console.log('Dry run only. Re-run with --apply after verifying the target is empty.');

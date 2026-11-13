@@ -1,8 +1,15 @@
 const { randomUUID } = require('node:crypto');
+const { execFile } = require('node:child_process');
+const { mkdtemp, appendFile, rm } = require('node:fs/promises');
+const { tmpdir } = require('node:os');
+const path = require('node:path');
+const { promisify } = require('node:util');
 const mongoose = require('mongoose');
 const { applyIdentityLink, rollbackIdentityLink, readIdentityLinkReceipt } = require('../../services/identityMigrationApply');
 const { readIdentityInventory } = require('../../services/identityMigrationInventory');
 const { planIdentityMigration, MIGRATION_ID } = require('../../services/identityMigrationPlan');
+
+const runScript = promisify(execFile);
 
 describe('guarded identity linking on standalone MongoDB', () => {
     let db;
@@ -82,4 +89,47 @@ describe('guarded identity linking on standalone MongoDB', () => {
         await users.updateOne({ _id: local._id }, { $set: { supabaseUserId: randomUUID() } });
         await expect(rollbackIdentityLink({ db, ...applied })).rejects.toThrow('rollback_conflict');
     });
+
+    test('round-trips a pre-link backup and refuses a damaged archive before writing', async () => {
+        const database = 'cinevault_restore_qa_' + randomUUID().replaceAll('-', '');
+        const restore = mongoose.connection.getClient().db(database);
+        const archive = await mkdtemp(path.join(tmpdir(), 'cinevault-restore-qa-'));
+        const uri = process.env.delatron_MONGODB_URI;
+        if (!/^mongodb:\/\/(?:127\.0\.0\.1|localhost):27017\/cinevault_test$/.test(uri || '')) {
+            throw Error('Isolated rehearsal connection required');
+        }
+        const run = (name, args) => runScript(process.execPath, [`scripts/${name}.js`, ...args], { timeout: 12000 });
+        const restoreArgs = ['--source', archive, '--uri', uri, '--database', database];
+        try {
+            const before = await argumentsFor();
+            await users.createIndex({ email: 1 }, { unique: true });
+            await db.createCollection('empty_fixture');
+            await run('backup_mongodb', ['--uri', uri, '--database', db.databaseName, '--output', archive]);
+            const applied = await applyIdentityLink(before);
+            await run('restore_mongodb_backup', restoreArgs);
+            expect(await restore.listCollections().toArray()).toHaveLength(0);
+            await run('restore_mongodb_backup', [...restoreArgs, '--apply']);
+            expect(await restore.collection('users').findOne({ _id: local._id })).toEqual(local);
+            expect(await restore.listCollections({ name: 'empty_fixture' }).hasNext()).toBe(true);
+            expect(await restore.collection('users').indexes()).toEqual(expect.arrayContaining([
+                expect.objectContaining({ name: 'email_1', key: { email: 1 }, unique: true })
+            ]));
+            const restored = planIdentityMigration({ ...await readIdentityInventory(restore), manifest });
+            expect(restored.snapshotDigest).toBe(before.expectedDigest);
+            await expect(run('restore_mongodb_backup', [...restoreArgs, '--apply'])).rejects.toMatchObject({
+                stderr: expect.stringContaining('Target database is not empty')
+            });
+            await rollbackIdentityLink({ db, ...applied });
+            expect(await users.findOne({ _id: local._id })).toEqual(local);
+            await restore.dropDatabase();
+            await appendFile(path.join(archive, 'users.jsonl'), '\n');
+            await expect(run('restore_mongodb_backup', [...restoreArgs, '--apply'])).rejects.toMatchObject({
+                stderr: expect.stringContaining('Backup checksum or document count did not match')
+            });
+            expect(await restore.listCollections().toArray()).toHaveLength(0);
+        } finally {
+            await restore.dropDatabase();
+            await rm(archive, { recursive: true, force: true });
+        }
+    }, 30000);
 });

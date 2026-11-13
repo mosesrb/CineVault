@@ -1,4 +1,11 @@
 import { useEffect, useState } from 'react'
+import './ControlPlane.css'
+
+const statusLabels = {
+  connected: 'Connected', disabled: 'Disabled', not_enrolled: 'Not enrolled', awaiting_owner: 'Awaiting owner approval',
+  pairing_expired: 'Setup request expired', recovery_required: 'Recovery required', conflict: 'Connection conflict',
+  awaiting_restore_owner: 'Awaiting restore approval', credential_expired: 'Credential expired',
+}
 
 // Deliberately bypasses shared GET/offline caches. Setup proofs are ephemeral,
 // never localStorage, URLs, telemetry or offline state. PC same-origin only.
@@ -52,44 +59,60 @@ export default function ControlPlane() {
       try { setStatus(await request()) } catch { /* Keep explicit failure, not cached success. */ }
     } finally { setBusy(false) }
   }
-  return <section className="glass" style={{ padding: 'var(--sp-6)' }}>
-    <h1>Cloud control plane</h1>
-    <p>Use this page in the configured PC browser. Existing local login and media remain unchanged.</p>
-    <p role="status">Status: {status?.mode || 'Loading…'}</p>
-    {status?.guidance && <p>{status.guidance}</p>}
-    {error && <p role="alert">{error}</p>}
-    <p>Setup is opt-in and requires the reviewed hosted broker and trusted cloud-owner approval.
-      Do not paste Supabase secret keys, database passwords or owner login tokens here.</p>
-    <button disabled={busy || !status?.enabled} onClick={() => perform('prepare')}>Prepare one-time setup</button>{' '}
-    <button disabled={busy || !status?.enabled} onClick={() => perform('redeem')}>Check owner approval</button>{' '}
-    <button disabled={busy || !status?.enabled} onClick={() => perform('retry')}>Retry cloud recovery</button>
-    <p>Owner recovery renews an expired saved setup challenge, or prepares credential replacement for an enrolled server.
-      Replacement pauses old cloud activity until you approve the exact saved candidate on the trusted owner page.
-      Server identity and candidate keys are preserved. Use the separately confirmed disaster restore below for lost/damaged state; do not delete it.</p>
-    <label><input type="checkbox" checked={confirmRecovery} disabled={busy || !status?.enabled}
-      onChange={event => setConfirmRecovery(event.target.checked)} />I want to prepare or resume owner-approved recovery.</label>{' '}
-    <button disabled={busy || !status?.enabled || !confirmRecovery} onClick={() => perform('recover')}>Prepare owner recovery</button>
-    <h2>Disaster restore — existing server only</h2>
-    <p>Use only when protected credentials are missing/damaged or ordinary replacement cannot reconcile.
-      Original readable bytes are archived securely, never imported or deleted. Cloud activity pauses.
-      Fresh cloud-owner approval rotates the actual current operational credential; it does not create users or a server.
-      A repeated preparation reuses a live saved restore; after its five-minute expiry a new preparation creates fresh keys.</p>
-    <label>Confirmed local instance UUID<input aria-label="Confirmed local instance UUID" value={restoreInstance}
-      onChange={event=>setRestoreInstance(event.target.value)} maxLength={36} disabled={busy} /></label>
-    <label>Existing cloud-server UUID<input aria-label="Existing cloud-server UUID" value={restoreCloud}
-      onChange={event=>setRestoreCloud(event.target.value)} maxLength={36} disabled={busy} /></label>
-    <label><input aria-label="Confirm disaster restore" type="checkbox" checked={confirmRestore} disabled={busy || !status?.enabled}
-      onChange={event=>setConfirmRestore(event.target.checked)} />I verified both identifiers and authorize preparing a new owner-approved operational rotation.</label>
-    <button disabled={busy || !status?.enabled || !confirmRestore || !restoreInstance.trim() || !restoreCloud.trim()}
-      onClick={()=>perform('restore')}>Prepare disaster restore</button>
-    {setup && <div>
+  const disabled = busy || !status?.enabled
+  const statusText = status?.mode ? statusLabels[status.mode] || status.mode.replaceAll('_', ' ') : error ? 'Unavailable' : 'Loading…'
+  return <section className="cloud-status" aria-labelledby="cloud-status-title">
+    <h1 id="cloud-status-title" className="section-heading">Cloud status</h1>
+    <div className="card cloud-status-card">
+      <div className="cloud-status-summary">
+        <h2>Connection</h2>
+        <span role="status" className={`badge ${status?.mode === 'connected' ? 'badge-success' : 'badge-muted'}`}>{statusText}</span>
+      </div>
+      {status?.guidance && <p>{status.guidance}</p>}
+      {status?.mode === 'connected' && <p>Supabase acknowledged this server. Remote playback availability is checked separately.</p>}
+      {error && <p role="alert" className="alert alert-error">{error}</p>}
+    </div>
+    {setup && <section className="card cloud-status-card">
       <h2>Trusted owner approval</h2>
-      <p>Expires: {new Date(setup.expiresAt).toLocaleTimeString()}. Copy this request and proof only
-        to the trusted enrollment page specified in the setup runbook. They do not grant local media access.</p>
-      <label>Pairing request<textarea aria-label="Pairing request" readOnly rows={8} value={JSON.stringify(setup.request, null, 2)} /></label>
-      <label>Approval proof<input aria-label="Approval proof" readOnly value={setup.approvalProof} /></label>
-    </div>}
-    <p>Free projects can pause after inactivity. Recovery is owner-driven; idle keepalive traffic is disabled.
-      “Connected” means a cloud acknowledgment, not verified remote endpoint availability.</p>
+      <p>Expires at {new Date(setup.expiresAt).toLocaleTimeString()}. Copy the request and proof only to the trusted enrollment page in the setup runbook.</p>
+      <label className="field">Pairing request<textarea className="input" readOnly rows={8} value={JSON.stringify(setup.request, null, 2)} /></label>
+      <label className="field">Approval proof<input className="input" readOnly value={setup.approvalProof} /></label>
+    </section>}
+    <section className="card cloud-status-card">
+      <h2>Cloud setup</h2>
+      <p>Use the configured PC browser. Setup requires approval from the cloud owner.</p>
+      <div className="cloud-status-actions">
+        <button className="btn btn-primary btn-sm" disabled={disabled} onClick={() => perform('prepare')}>Prepare one-time setup</button>
+        <button className="btn btn-ghost btn-sm" disabled={disabled} onClick={() => perform('redeem')}>Check owner approval</button>
+      </div>
+    </section>
+    <section className="card cloud-status-card">
+      <h2>Recovery</h2>
+      <p>Free Supabase projects can pause after inactivity. Resume a paused project in Supabase, then retry here.</p>
+      <div className="cloud-status-actions">
+        <button className="btn btn-ghost btn-sm" disabled={disabled} onClick={() => perform('retry')}>Retry cloud recovery</button>
+      </div>
+      <details className="cloud-status-details">
+        <summary>Owner-approved recovery</summary>
+        <p>Renew an expired setup request or prepare a credential replacement. Replacement pauses cloud activity until the owner approves the saved request.</p>
+        <label className="cloud-status-check"><input type="checkbox" checked={confirmRecovery} disabled={disabled}
+          onChange={event => setConfirmRecovery(event.target.checked)} />I want to prepare or resume owner-approved recovery.</label>
+        <button className="btn btn-ghost btn-sm" disabled={disabled || !confirmRecovery} onClick={() => perform('recover')}>Prepare owner recovery</button>
+      </details>
+      <details className="cloud-status-details">
+        <summary>Disaster restore for an existing server</summary>
+        <p>Use this when protected credentials are missing or damaged, or ordinary recovery fails. CineVault archives readable protected state and pauses cloud activity while the owner approves a new credential. A saved restore request expires after five minutes.</p>
+        <div className="cloud-status-fields">
+          <label className="field">Confirmed local instance UUID<input className="input" value={restoreInstance}
+            onChange={event => setRestoreInstance(event.target.value)} maxLength={36} disabled={disabled} /></label>
+          <label className="field">Existing cloud-server UUID<input className="input" value={restoreCloud}
+            onChange={event => setRestoreCloud(event.target.value)} maxLength={36} disabled={disabled} /></label>
+        </div>
+        <label className="cloud-status-check"><input aria-label="Confirm disaster restore" type="checkbox" checked={confirmRestore} disabled={disabled}
+          onChange={event => setConfirmRestore(event.target.checked)} />I verified both server identifiers and authorize preparing a credential replacement.</label>
+        <button className="btn btn-danger btn-sm" disabled={disabled || !confirmRestore || !restoreInstance.trim() || !restoreCloud.trim()}
+          onClick={() => perform('restore')}>Prepare disaster restore</button>
+      </details>
+    </section>
   </section>
 }

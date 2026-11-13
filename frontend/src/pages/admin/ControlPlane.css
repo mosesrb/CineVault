@@ -1,0 +1,44 @@
+.cloud-status {
+  display: grid;
+  gap: var(--sp-4);
+  max-width: 880px;
+}
+
+.cloud-status .section-heading { margin-bottom: 0; }
+
+.cloud-status-card {
+  display: grid;
+  gap: var(--sp-3);
+  padding: clamp(1rem, 3vw, 1.5rem);
+}
+
+.cloud-status-card h2 { font-size: var(--fs-lg); }
+.cloud-status-card p { color: var(--text-secondary); overflow-wrap: anywhere; }
+.cloud-status-card .alert-error { color: var(--danger); }
+
+.cloud-status-summary,
+.cloud-status-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.cloud-status-summary { justify-content: space-between; }
+
+.cloud-status-details {
+  border-top: 1px solid var(--border);
+  padding-top: var(--sp-3);
+}
+
+.cloud-status-details > summary { cursor: pointer; font-weight: 600; }
+.cloud-status-details[open] > :not(summary) { margin-top: var(--sp-3); }
+
+.cloud-status-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  gap: var(--sp-3);
+}
+
+.cloud-status-check { display: flex; align-items: baseline; gap: var(--sp-2); }
+.cloud-status .input { min-width: 0; }
