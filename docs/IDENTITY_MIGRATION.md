@@ -103,6 +103,16 @@ session administration.
 The pilot covers ordinary account and media access. Administrator routes
 and local password changes require a legacy CineVault session during the pilot.
 
+### Before making Supabase the default
+
+- Have a reviewer independently check the identity mapping, session revocation,
+  backup and restore rehearsal, and cutover rollback procedure.
+- Implement and verify sign-in, sign-out and recovery on Android phones,
+  Android TV and browsers connecting from another device. The current pilot
+  is qualified on the server PC's browser.
+- Define and verify the administrator workflow for cloud account creation,
+  membership changes and password resets. Email recovery is deferred.
+
 ### Administrator account controls
 
 Open **Administration → Users** with a local administrator account. You can
