@@ -133,12 +133,17 @@ router.post('/ticket', auth, async (req, res) => {
         if (!['stream', 'download'].includes(requestedOperation)) {
             return res.status(400).send('operation must be stream or download.');
         }
+        if (requestedOperation === 'download' && req.auth.cloudBinding &&
+            req.auth.cloudBinding.downloadAllowed !== true) return res.status(403).send('Download access denied.');
 
         const resource = await authorizeVaultPath(req.user, requestedPath);
         const operations = requestedOperation === 'download'
             ? ['download']
             : ['stream', 'subtitle'];
 
+        const now = Math.floor(Date.now() / 1000);
+        const expiresAt = req.auth.cloudBinding ? Math.min(now + 120, req.auth.expiresAt) : now + 120;
+        if (expiresAt <= now) return res.status(401).send('Session has been revoked or expired.');
         const ticket = jwt.sign(
             {
                 _id: req.user._id,
@@ -148,10 +153,16 @@ router.post('/ticket', auth, async (req, res) => {
                 operations,
                 resourceType: resource.resourceType,
                 resourceId: resource.resourceId,
-                mediaId: resource.mediaId
+                mediaId: resource.mediaId,
+                iat: now,
+                exp: expiresAt,
+                ...(req.auth.cloudBinding && {
+                    cloudBinding: req.auth.cloudBinding,
+                    parentSessionId: String(req.auth.sessionId)
+                })
             },
             config.get('jwtPrivateKey'),
-            { expiresIn: '2m', issuer: 'cinevault', audience: 'cinevault-stream' }
+            { issuer: 'cinevault', audience: 'cinevault-stream' }
         );
         res.json({ ticket });
     } catch (err) {

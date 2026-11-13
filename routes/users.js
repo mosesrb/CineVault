@@ -155,6 +155,7 @@ router.get('/me', auth, async (req, res) => {
 router.put('/me/profile', auth, async (req, res) => {
     const { error } = validateProfileUpdate(req.body);
     if (error) return res.status(400).send(error.details[0].message);
+    if (req.auth.cloudBinding && req.body.password !== undefined) return res.sendStatus(403);
 
     const update = {};
     if (req.body.name) update.name = req.body.name;

@@ -18,7 +18,17 @@ const apiLimiter = rateLimit({
     legacyHeaders: false,
 });
 
+function createExchangeLimiter() {
+    return rateLimit({
+        windowMs: 60 * 1000,
+        max: 10,
+        standardHeaders: true,
+        legacyHeaders: false
+    });
+}
+
 module.exports = {
     authLimiter,
-    apiLimiter
+    apiLimiter,
+    createExchangeLimiter
 };

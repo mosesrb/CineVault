@@ -3,9 +3,10 @@ const helmet = require('helmet');
 const cors = require('cors');
 const path = require('path');
 const error = require('../middleware/error');
-const { authLimiter, apiLimiter } = require('../middleware/rateLimiter');
+const { authLimiter, apiLimiter, createExchangeLimiter } = require('../middleware/rateLimiter');
 // Routes
 const auth = require('../routes/auth');
+const authExchange = require('../routes/auth_exchange');
 const users = require('../routes/users');
 const genres = require('../routes/genres');
 const movies = require('../routes/movies');
@@ -21,7 +22,6 @@ const controlPlane = require('../services/controlPlaneService');
 const { createHealthRouter } = require('./health');
 
 module.exports = function (app) {
-    app.use(express.json());
     app.use('/health', createHealthRouter());
     // Only successful authenticated application work triggers cloud activity.
     // Health probes, anonymous traffic and cloud admin/status polling never do.
@@ -112,6 +112,8 @@ module.exports = function (app) {
     }));
 
     // API routes (Supporting both /api/v1 and legacy /api for older Android APKs)
+    app.use('/api/v1/auth/exchange', createExchangeLimiter(), authExchange);
+    app.use(express.json());
     app.use(['/api/v1/auth', '/api/auth'], authLimiter, auth);
     app.use(['/api/v1/users', '/api/users'], apiLimiter, users);
     app.use(['/api/v1/genres', '/api/genres'], apiLimiter, genres);

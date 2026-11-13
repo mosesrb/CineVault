@@ -4,6 +4,7 @@ const winston = require('winston');
 const { Session, hashSessionToken } = require('../models/session');
 const { User } = require('../models/user');
 const { hashVaultPath } = require('../services/contentPolicyService');
+const { matchesCloudLinkedUser, isLocalExchangeRequest } = require('../services/cloudIdentityLink');
 
 function isPlaybackEndpoint(req) {
     const isStreamRouter = req.baseUrl === '/api/v1/stream' || req.baseUrl === '/api/stream';
@@ -77,6 +78,13 @@ module.exports = async function (req, res, next) {
         if (!validTicket) return res.status(403).send('Stream ticket is not valid for this resource.');
 
         try {
+            if (decoded.cloudBinding !== undefined &&
+                (!isLocalExchangeRequest(req) ||
+                    !/^[a-f0-9]{24}$/.test(decoded.parentSessionId || '') ||
+                    !await Session.exists({ _id: decoded.parentSessionId, userId: decoded._id }) ||
+                    !await matchesCloudLinkedUser(decoded._id, decoded.cloudBinding))) {
+                return res.status(401).send('Session has been revoked or expired.');
+            }
             const current = await loadAuthoritativeUser(decoded._id);
             if (!current.user) return res.status(current.status).send(current.message);
             req.user = current.user;
@@ -106,7 +114,17 @@ module.exports = async function (req, res, next) {
             loadAuthoritativeUser(decoded._id)
         ]);
 
-        if (!session) return res.status(401).send('Session has been revoked or expired.');
+        if (!session || String(session.userId) !== String(decoded._id)) {
+            return res.status(401).send('Session has been revoked or expired.');
+        }
+        if (decoded.cloudBinding !== undefined &&
+            (!isLocalExchangeRequest(req) || !await matchesCloudLinkedUser(decoded._id, decoded.cloudBinding))) {
+            return res.status(401).send('Session has been revoked or expired.');
+        }
+        if (decoded.cloudBinding !== undefined && decoded.cloudBinding.downloadAllowed !== true &&
+            isPlaybackEndpoint(req) && requestedStreamOperation(req) === 'download') {
+            return res.status(403).send('Download access denied.');
+        }
         if (!current.user) return res.status(current.status).send(current.message);
 
         let changed = false;
@@ -138,6 +156,10 @@ module.exports = async function (req, res, next) {
 
         req.user = current.user;
         req.auth = { kind: 'access-token', sessionId: session._id };
+        if (decoded.cloudBinding !== undefined) {
+            req.auth.cloudBinding = decoded.cloudBinding;
+            req.auth.expiresAt = decoded.exp;
+        }
         next();
     } catch (error) {
         winston.error(`Session or identity validation failed: ${error.name || 'authorization store error'}`);

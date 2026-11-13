@@ -30,6 +30,13 @@ function validateManifest(manifest) {
     }
 }
 
+function isLinkedUser(user, serverInstanceId) {
+    const migration = user.identityMigration;
+    return user.authSchemaVersion === 2 && typeof user.supabaseUserId === 'string' && UUID.test(user.supabaseUserId) &&
+        exactKeys(migration, ['id', 'version', 'serverInstanceId']) && migration.id === MIGRATION_ID &&
+        migration.version === 1 && migration.serverInstanceId === serverInstanceId;
+}
+
 /** A proposal is neither cloud ownership proof nor an executable write plan. */
 function planIdentityMigration({ identity, users, manifest = null }) {
     if (!record(identity) || identity._id !== 'primary' || identity.schemaVersion !== 1 || !UUID.test(identity.serverId)) {
@@ -47,9 +54,7 @@ function planIdentityMigration({ identity, users, manifest = null }) {
         const version = user.authSchemaVersion === undefined ? 1 : user.authSchemaVersion;
         const subject = user.supabaseUserId ?? null;
         const migration = user.identityMigration;
-        const linked = version === 2 && typeof subject === 'string' && UUID.test(subject) &&
-            exactKeys(migration, ['id', 'version', 'serverInstanceId']) && migration.id === MIGRATION_ID &&
-            migration.version === 1 && migration.serverInstanceId === identity.serverId;
+        const linked = isLinkedUser(user, identity.serverId);
         const supported = (version === 1 && subject === null && migration === undefined) || linked;
         if (!supported) issue('unsupported_user_state', [id]);
         return { id, email: user.email, version, subject, linked, supported };
@@ -111,4 +116,4 @@ function planIdentityMigration({ identity, users, manifest = null }) {
         proposals, issues };
 }
 
-module.exports = { planIdentityMigration, validateManifest, MIGRATION_ID, MAX_USERS };
+module.exports = { planIdentityMigration, validateManifest, isLinkedUser, MIGRATION_ID, MAX_USERS };

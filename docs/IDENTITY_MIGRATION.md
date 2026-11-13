@@ -69,3 +69,37 @@ current state with compare-and-set/unique ownership guards, record a durable
 versioned migration result and qualify rollback. Existing role, approval, bans,
 history and watchlist remain local authority. Clearing test users/sessions and
 switching Supabase-primary login require their own concrete execution boundary.
+
+## Local session exchange
+
+An installation can test an existing version 2 link through
+`POST /api/v1/auth/exchange`. The experimental server switch is
+`CV_AUTH_EXCHANGE_ENABLED=true`. This switch binds the server listener to
+`127.0.0.1` for direct testing on the server PC. Keep the listener private
+and outside tunnel and reverse proxy forwarding during this test. Use the
+existing control-plane project and publishable key configuration.
+
+Send the Supabase access token in the Authorization bearer header on an
+empty POST. CineVault checks the token with the configured Supabase Auth
+endpoint and reads current membership under the same user's row-level
+permissions. Membership must match the installation and an approved,
+unbanned local user with exactly one stored link for that subject.
+
+The response supplies a revocable CineVault access token and an
+`expiresAt` Unix timestamp in seconds. The local token expires within
+five minutes or at the upstream expiry, whichever comes first. CineVault
+checks the current link and local account on each authenticated request.
+Existing cloud-backed sessions carry the membership download grant
+until expiry. Stream tickets share the parent session's expiry and
+revocation checks. Cloud-only logout or membership changes take effect
+on the next exchange, with the local expiry bounding previously issued
+sessions. A local session can also be revoked through the existing
+session administration.
+
+The pilot covers ordinary account and media access. Administrator routes
+and local password changes require a legacy CineVault session during the pilot.
+
+Live testing requires a verified stored link and enabled membership.
+The preflight reports candidate links for review. Applying links,
+validating real-account exchange, and switching the sign-in UI are
+subsequent rollout steps.

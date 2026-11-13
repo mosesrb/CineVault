@@ -33,8 +33,9 @@ async function startServer() {
         await initializeControlPlane();
 
         const port = process.env.PORT || 3000;
+        const host = process.env.CV_AUTH_EXCHANGE_ENABLED === 'true' ? '127.0.0.1' : undefined;
         server = await new Promise((resolve, reject) => {
-            const listener = app.listen(port, () => resolve(listener));
+            const listener = app.listen(port, host, () => resolve(listener));
             listener.once('error', reject);
         });
     } catch (error) {
@@ -46,7 +47,9 @@ async function startServer() {
     const boundPort = server.address().port;
     winston.info('CineVault Server is running!');
     winston.info(`  > Local:   http://localhost:${boundPort}`);
-    winston.info(`  > Network: http://${networkAddress()}:${boundPort}`);
+    if (process.env.CV_AUTH_EXCHANGE_ENABLED !== 'true') {
+        winston.info(`  > Network: http://${networkAddress()}:${boundPort}`);
+    }
     return server;
 }
 
