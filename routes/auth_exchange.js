@@ -56,7 +56,7 @@ router.post('/', async (req, res) => {
         };
         const link = await findCloudLinkedUser(cloudBinding);
         if (!link) return res.sendStatus(403);
-        if (link.identityLinkBackup) cloudBinding.generation = link.identityLinkBackup.generation;
+        cloudBinding.generation = link.identityLinkBackup.generation;
         const current = await loadAuthoritativeUser(link._id);
         if (!current.user) return res.sendStatus(403);
 
@@ -69,7 +69,7 @@ router.post('/', async (req, res) => {
         }, config.get('jwtPrivateKey'), {
             algorithm: 'HS256', issuer: 'cinevault', audience: 'cinevault-api', jwtid: randomUUID()
         });
-        await createSessionForRequest(current.user, token, req);
+        await createSessionForRequest(current.user, token, req, { cloudLinkGeneration: cloudBinding.generation });
         if (Math.floor(Date.now() / 1000) >= expiresAt) return res.sendStatus(401);
         return res.json({ token, expiresAt });
     } catch (error) {

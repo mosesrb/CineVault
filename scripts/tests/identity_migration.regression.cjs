@@ -15,7 +15,8 @@ const b = 'bbbbbbbbbbbbbbbbbbbbbbbb';
 const identity = { _id: 'primary', schemaVersion: 1, serverId: server };
 const legacy = (id = a, email = 'one@example.invalid') => ({ _id: id, email });
 const linked = (id = a, cloudId = subject) => ({ ...legacy(id), authSchemaVersion: 2, supabaseUserId: cloudId,
-    identityMigration: { id: MIGRATION_ID, version: 1, serverInstanceId: server } });
+    identityMigration: { id: MIGRATION_ID, version: 1, serverInstanceId: server },
+    identityLinkBackup: { generation: '44444444-4444-4444-8444-444444444444' } });
 const manifest = (links = [{ localUserId: a, supabaseUserId: subject }]) => ({
     schemaVersion: 1, migrationId: MIGRATION_ID, serverInstanceId: server, links
 });
@@ -83,6 +84,7 @@ test('unknown local IDs and wrong installation block', () => {
 for (const [name, change] of [
     ['future schema', { authSchemaVersion: 3 }], ['null schema', { authSchemaVersion: null }],
     ['unversioned cloud identity', { supabaseUserId: subject }], ['linked without migration marker', { authSchemaVersion: 2, supabaseUserId: subject }],
+    ['linked without link generation', { authSchemaVersion: 2, supabaseUserId: subject, identityMigration: { id: MIGRATION_ID, version: 1, serverInstanceId: server } }],
     ['unexpected migration marker', { identityMigration: { version: 99 } }],
 ]) test(name + ' is withheld', () => {
     assert.ok(codes(plan([{ ...legacy(), ...change }])).includes('unsupported_user_state'));

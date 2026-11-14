@@ -97,6 +97,14 @@ describe('Phase 4: Scanner, Genres & Admin Sessions', () => {
                 identityLinkBackup: { operationId: randomUUID(), generation, appliedSubject: supabaseUserId,
                     versionWasMissing: true, subjectWasMissing: true }
             } });
+            await new Session({
+                userId: regularUser._id,
+                token: regularUser.generateAuthToken(),
+                cloudLinkGeneration: generation,
+                ip: '127.0.0.1'
+            }).save();
+            expect(await Session.countDocuments({ userId: regularUser._id, cloudLinkGeneration: generation })).toBe(1);
+            expect(await Session.countDocuments({ userId: regularUser._id, cloudLinkGeneration: null })).toBe(1);
             const list = await request(app).get(users).set('x-auth-token', adminToken);
             expect(list.status).toBe(200);
             const target = list.body.find(user => user._id === String(regularUser._id));
@@ -108,6 +116,8 @@ describe('Phase 4: Scanner, Genres & Admin Sessions', () => {
             expect((await request(app).delete(`${unlink}/${generation}`).set('x-auth-token', adminToken)).status).toBe(204);
             const unlinked = await User.collection.findOne({ _id: regularUser._id });
             expect(unlinked).not.toHaveProperty('supabaseUserId');
+            expect(await Session.countDocuments({ userId: regularUser._id, cloudLinkGeneration: generation })).toBe(0);
+            expect(await Session.countDocuments({ userId: regularUser._id, cloudLinkGeneration: null })).toBe(1);
             expect((await request(app).get(profile).set('x-auth-token', userToken)).status).toBe(200);
         });
     });

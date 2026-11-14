@@ -53,9 +53,16 @@ describe('guarded identity linking on standalone MongoDB', () => {
         const linked = await users.findOne({ _id: local._id });
         expect(linked).toMatchObject({ authSchemaVersion: 2, supabaseUserId: subject, password: local.password });
         const previousGeneration = linked.identityLinkBackup.generation;
+        await db.collection('sessions').deleteMany({});
+        await db.collection('sessions').insertMany([
+            { userId: local._id, tokenDigest: 'cloud-digest', cloudLinkGeneration: previousGeneration },
+            { userId: local._id, tokenDigest: 'local-digest', cloudLinkGeneration: null }
+        ]);
         await users.updateOne({ _id: local._id }, { $set: { isAdmin: false } });
         await rollbackIdentityLink({ db, ...applied });
         expect(await users.findOne({ _id: local._id })).toEqual({ ...local, isAdmin: false });
+        expect(await db.collection('sessions').countDocuments({ userId: local._id, cloudLinkGeneration: previousGeneration })).toBe(0);
+        expect(await db.collection('sessions').countDocuments({ userId: local._id, cloudLinkGeneration: null })).toBe(1);
         await applyIdentityLink(args);
         expect((await users.findOne({ _id: local._id })).identityLinkBackup.generation).not.toBe(previousGeneration);
         await expect(rollbackIdentityLink({ db, ...applied })).rejects.toThrow('rollback_conflict');
@@ -94,7 +101,7 @@ describe('guarded identity linking on standalone MongoDB', () => {
         const database = 'cinevault_restore_qa_' + randomUUID().replaceAll('-', '');
         const restore = mongoose.connection.getClient().db(database);
         const archive = await mkdtemp(path.join(tmpdir(), 'cinevault-restore-qa-'));
-        const uri = process.env.delatron_MONGODB_URI;
+        const uri = process.env.delatron_MONGODB_URI || 'mongodb://127.0.0.1:27017/cinevault_test';
         if (!/^mongodb:\/\/(?:127\.0\.0\.1|localhost):27017\/cinevault_test$/.test(uri || '')) {
             throw Error('Isolated rehearsal connection required');
         }

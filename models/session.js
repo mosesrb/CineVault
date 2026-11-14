@@ -9,6 +9,7 @@ function hashSessionToken(token) {
 function removeSecrets(_doc, ret) {
     delete ret.token;
     delete ret.tokenDigest;
+    delete ret.cloudLinkGeneration;
     return ret;
 }
 
@@ -28,6 +29,12 @@ const sessionSchema = new mongoose.Schema({
         select: false
     },
     sessionGeneration: { type: String, select: false },
+    cloudLinkGeneration: {
+        type: String,
+        default: null,
+        index: true,
+        select: false
+    },
     ip: String,
     userAgent: String,
     device: {

@@ -7,7 +7,7 @@ function requestIp(req) {
     return ip;
 }
 
-async function createSessionForRequest(user, token, req) {
+async function createSessionForRequest(user, token, req, options = {}) {
     const userAgent = req.header('user-agent') || '';
     let platform = 'Desktop';
     if (/mobile|android|iphone|ipad/i.test(userAgent)) platform = 'Mobile';
@@ -17,6 +17,7 @@ async function createSessionForRequest(user, token, req) {
         userId: user._id,
         token,
         sessionGeneration: user.sessionGeneration,
+        cloudLinkGeneration: options.cloudLinkGeneration || null,
         ip: requestIp(req),
         userAgent,
         device: {

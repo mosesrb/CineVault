@@ -316,7 +316,10 @@ router.get('/', [auth, admin], async (req, res) => {
     const installation = users.some(user => user.authSchemaVersion === 2) ? await readServerIdentity() : null;
     res.set('Cache-Control', 'no-store');
     res.send(users.map(({ supabaseUserId, authSchemaVersion, identityMigration, identityLinkBackup, ...user }) => {
-        const cloudLinked = Boolean(installation && isLinkedUser({ supabaseUserId, authSchemaVersion, identityMigration }, installation.serverId));
+        const cloudLinked = Boolean(installation && isLinkedUser(
+            { supabaseUserId, authSchemaVersion, identityMigration, identityLinkBackup },
+            installation.serverId
+        ));
         const generation = identityLinkBackup?.generation;
         return {
             ...user,

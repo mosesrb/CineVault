@@ -115,6 +115,10 @@ async function rollbackIdentityLink({ db, serverInstanceId, localUserId, operati
         ] }
     }, { $unset, ...(Object.keys($set).length ? { $set } : {}) }, { ...durableWrite, collation: { locale: 'simple' } });
     requireCondition(result.modifiedCount === 1, 'rollback_conflict');
+    await db.collection('sessions').deleteMany(
+        { userId: user._id, cloudLinkGeneration: generation },
+        durableWrite
+    );
     return { status: 'rolled_back', localUserId, serverInstanceId, operationId };
 }
 

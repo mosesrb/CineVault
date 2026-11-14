@@ -34,7 +34,9 @@ function validateManifest(manifest) {
 
 function isLinkedUser(user, serverInstanceId) {
     const migration = user.identityMigration;
+    const generation = user.identityLinkBackup?.generation;
     return user.authSchemaVersion === 2 && typeof user.supabaseUserId === 'string' && UUID.test(user.supabaseUserId) &&
+        typeof generation === 'string' && UUID.test(generation) &&
         exactKeys(migration, ['id', 'version', 'serverInstanceId']) && migration.id === MIGRATION_ID &&
         migration.version === 1 && migration.serverInstanceId === serverInstanceId;
 }
@@ -56,8 +58,9 @@ function planIdentityMigration({ identity, users, manifest = null }) {
         const version = user.authSchemaVersion === undefined ? 1 : user.authSchemaVersion;
         const subject = user.supabaseUserId ?? null;
         const migration = user.identityMigration;
+        const backup = user.identityLinkBackup;
         const linked = isLinkedUser(user, identity.serverId);
-        const supported = (version === 1 && subject === null && migration === undefined) || linked;
+        const supported = (version === 1 && subject === null && migration === undefined && backup === undefined) || linked;
         if (!supported) issue('unsupported_user_state', [id]);
         return { id, email: user.email, version, subject, linked, supported };
     }).sort((a, b) => a.id.localeCompare(b.id));

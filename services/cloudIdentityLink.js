@@ -20,9 +20,11 @@ async function findCloudLinkedUser(binding) {
 }
 
 async function matchesCloudLinkedUser(userId, binding) {
+    if (!matches(UUID, binding?.generation)) return false;
     const linkedUser = await findCloudLinkedUser(binding);
     return linkedUser !== null && String(linkedUser._id) === userId &&
-        linkedUser.identityLinkBackup?.generation === binding.generation;
+        matches(UUID, linkedUser.identityLinkBackup?.generation) &&
+        linkedUser.identityLinkBackup.generation === binding.generation;
 }
 
 function isLocalExchangeRequest(req) {
