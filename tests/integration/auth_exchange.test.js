@@ -344,6 +344,50 @@ describe('Supabase session exchange through the application', () => {
         }
     });
 
+    test('removes a cloud session saved after unlink cleanup while preserving the local session', async () => {
+        mockCloud();
+        owner = await User.create({
+            email: `admin-unlink-race-${randomUUID()}@test.invalid`, name: 'Local administrator',
+            password: 'fixture-password', isApproved: true, isAdmin: true
+        });
+        const adminToken = owner.generateAuthToken();
+        await Session.create({ userId: owner._id, token: adminToken });
+        const localToken = user.generateAuthToken();
+        await Session.create({ userId: user._id, token: localToken });
+
+        const save = Session.prototype.save;
+        let exchangeReachedSave;
+        let resumeSave;
+        const beforeSave = new Promise(resolve => { exchangeReachedSave = resolve; });
+        const saveAllowed = new Promise(resolve => { resumeSave = resolve; });
+        jest.spyOn(Session.prototype, 'save').mockImplementation(async function (...args) {
+            if (this.cloudLinkGeneration === linkGeneration) {
+                exchangeReachedSave();
+                await saveAllowed;
+            }
+            return save.apply(this, args);
+        });
+
+        const inflight = exchange().then(response => response);
+        try {
+            await Promise.race([beforeSave, inflight.then(() => { throw Error('Exchange finished before saving'); })]);
+            const unlink = await request(app).delete(`/api/v1/users/${user._id}/cloud-link/${linkGeneration}`)
+                .set('Host', 'localhost').set('x-auth-token', adminToken);
+            expect(unlink.status).toBe(204);
+            expect(await Session.countDocuments({ userId: user._id, cloudLinkGeneration: linkGeneration })).toBe(0);
+        } finally {
+            resumeSave();
+            await inflight;
+        }
+
+        const denied = await inflight;
+        expect(denied.status).toBe(401);
+        expect(denied.body.token).toBeUndefined();
+        expect(await Session.countDocuments({ userId: user._id, cloudLinkGeneration: linkGeneration })).toBe(0);
+        const profile = await request(app).get('/api/v1/users/me').set('Host', 'localhost').set('x-auth-token', localToken);
+        expect(profile.status).toBe(200);
+    });
+
     test('T5: disabling membership blocks new exchange immediately while active CineVault session and stream ticket remain valid until expiry or explicit local revocation', async () => {
         let membershipRows = [currentMember()];
         jest.spyOn(global, 'fetch').mockImplementation(async url => Response.json(

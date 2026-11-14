@@ -5,7 +5,7 @@ const { randomUUID } = require('node:crypto');
 const { configuration } = require('../services/controlPlane/configuration');
 const { readServerIdentity } = require('../services/serverIdentityService');
 const { verifyCloudMembership, ExchangeFailure } = require('../services/supabaseExchangeAuthority');
-const { findCloudLinkedUser, isLocalExchangeRequest } = require('../services/cloudIdentityLink');
+const { findCloudLinkedUser, matchesCloudLinkedUser, isLocalExchangeRequest } = require('../services/cloudIdentityLink');
 const { createSessionForRequest } = require('../services/sessionService');
 const auth = require('../middleware/auth');
 const { loadAuthoritativeUser } = auth;
@@ -69,9 +69,18 @@ router.post('/', async (req, res) => {
         }, config.get('jwtPrivateKey'), {
             algorithm: 'HS256', issuer: 'cinevault', audience: 'cinevault-api', jwtid: randomUUID()
         });
-        await createSessionForRequest(current.user, token, req, { cloudLinkGeneration: cloudBinding.generation });
-        if (Math.floor(Date.now() / 1000) >= expiresAt) return res.sendStatus(401);
-        return res.json({ token, expiresAt });
+        const session = await createSessionForRequest(current.user, token, req, { cloudLinkGeneration: cloudBinding.generation });
+        let issueSession = false;
+        try {
+            // Unlink removes the binding before deleting its sessions. A save that
+            // lands after that cleanup must remove its own row before responding.
+            issueSession = await matchesCloudLinkedUser(String(link._id), cloudBinding) &&
+                Math.floor(Date.now() / 1000) < expiresAt;
+        } finally {
+            if (!issueSession) await Session.deleteOne({ _id: session._id, userId: link._id,
+                cloudLinkGeneration: cloudBinding.generation });
+        }
+        return issueSession ? res.json({ token, expiresAt }) : res.sendStatus(401);
     } catch (error) {
         return res.sendStatus(error instanceof ExchangeFailure ? error.status : 503);
     }
