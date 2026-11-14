@@ -50,6 +50,8 @@ describe('Supabase session exchange through the application', () => {
     let user;
     let owner;
     let token;
+    let linkGeneration;
+    let linkOperationId;
 
     test('exposes only the publishable configuration to the enabled direct listener', async () => {
         const config = () => request(app).get('/api/v1/auth/exchange/config').set('Host', 'localhost');
@@ -89,6 +91,8 @@ describe('Supabase session exchange through the application', () => {
         Object.assign(process.env, settings);
         app = createApp();
         subject = randomUUID();
+        linkGeneration = randomUUID();
+        linkOperationId = randomUUID();
         token = cloudToken();
         user = await User.create({
             email: `exchange-${randomUUID()}@test.invalid`, name: 'Exchange fixture', password: 'fixture-password',
@@ -97,7 +101,14 @@ describe('Supabase session exchange through the application', () => {
         await User.collection.updateOne({ _id: user._id }, {
             $set: {
                 supabaseUserId: subject, authSchemaVersion: 2,
-                identityMigration: { id: MIGRATION_ID, version: 1, serverInstanceId: serverId }
+                identityMigration: { id: MIGRATION_ID, version: 1, serverInstanceId: serverId },
+                identityLinkBackup: {
+                    operationId: linkOperationId,
+                    generation: linkGeneration,
+                    appliedSubject: subject,
+                    versionWasMissing: true,
+                    subjectWasMissing: true
+                }
             }
         });
     }, 20000);
@@ -129,9 +140,11 @@ describe('Supabase session exchange through the application', () => {
         const claims = jwt.decode(local);
         expect(claims.exp).toBe(jwt.decode(token).exp);
         expect(claims._id).toBe(String(user._id));
-        const stored = await Session.findOne({ userId: user._id }).select('+token +tokenDigest');
+        expect(claims.cloudBinding.generation).toBe(linkGeneration);
+        const stored = await Session.findOne({ userId: user._id }).select('+token +tokenDigest +cloudLinkGeneration');
         expect(stored.token).toBeUndefined();
         expect(stored.tokenDigest).toBe(hashSessionToken(local));
+        expect(stored.cloudLinkGeneration).toBe(linkGeneration);
         expect(upstream.mock.calls).toHaveLength(2);
         const [url, options] = upstream.mock.calls[1];
         expect(new URL(url).searchParams.get('server.server_instance_id')).toBe('eq.' + serverId);
@@ -141,11 +154,14 @@ describe('Supabase session exchange through the application', () => {
         const download = await request(app).post('/api/v1/stream/ticket').set('Host', 'localhost')
             .set('x-auth-token', local).send({ path: 'fixture.mp4', operation: 'download' });
         expect(download.status).toBe(403);
+        await User.collection.updateOne({ _id: user._id }, { $unset: { 'identityLinkBackup.generation': 1 } });
+        expect((await getAccount()).status).toBe(401);
+        expect((await exchange()).status).toBe(403);
         await User.collection.updateOne({ _id: user._id }, { $set: { identityLinkBackup: { generation: randomUUID() } } });
         expect((await getAccount()).status).toBe(401);
         await User.collection.updateOne({ _id: user._id }, { $unset: { identityMigration: 1, identityLinkBackup: 1 } });
         expect((await getAccount()).status).toBe(401);
-        expect(upstream.mock.calls).toHaveLength(2);
+        expect(upstream.mock.calls).toHaveLength(4);
     });
 
     test('rejects a conflicting duplicate subject even when the competing record lacks a marker', async () => {
@@ -268,5 +284,182 @@ describe('Supabase session exchange through the application', () => {
         } finally {
             await Movie.deleteOne({ _id: movie._id });
         }
+    });
+
+    test('unlinking revokes only sessions and tickets tied to that cloud link generation and preserves local sessions', async () => {
+        mockCloud();
+        owner = await User.create({
+            email: `admin-unlink-${randomUUID()}@test.invalid`, name: 'Local administrator',
+            password: 'fixture-password', isApproved: true, isAdmin: true
+        });
+        const adminToken = owner.generateAuthToken();
+        await Session.create({ userId: owner._id, token: adminToken });
+
+        // Create a local password session and stream ticket for the same user
+        const localToken = user.generateAuthToken();
+        await Session.create({ userId: user._id, token: localToken });
+
+        // Exchange a Supabase token to create a cloud-linked session
+        const cloudRes = await exchange();
+        expect(cloudRes.status).toBe(200);
+        const cloudAccessToken = cloudRes.body.token;
+
+        const path = randomUUID() + '.mp4';
+        const movie = await Movie.create({ title: 'Unlink scope fixture', year: 2026, vaultPath: path });
+        try {
+            const cloudTicketRes = await request(app).post('/api/v1/stream/ticket').set('Host', 'localhost')
+                .set('x-auth-token', cloudAccessToken).send({ path });
+            expect(cloudTicketRes.status).toBe(200);
+
+            const localTicketRes = await request(app).post('/api/v1/stream/ticket').set('Host', 'localhost')
+                .set('x-auth-token', localToken).send({ path });
+            expect(localTicketRes.status).toBe(200);
+
+            expect(await Session.countDocuments({ userId: user._id, cloudLinkGeneration: linkGeneration })).toBe(1);
+            expect(await Session.countDocuments({ userId: user._id, cloudLinkGeneration: null })).toBe(1);
+
+            const unlink = await request(app).delete(`/api/v1/users/${user._id}/cloud-link/${linkGeneration}`)
+                .set('Host', 'localhost').set('x-auth-token', adminToken);
+            expect(unlink.status).toBe(204);
+
+            // Cloud-link session row is deleted; local password session row is preserved
+            expect(await Session.countDocuments({ userId: user._id, cloudLinkGeneration: linkGeneration })).toBe(0);
+            expect(await Session.countDocuments({ userId: user._id, cloudLinkGeneration: null })).toBe(1);
+
+            const profile = t => request(app).get('/api/v1/users/me').set('Host', 'localhost').set('x-auth-token', t);
+            expect((await profile(cloudAccessToken)).status).toBe(401);
+            expect((await profile(localToken)).status).toBe(200);
+
+            const cloudStream = await request(app).get('/api/v1/stream').set('Host', 'localhost')
+                .query({ path, token: cloudTicketRes.body.ticket });
+            expect(cloudStream.status).toBe(401);
+
+            // Local stream ticket remains accepted by auth middleware (reaches stream route and returns 503 'Vault not configured.')
+            const localStream = await request(app).get('/api/v1/stream').set('Host', 'localhost')
+                .query({ path, token: localTicketRes.body.ticket });
+            expect(localStream.status).toBe(503);
+            expect(localStream.text).toBe('Vault not configured.');
+        } finally {
+            await Movie.deleteOne({ _id: movie._id });
+        }
+    });
+
+    test('T5: disabling membership blocks new exchange immediately while active CineVault session and stream ticket remain valid until expiry or explicit local revocation', async () => {
+        let membershipRows = [currentMember()];
+        jest.spyOn(global, 'fetch').mockImplementation(async url => Response.json(
+            url === base + '/auth/v1/user' ? { id: subject, is_anonymous: false } : membershipRows
+        ));
+
+        owner = await User.create({
+            email: `admin-t5-${randomUUID()}@test.invalid`, name: 'Local administrator',
+            password: 'fixture-password', isApproved: true, isAdmin: true
+        });
+        const adminToken = owner.generateAuthToken();
+        await Session.create({ userId: owner._id, token: adminToken });
+
+        // Also create a local password session for the same user to verify revoke-sessions scope
+        const localToken = user.generateAuthToken();
+        await Session.create({ userId: user._id, token: localToken });
+
+        const activeExchange = await exchange();
+        expect(activeExchange.status).toBe(200);
+        const activeCloudSessionToken = activeExchange.body.token;
+
+        const path = randomUUID() + '.mp4';
+        const movie = await Movie.create({ title: 'T5 membership disable fixture', year: 2026, vaultPath: path });
+        try {
+            const ticketRes = await request(app).post('/api/v1/stream/ticket').set('Host', 'localhost')
+                .set('x-auth-token', activeCloudSessionToken).send({ path });
+            expect(ticketRes.status).toBe(200);
+            const streamTicket = ticketRes.body.ticket;
+
+            // Installation owner disables membership in Supabase (PostgREST enabled=is.true returns [])
+            membershipRows = [];
+
+            // 1. Fresh exchange is blocked immediately with 403 Forbidden
+            expect((await exchange()).status).toBe(403);
+
+            // 2. Existing CineVault session and stream ticket remain valid until their 300s TTL if not locally revoked
+            const profile = t => request(app).get('/api/v1/users/me').set('Host', 'localhost').set('x-auth-token', t);
+            expect((await profile(activeCloudSessionToken)).status).toBe(200);
+            const streamBeforeRevoke = await request(app).get('/api/v1/stream').set('Host', 'localhost')
+                .query({ path, token: streamTicket });
+            expect(streamBeforeRevoke.status).toBe(503);
+            expect(streamBeforeRevoke.text).toBe('Vault not configured.');
+
+            // 3. Explicit local revoke-sessions immediately terminates the cloud-backed session, stream ticket, and local password session
+            const revoke = await request(app).post(`/api/v1/users/${user._id}/revoke-sessions`).set('Host', 'localhost')
+                .set('x-auth-token', adminToken);
+            expect(revoke.status).toBe(204);
+
+            expect((await profile(activeCloudSessionToken)).status).toBe(401);
+            expect((await profile(localToken)).status).toBe(401);
+            const streamAfterRevoke = await request(app).get('/api/v1/stream').set('Host', 'localhost')
+                .query({ path, token: streamTicket });
+            expect(streamAfterRevoke.status).toBe(401);
+        } finally {
+            await Movie.deleteOne({ _id: movie._id });
+        }
+    });
+
+    test('T6: pre-reset and temporary-password tokens cannot obtain a CineVault session during reset or after must_change_password clears', async () => {
+        const preResetSessionId = randomUUID();
+        const tempSessionId = randomUUID();
+        const postChangeSessionId = randomUUID();
+
+        const preResetToken = cloudToken({ session_id: preResetSessionId });
+        const tempToken = cloudToken({ session_id: tempSessionId });
+        const postChangeToken = cloudToken({ session_id: postChangeSessionId });
+
+        const activeAuthSessions = new Set([preResetSessionId]);
+        let mustChangePassword = false;
+
+        jest.spyOn(global, 'fetch').mockImplementation(async (url, options = {}) => {
+            if (url === base + '/auth/v1/user') {
+                const bearer = (options.headers?.Authorization || '').replace(/^Bearer /, '');
+                const decoded = jwt.decode(bearer);
+                if (!decoded || !activeAuthSessions.has(decoded.session_id)) {
+                    return new Response(JSON.stringify({ error: 'session_not_found' }), {
+                        status: 403,
+                        headers: { 'content-type': 'application/json' }
+                    });
+                }
+                return Response.json({ id: subject, is_anonymous: false });
+            }
+            return Response.json([{
+                user_id: subject,
+                enabled: true,
+                download_allowed: false,
+                server: { server_instance_id: serverId },
+                profile: { id: subject, blocked: false, must_change_password: mustChangePassword }
+            }]);
+        });
+
+        // 1. Pre-reset token succeeds before password reset begins
+        expect((await exchange(preResetToken)).status).toBe(200);
+
+        // 2. Admin begins password reset: sets must_change_password=true and deletes preResetSessionId from auth.sessions.
+        // User signs in with temporary password (tempSessionId is live in auth.sessions, but must_change_password=true).
+        mustChangePassword = true;
+        activeAuthSessions.delete(preResetSessionId);
+        activeAuthSessions.add(tempSessionId);
+
+        expect((await exchange(preResetToken)).status).toBe(401);
+        expect((await exchange(tempToken)).status).toBe(403);
+
+        // 3. User completes required password change via cinevault-account-admin:
+        // must_change_password clears to false, tempSessionId is deleted from auth.sessions,
+        // and user signs in with the new password (postChangeSessionId).
+        mustChangePassword = false;
+        activeAuthSessions.delete(tempSessionId);
+        activeAuthSessions.add(postChangeSessionId);
+
+        // Neither the pre-reset token nor the temporary-password token can obtain a CineVault session after the flag clears
+        expect((await exchange(preResetToken)).status).toBe(401);
+        expect((await exchange(tempToken)).status).toBe(401);
+
+        // Fresh post-change session token succeeds
+        const postChangeRes = await exchange(postChangeToken);
+        expect(postChangeRes.status).toBe(200);
     });
 });

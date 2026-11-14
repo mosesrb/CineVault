@@ -118,15 +118,71 @@ and local password changes require a legacy CineVault session during the pilot.
 Open **Administration → Users** with a local administrator account. You can
 create an approved standard local account, enable or disable access, reset a
 local password, or sign a user out of all devices. Reset, disable and sign-out
-invalidate previously issued CineVault sessions and media tickets for that user.
-Sign-out allows a new login when the account is enabled. An administrator can
-also remove a supported Supabase link from the account's **Manage** panel. That
-removes cloud-backed CineVault access for the current link and preserves the
-local account and its data.
+invalidate previously issued CineVault sessions and media tickets for that user
+(both local password sessions and cloud-exchanged sessions). Sign-out allows a
+new login when the account is enabled. An administrator can also remove a
+supported Supabase link from the account's **Manage** panel. Unlinking deletes
+only the `Session` documents tied to that exact `cloudLinkGeneration` and
+rejects tokens carrying that generation, preserving any local password sessions
+(`cloudLinkGeneration: null`) and local library data for that user.
 
-Provision Supabase accounts and memberships separately. Apply new links through
-the reviewed explicit-ID procedure below. The local password controls apply to
-the CineVault password. Supabase passwords are managed in Supabase.
+### Hosted Supabase account administration (`CV-P4-5`)
+
+Hosted account administration separates installation-scoped membership from
+project-wide Supabase identity credentials:
+
+1. **Installation Membership (`public.manage_server_member`)**: Only the
+   authenticated installation owner (`auth.uid()` verified against a live
+   `auth.sessions` row and `cinevault_private.cp_installations.owner_id` via
+   `cp_owner`) or a verified schema operator
+   (`cinevault_private.cp_operator_upsert_server_member`) can grant, update, or
+   disable `public.server_users` membership for a specific CineVault
+   installation. An installation owner cannot create Supabase accounts or reset
+   project-wide Supabase passwords.
+2. **Project-Wide Account Creation & Password Resets (`cinevault-account-admin`)**:
+   Only a verified Project Administrator listed in
+   `cinevault_private.cp_project_admins` can invoke `admin-create-user` or
+   `admin-reset-password` on the dedicated `cinevault-account-admin` Edge
+   Function. Only the authenticated target user can invoke
+   `complete-password-change` to replace a temporary password and clear
+   `public.profiles.must_change_password`. The `cinevault-account-admin`
+   service holds `CV_ACCOUNT_ADMIN_SERVICE_ROLE_KEY` and connects via
+   `cv_account_admin_login` (`SET LOCAL ROLE cv_account_admin`). The existing
+   `cinevault-control-plane` broker role (`cv_control_broker`) remains
+   restricted to installation enrollment and heartbeat.
+3. **Password-Specific Reset Proof & Uncertain Write Blocking**: Every
+   password write commits a pre-write claim (`cp_claim_password_write`) that
+   locks the per-user reset row (`cinevault_private.cp_password_resets`),
+   verifies the current `reset_id`, and issues a single-use `write_ticket`
+   before calling the Supabase Auth Admin API. Neither normal sign-in hash
+   rewrites on `auth.users.encrypted_password` nor unrelated `auth.users` /
+   `public.profiles` updates can clear `must_change_password`. If an Auth Admin
+   password write times out or returns an uncertain response, the service
+   records `state = 'WRITE_OUTCOME_UNCERTAIN'`, keeps
+   `must_change_password = true`, never retries automatically, and permanently
+   blocks further password writes for that account until operator containment
+   (`cp_quarantine_uncertain_account`) and clean replacement account
+   re-linking.
+4. **Access Termination Timeline**:
+   - **New Supabase password sign-ins**: Blocked as soon as the Auth Admin
+     password write completes (or when the account is quarantined).
+   - **Already-issued Supabase tokens at `POST /api/v1/auth/exchange`**:
+     Blocked immediately when `cp_begin_password_reset` or
+     `cp_complete_password_change` deletes `auth.sessions` rows and sets
+     `must_change_password = true`, or when `public.manage_server_member` sets
+     `server_users.enabled = false`. Neither pre-reset tokens nor
+     temporary-password tokens can obtain a CineVault session after
+     `must_change_password` clears.
+   - **Active CineVault sessions & stream tickets**: Bounded by their 5-minute
+     (`300s`) TTL on cloud-only membership disable or password reset, or
+     terminated immediately when a local administrator invokes
+     `POST /api/v1/users/:id/revoke-sessions` (which revokes all local and
+     cloud-backed sessions for that `User._id`) or unlinks the cloud generation
+     (which revokes only sessions for that `cloudLinkGeneration`). An
+     already-open HTTP media stream response continues only for the bytes of
+     that single in-flight HTTP range request; the next HTTP range request,
+     HLS segment request, or API call runs `middleware/auth.js` and is rejected
+     with `401 Unauthorized` once the session expires or is revoked.
 
 ### Apply and roll back one account link
 

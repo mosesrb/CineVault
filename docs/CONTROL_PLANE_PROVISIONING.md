@@ -96,6 +96,55 @@ protocol, credential lifetime and admission policy, and runtime deployment are
 pending. Then verify hosted enrollment, activity reporting, and recovery from
 outages and pauses. Device and release qualification are separate.
 
+## Hosted account administration and password reset recovery (`CV-P4-5`)
+
+Prepared SQL (`supabase/broker/account_administration.sql`) and the dedicated
+`cinevault-account-admin` Edge Function (`supabase/account-admin/`) provide
+hosted Supabase account creation, installation membership management, and
+password reset administration without expanding `cv_control_broker`:
+
+1. **Dedicated Roles and Boundary**: `cv_account_admin_login` (`NOLOGIN` in
+   prepared SQL until secret provisioning, `NOINHERIT`, `NOBYPASSRLS`,
+   `CONNECTION LIMIT 2`) connects via Supavisor transaction mode (`6543`) and
+   executes `SET LOCAL ROLE cv_account_admin` inside bounded transactions. It
+   has `EXECUTE` only on the seven account-administration RPCs in
+   `cinevault_private` and zero access to enrollment, replacement, restoration,
+   or heartbeat functions/tables.
+2. **Project Administrator Provisioning**: A trusted schema operator provisions
+   or disables project administrators in a bounded transaction via
+   `cinevault_private.cp_provision_project_admin(p_project, p_admin_uuid,
+   p_display_name, p_enabled)`.
+3. **Caller-Bound Installation Membership**: Authenticated installation owners
+   manage `public.server_users` for their own installation via
+   `public.manage_server_member(p_project, p_instance, p_user, p_role,
+   p_enabled, p_remote_stream_allowed, p_download_allowed)`, which binds the
+   caller to `auth.uid()` and a live `auth.sessions` row via `cp_owner`.
+   Trusted schema operators can use the `SECURITY INVOKER` helper
+   `cinevault_private.cp_operator_upsert_server_member(...)`.
+4. **Pre-Write Password Claim and Uncertain Outcome Escalation**: Before calling
+   `PUT /auth/v1/admin/users/{id}`, `cinevault-account-admin` commits
+   `cinevault_private.cp_claim_password_write(...)` to lock the target user's
+   `cp_password_resets` row, verify `reset_id`, and obtain a single-use
+   `write_ticket`. If the outbound Auth Admin API request times out or fails
+   with an indeterminate outcome, the service commits
+   `cinevault_private.cp_mark_password_write_uncertain(...)` (`state =
+   'WRITE_OUTCOME_UNCERTAIN'`). Because Supabase Auth Admin API provides no
+   idempotency key or in-flight operation status query to prove that an earlier
+   timed-out write has finished or cannot still apply, password writes remain
+   permanently blocked for that account (`409 password_reset_unresolved`). To
+   recover service for the affected viewer:
+   - **Stage 1 (Containment)**: Run
+     `cinevault_private.cp_quarantine_uncertain_account(p_project, p_user_uuid,
+     p_reset_id, p_operation_id)` as the schema operator to set
+     `profiles.blocked = true`, disable all `server_users` memberships, and
+     revoke `auth.sessions` while preserving the `WRITE_OUTCOME_UNCERTAIN`
+     lock.
+   - **Stage 2 (Clean Account Replacement)**: Provision a fresh Supabase
+     account via `cinevault-account-admin` (`admin-create-user`), enable
+     installation membership (`public.manage_server_member`), and re-link the
+     local CineVault user (`npm run migrate:identity-link-write -- rollback ...`
+     followed by `apply`).
+
 References: [Supabase users](https://supabase.com/docs/guides/auth/users),
 [database roles](https://supabase.com/docs/guides/database/postgres/roles),
 [database connections](https://supabase.com/docs/guides/database/connecting-to-postgres),

@@ -16,7 +16,7 @@ module.exports = [
     },
     {
         ...js.configs.recommended,
-        files: ['enrollment/**/*.mjs','supabase/broker/**/*.mjs'],
+        files: ['enrollment/**/*.mjs','supabase/broker/**/*.mjs','supabase/account-admin/**/*.mjs'],
         languageOptions: { ecmaVersion: 'latest', sourceType: 'module', globals: { ...globals.browser,...globals.node } },
         rules: { ...js.configs.recommended.rules, 'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }] }
     },
