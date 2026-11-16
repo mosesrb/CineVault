@@ -1,6 +1,6 @@
 // PREPARED, not deployed before PCC review & explicit operator approval.
-// Holds CV_ACCOUNT_ADMIN_SERVICE_ROLE_KEY and cv_account_admin_login DB URL
-// strictly within the cinevault-account-admin Edge Function boundary.
+// Reads its Auth Admin key and dedicated DB URL from project-wide Edge Function
+// secrets. Other functions in the same Supabase project share that secret scope.
 import postgres from 'postgres'
 import { createAccountAdminRuntime } from '../../account-admin/runtime.mjs'
 

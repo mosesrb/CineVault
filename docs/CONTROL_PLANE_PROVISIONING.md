@@ -112,8 +112,9 @@ password reset administration without expanding `cv_control_broker`:
      Secrets, alongside built-in `SUPABASE_*` variables) are **project-wide**
      and exposed in `Deno.env` to every Edge Function deployed in project
      `uouydbapluktfrylligo`; Supabase does not provide a separate per-function
-     secret store. Within the hosted Edge Runtime, isolation between
-     `cinevault-control-plane` and `cinevault-account-admin` is enforced by:
+     secret store. Treat all Edge Functions in the project as a single trusted
+     runtime for secret access. The two services still have separate database
+     roles and read different configuration values in their reviewed code:
      1. **Distinct Environment Variable Prefixes & Reviewed Entrypoints**:
         `cinevault-control-plane` (`supabase/broker/runtime.mjs`) reads only
         `CV_BROKER_*` variables and never reads `CV_ACCOUNT_ADMIN_*` or
@@ -191,7 +192,10 @@ password reset administration without expanding `cv_control_broker`:
      Supabase user linked to a disposable local CineVault test account:
      1. Sign in before reset (`POST /auth/v1/token?grant_type=password`) to
         capture `T_before_reset` (`session_id = S_old`, `exp > now + 3000s`) and
-        confirm `GET /auth/v1/user` returns `200`.
+        confirm `GET /auth/v1/user` returns `200`. Establish a Data API baseline
+        with `GET /rest/v1/profiles?select=id&id=eq.<disposable-user-id>` using the
+        project publishable key and `T_before_reset` as the bearer token. Require
+        `200` and exactly the disposable profile ID.
      2. Run `admin-reset-password` via `cinevault-account-admin`, sign in with
         the temporary password to capture `T_temp_session` (`session_id =
         S_temp`), confirm `POST /api/v1/auth/exchange` with `T_temp_session`
@@ -210,10 +214,18 @@ password reset administration without expanding `cv_control_broker`:
           `server_users`), and
         - `POST http://127.0.0.1:3000/api/v1/auth/exchange` with
           `T_temp_session` returns `401 Unauthorized`.
+        Repeat the exact Data API baseline request with each revoked, still
+        unexpired token. Record the HTTP status and whether the disposable ID
+        was returned. `200` with that ID means the token still has direct Data
+        API access. A `401`, `403`, or `200` with zero rows shows denial for this
+        request. Treat other responses as inconclusive. If either revoked token
+        returns the ID, keep immediate Data API revocation open and require a
+        follow-up access-policy decision before acceptance.
      4. Sign in with the new permanent password (`T_after_change`, `session_id =
-        S_new`), confirm `GET /auth/v1/user` returns `200` and
-        `POST /api/v1/auth/exchange` returns `200`, then clean up the disposable
-        user and rows.
+        S_new`), confirm `GET /auth/v1/user` and `POST /api/v1/auth/exchange`
+        return `200`, and require the Data API to return the same disposable ID
+        with the new token. Clean up disposable sessions, rows and the account.
+        Retain only statuses and row counts in verification evidence.
 
 References: [Supabase users](https://supabase.com/docs/guides/auth/users),
 [database roles](https://supabase.com/docs/guides/database/postgres/roles),
