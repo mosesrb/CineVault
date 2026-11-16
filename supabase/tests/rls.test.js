@@ -131,6 +131,50 @@ test('control-plane authorization matrix on disposable PostgreSQL', async t => {
     } finally { await db.close(); }
 });
 
+test('revoked sessions lose all direct Data API reads while fresh sessions retain their scope', async () => {
+    const db = await createFixture();
+    const sessionIds = {
+        original: '00000000-0000-4000-8000-000000000201',
+        fresh: '00000000-0000-4000-8000-000000000202',
+        foreign: '00000000-0000-4000-8000-000000000203',
+        expired: '00000000-0000-4000-8000-000000000204'
+    };
+    try {
+        await db.exec(`create table auth.sessions (id uuid primary key, user_id uuid not null, not_after timestamptz);
+            create function auth.jwt() returns jsonb language sql stable as $$
+                select nullif(current_setting('request.jwt.claims', true), '')::jsonb;
+            $$;`);
+        await db.exec(fs.readFileSync(path.join(__dirname, '../broker/data_api_live_session.sql'), 'utf8'));
+        await db.query(`insert into auth.sessions(id,user_id,not_after)
+            values ($1,$5,null),($2,$5,now()+interval '5 minutes'),($3,$6,null),($4,$5,now()-interval '1 minute')`,
+        [...Object.values(sessionIds), ids.member, ids.other]);
+
+        async function visibleRows(sessionId) {
+            await db.query(`select set_config('request.jwt.claims',$1,false)`, [JSON.stringify({ session_id: sessionId })]);
+            return asUser(db, 'authenticated', ids.member, async () => (await db.query(`select
+                (select array_agg(id order by id) from public.profiles) as profiles,
+                (select array_agg(user_id order by user_id) from public.server_users) as memberships,
+                (select array_agg(id order by id) from public.servers) as servers,
+                (select array_agg(server_id order by server_id) from public.server_endpoints) as endpoints`)).rows[0]);
+        }
+
+        const expected = { profiles: [ids.member], memberships: [ids.member], servers: [ids.server], endpoints: [ids.server] };
+        const denied = { profiles: null, memberships: null, servers: null, endpoints: null };
+        assert.deepEqual(await visibleRows(sessionIds.original), expected);
+        for (const claim of [sessionIds.foreign, sessionIds.expired, undefined, '', 'invalid', {}]) {
+            assert.deepEqual(await visibleRows(claim), denied);
+        }
+        await db.query('delete from auth.sessions where id=$1', [sessionIds.original]);
+        assert.deepEqual(await visibleRows(sessionIds.original), denied);
+        assert.deepEqual(await visibleRows(sessionIds.fresh), expected);
+        const grants = await db.query(`select
+            has_function_privilege('anon','cinevault_private.has_live_data_api_session()','EXECUTE') as anon,
+            has_function_privilege('authenticated','cinevault_private.has_live_data_api_session()','EXECUTE') as authenticated,
+            has_function_privilege('service_role','cinevault_private.has_live_data_api_session()','EXECUTE') as service_role`);
+        assert.deepEqual(grants.rows[0], { anon: false, authenticated: true, service_role: false });
+    } finally { await db.close(); }
+});
+
 test('hardening preserves automatic RLS while removing public execution', async t => {
     const db = await PGlite.create();
     try {
