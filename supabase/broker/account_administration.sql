@@ -428,8 +428,9 @@ returns jsonb language plpgsql security definer set search_path='' as $$
 declare r cinevault_private.cp_password_resets; u auth.users; p public.profiles;
     s auth.sessions; v_next_state text; v_ticket uuid; v_digest bytea;
 begin
-    if p_project is distinct from 'uouydbapluktfrylligo' or p_user is null or p_reset_id is null
+    if p_project is distinct from 'uouydbapluktfrylligo' or p_user is null
         or p_operation_id is null or p_kind is null or p_kind not in ('ADMIN_RESET','USER_CHANGE')
+        or (p_kind='ADMIN_RESET' and p_reset_id is null)
         or p_operation_id::text !~ '^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$' then
         raise exception 'cp_claim_denied' using errcode='42501'; end if;
 
@@ -442,7 +443,7 @@ begin
         raise exception 'cp_claim_denied' using errcode='42501'; end if;
     if r.state in ('ADMIN_RESET_CLAIMED','USER_CHANGE_CLAIMED','WRITE_OUTCOME_UNCERTAIN') then
         raise exception 'cp_reset_unresolved' using errcode='P0001'; end if;
-    if r.reset_id is distinct from p_reset_id then
+    if p_reset_id is not null and r.reset_id is distinct from p_reset_id then
         raise exception 'cp_reset_superseded' using errcode='42501'; end if;
 
     if exists(select 1 from cinevault_private.cp_installations where owner_id=p_user)
@@ -498,7 +499,7 @@ begin
     return jsonb_build_object(
         'projectRef',p_project,
         'userId',p_user,
-        'resetId',p_reset_id,
+        'resetId',r.reset_id,
         'resetGeneration',r.reset_generation,
         'operationId',p_operation_id,
         'state',v_next_state,

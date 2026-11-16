@@ -64,7 +64,13 @@ function checkedClaims(token, now) {
     return payload;
 }
 
-async function verifyCloudMembership({ token, serverInstanceId, publishableKey, fetchImpl = fetch }) {
+async function verifyCloudMembership({
+    token,
+    serverInstanceId,
+    publishableKey,
+    allowPasswordChangeRequired = false,
+    fetchImpl = fetch
+}) {
     if (!matches(UUID, serverInstanceId) || !matches(/^sb_publishable_[\w-]{16,256}$/, publishableKey)) {
         throw new ExchangeFailure(503);
     }
@@ -95,12 +101,19 @@ async function verifyCloudMembership({ token, serverInstanceId, publishableKey, 
         const row = Array.isArray(rows) && rows.length === 1 ? rows[0] : null;
         if (row?.user_id !== claims.sub || row.enabled !== true || typeof row.download_allowed !== 'boolean' ||
             row.server?.server_instance_id !== serverInstanceId ||
-            row.profile?.id !== claims.sub || row.profile.blocked !== false || row.profile.must_change_password !== false) {
+            row.profile?.id !== claims.sub || row.profile.blocked !== false ||
+            typeof row.profile.must_change_password !== 'boolean' ||
+            (row.profile.must_change_password !== false && !allowPasswordChangeRequired)) {
             throw new ExchangeFailure(403);
         }
         if (controller.signal.aborted || performance.now() - started >= deadlineMs) throw new ExchangeFailure(503);
         if (Math.floor(Date.now() / 1000) >= claims.exp) throw new ExchangeFailure(401);
-        return { subject: claims.sub, expiresAt: claims.exp, downloadAllowed: row.download_allowed };
+        return {
+            subject: claims.sub,
+            expiresAt: claims.exp,
+            downloadAllowed: row.download_allowed,
+            ...(row.profile.must_change_password ? { mustChangePassword: true } : {})
+        };
     } catch (error) {
         if (error instanceof ExchangeFailure) throw error;
         throw new ExchangeFailure(503);

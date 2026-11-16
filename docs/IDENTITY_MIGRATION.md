@@ -118,13 +118,11 @@ and local password changes require a legacy CineVault session during the pilot.
 Open **Administration → Users** with a local administrator account. You can
 create an approved standard local account, enable or disable access, reset a
 local password, or sign a user out of all devices. Reset, disable and sign-out
-invalidate previously issued CineVault sessions and media tickets for that user
-(both local password sessions and cloud-exchanged sessions). Sign-out allows a
-new login when the account is enabled. An administrator can also remove a
-supported Supabase link from the account's **Manage** panel. Unlinking deletes
-only the `Session` documents tied to that exact `cloudLinkGeneration` and
-rejects tokens carrying that generation, preserving any local password sessions
-(`cloudLinkGeneration: null`) and local library data for that user.
+invalidate previously issued CineVault sessions and media tickets for that user.
+Sign-out allows a new login when the account is enabled. An administrator can
+also remove a supported Supabase link from the account's **Manage** panel.
+Unlinking preserves the local account and library data and revokes sessions
+that depend on the removed link.
 
 ### Hosted Supabase account administration (`CV-P4-5`)
 
@@ -139,17 +137,27 @@ project-wide Supabase identity credentials:
    disable `public.server_users` membership for a specific CineVault
    installation. An installation owner cannot create Supabase accounts or reset
    project-wide Supabase passwords.
-2. **Project-Wide Account Creation & Password Resets (`cinevault-account-admin`)**:
+2. **Project-Wide Account Creation, Password Resets & Required Password-Change Flow (`cinevault-account-admin`)**:
    Only a verified Project Administrator listed in
    `cinevault_private.cp_project_admins` can invoke `admin-create-user` or
    `admin-reset-password` on the dedicated `cinevault-account-admin` Edge
-   Function. Only the authenticated target user can invoke
-   `complete-password-change` to replace a temporary password and clear
-   `public.profiles.must_change_password`. The `cinevault-account-admin`
-   service holds `CV_ACCOUNT_ADMIN_SERVICE_ROLE_KEY` and connects via
-   `cv_account_admin_login` (`SET LOCAL ROLE cv_account_admin`). The existing
-   `cinevault-control-plane` broker role (`cv_control_broker`) remains
-   restricted to installation enrollment and heartbeat.
+   Function. When a linked user with `public.profiles.must_change_password =
+   true` signs in on `http://127.0.0.1:3000/login` with their temporary
+   password, `POST /api/v1/auth/exchange` returns HTTP `403` with
+   `{ "error": "password_change_required" }` (without issuing a CineVault
+   session), and the login form prompts for a new password (`12..72` UTF-8
+   bytes). Submitting the form authenticates the temporary password, invokes
+   `complete-password-change` on `cinevault-account-admin` to clear
+   `must_change_password = false` and revoke temporary `auth.sessions`, and
+   completes a fresh sign-in and exchange with the new password. Because
+   Supabase Edge Function secrets (`Deno.env`) are project-wide across all Edge
+   Functions in `uouydbapluktfrylligo`, `cinevault-account-admin` uses
+   dedicated `CV_ACCOUNT_ADMIN_*` secret names and connects to Postgres via
+   `cv_account_admin_login` (`SET LOCAL ROLE cv_account_admin`), while
+   `cinevault-control-plane` reads only `CV_BROKER_*` secrets and connects via
+   `cv_control_broker_login` (`SET LOCAL ROLE cv_control_broker`). Neither the
+   CineVault server PC nor client browsers ever hold
+   `CV_ACCOUNT_ADMIN_SERVICE_ROLE_KEY` or database passwords.
 3. **Password-Specific Reset Proof & Uncertain Write Blocking**: Every
    password write commits a pre-write claim (`cp_claim_password_write`) that
    locks the per-user reset row (`cinevault_private.cp_password_resets`),

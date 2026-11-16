@@ -123,8 +123,9 @@ export function createAccountAdminService({
         new Date(caller.expiresAt)
       ])
     )
+    const activeResetId = claim?.resetId
     const writeTicket = claim?.writeTicket
-    if (!matches(UUID, writeTicket)) {
+    if (!matches(UUID, activeResetId) || !matches(UUID, writeTicket)) {
       throw new AccountAdminFailure('unavailable')
     }
 
@@ -138,13 +139,13 @@ export function createAccountAdminService({
         tx.call('markPasswordWriteUncertain', [
           projectRef,
           targetUserId,
-          resetId,
+          activeResetId,
           operationId,
           reason
         ])
       )
       throw new AccountAdminFailure('password_write_outcome_uncertain', {
-        resetId,
+        resetId: activeResetId,
         operationId,
         reason
       })
@@ -153,7 +154,7 @@ export function createAccountAdminService({
     // 3. Redeem single-use write_ticket only after verified HTTP 200 OK from Auth Admin API.
     const finalizeOp = kind === 'ADMIN_RESET' ? 'sealPasswordReset' : 'completePasswordChange'
     return await database.transaction(tx =>
-      tx.call(finalizeOp, [projectRef, targetUserId, resetId, operationId, writeTicket])
+      tx.call(finalizeOp, [projectRef, targetUserId, activeResetId, operationId, writeTicket])
     )
   }
 
@@ -259,10 +260,19 @@ export function createAccountAdminService({
         }
 
         if (operation === 'complete-password-change') {
-          exact(input, ['operation', 'projectRef', 'resetId', 'operationId', 'newPassword'])
+          const hasResetId =
+            Object.prototype.hasOwnProperty.call(input || {}, 'resetId') &&
+            input.resetId !== undefined &&
+            input.resetId !== null
+          exact(
+            input,
+            hasResetId
+              ? ['operation', 'projectRef', 'resetId', 'operationId', 'newPassword']
+              : ['operation', 'projectRef', 'operationId', 'newPassword']
+          )
           if (
             input.projectRef !== PROJECT_REF ||
-            !matches(UUID, input.resetId) ||
+            (hasResetId && !matches(UUID, input.resetId)) ||
             !matches(UUID, input.operationId) ||
             !validPassword(input.newPassword)
           ) {
@@ -273,7 +283,7 @@ export function createAccountAdminService({
           return await executeClaimedPasswordWrite({
             projectRef: input.projectRef,
             targetUserId: caller.userId,
-            resetId: input.resetId,
+            resetId: hasResetId ? input.resetId : null,
             operationId: input.operationId,
             kind: 'USER_CHANGE',
             caller,
@@ -364,6 +374,11 @@ export function createAccountAdminHandler({
     throw Error('account_admin_configuration_invalid')
   }
   const origins = new Set(allowedOrigins)
+  const validPaths = new Set([
+    routePath,
+    '/functions/v1/cinevault-account-admin',
+    '/cinevault-account-admin'
+  ])
 
   return async request => {
     const origin = request.headers.get('origin')
@@ -386,7 +401,7 @@ export function createAccountAdminHandler({
     try {
       if (origin !== null && !origins.has(origin)) return respond({ error: 'authorization' }, 403)
       const url = new URL(request.url)
-      if (url.search || url.pathname !== routePath) return respond({ error: 'authorization' }, 403)
+      if (url.search || !validPaths.has(url.pathname)) return respond({ error: 'authorization' }, 403)
       if (request.method === 'OPTIONS') {
         return origin && origins.has(origin) ? respond({}, 200) : respond({ error: 'authorization' }, 403)
       }

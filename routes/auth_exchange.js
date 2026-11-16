@@ -49,7 +49,8 @@ router.post('/', async (req, res) => {
         const cloud = await verifyCloudMembership({
             token: bearer[1],
             serverInstanceId: serverId,
-            publishableKey: settings.publishableKey
+            publishableKey: settings.publishableKey,
+            allowPasswordChangeRequired: true
         });
         const cloudBinding = {
             subject: cloud.subject, serverInstanceId: serverId, downloadAllowed: cloud.downloadAllowed
@@ -59,6 +60,9 @@ router.post('/', async (req, res) => {
         cloudBinding.generation = link.identityLinkBackup.generation;
         const current = await loadAuthoritativeUser(link._id);
         if (!current.user) return res.sendStatus(403);
+        if (cloud.mustChangePassword) {
+            return res.status(403).json({ error: 'password_change_required' });
+        }
 
         const now = Math.floor(Date.now() / 1000);
         const expiresAt = Math.min(now + sessionLifetimeSeconds, cloud.expiresAt);

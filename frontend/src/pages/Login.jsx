@@ -3,7 +3,12 @@ import { useNavigate, Link } from 'react-router-dom'
 import { login } from '../api'
 import { getNetworkInfo } from '../api'
 import { useAuth } from '../context/AuthContext'
-import { cloudSignInError, getCloudSignInConfig, signInWithCloud } from '../api/cloudSignIn'
+import {
+  cloudSignInError,
+  completeCloudPasswordChange,
+  getCloudSignInConfig,
+  signInWithCloud,
+} from '../api/cloudSignIn'
 import BrandIcon from '../components/BrandIcon'
 import GearIcon from '../components/GearIcon'
 import { Server, Wifi, Check, Trash2, X } from 'lucide-react'
@@ -19,6 +24,10 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
   const [cloudKey, setCloudKey] = useState(null)
   const [useCloud, setUseCloud] = useState(false)
+  const [passwordChangeRequired, setPasswordChangeRequired] = useState(false)
+  const [currentTempPassword, setCurrentTempPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
 
   useEffect(() => {
     let active = true
@@ -32,24 +41,57 @@ export default function Login() {
   const [serverMsg, setServerMsg] = useState('')
   const [localIps, setLocalIps] = useState([])
 
+  function resetPasswordChangeState() {
+    setPasswordChangeRequired(false)
+    setCurrentTempPassword('')
+    setNewPassword('')
+    setConfirmPassword('')
+  }
+
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
+    if (useCloud && passwordChangeRequired && newPassword !== confirmPassword) {
+      setError('New password and confirmation do not match.')
+      return
+    }
     setLoading(true)
+    const submittedPassword = password
     try {
-      if (useCloud) {
-        loginCloudUser(await signInWithCloud(email, password, cloudKey))
+      if (useCloud && passwordChangeRequired) {
+        const session = await completeCloudPasswordChange(
+          email,
+          currentTempPassword,
+          newPassword,
+          cloudKey
+        )
+        resetPasswordChangeState()
+        loginCloudUser(session)
+      } else if (useCloud) {
+        loginCloudUser(await signInWithCloud(email, submittedPassword, cloudKey))
       } else {
-        const { data } = await login(email, password)
+        const { data } = await login(email, submittedPassword)
         loginUser(data.token, data.user)
       }
       navigate('/')
     } catch (err) {
+      if (useCloud && err?.code === 'password_change_required') {
+        setPasswordChangeRequired(true)
+        setCurrentTempPassword(submittedPassword)
+        setNewPassword('')
+        setConfirmPassword('')
+        setError(cloudSignInError(err))
+        return
+      }
       const message = err.response?.data
       setError(useCloud ? cloudSignInError(err) :
         typeof message === 'string' ? message : 'Login failed. Please try again.')
     } finally {
-      if (useCloud) setPassword('')
+      if (useCloud) {
+        setPassword('')
+        setNewPassword('')
+        setConfirmPassword('')
+      }
       setLoading(false)
     }
   }
@@ -273,6 +315,7 @@ export default function Login() {
                 setUseCloud(event.target.value === 'cloud')
                 setEmail('')
                 setPassword('')
+                resetPasswordChangeState()
                 setError('')
               }}>
               <option value="local">CineVault account</option>
@@ -289,25 +332,59 @@ export default function Login() {
               placeholder="you@example.com"
               value={email}
               onChange={e => setEmail(e.target.value)}
+              disabled={loading || passwordChangeRequired}
               required
               autoComplete="email"
               autoFocus
             />
           </div>
 
-          <div className="field">
-            <label htmlFor="password">Password</label>
-            <input
-              id="password"
-              type="password"
-              className="input"
-              placeholder="••••••••"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              required
-              autoComplete="current-password"
-            />
-          </div>
+          {useCloud && passwordChangeRequired ? (
+            <>
+              <div className="field">
+                <label htmlFor="new-password">New password</label>
+                <input
+                  id="new-password"
+                  type="password"
+                  className="input"
+                  placeholder="At least 12 characters"
+                  value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)}
+                  required
+                  autoComplete="new-password"
+                  autoFocus
+                />
+              </div>
+
+              <div className="field">
+                <label htmlFor="confirm-password">Confirm new password</label>
+                <input
+                  id="confirm-password"
+                  type="password"
+                  className="input"
+                  placeholder="Repeat new password"
+                  value={confirmPassword}
+                  onChange={e => setConfirmPassword(e.target.value)}
+                  required
+                  autoComplete="new-password"
+                />
+              </div>
+            </>
+          ) : (
+            <div className="field">
+              <label htmlFor="password">Password</label>
+              <input
+                id="password"
+                type="password"
+                className="input"
+                placeholder="••••••••"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                required
+                autoComplete="current-password"
+              />
+            </div>
+          )}
 
           <button
             type="submit"
@@ -315,8 +392,29 @@ export default function Login() {
             disabled={loading}
           >
             {loading ? <span className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} /> : null}
-            {loading ? 'Signing in…' : useCloud ? 'Sign in with Supabase' : 'Sign In'}
+            {loading
+              ? (passwordChangeRequired ? 'Updating password…' : 'Signing in…')
+              : passwordChangeRequired
+                ? 'Update password and sign in'
+                : useCloud
+                  ? 'Sign in with Supabase'
+                  : 'Sign In'}
           </button>
+
+          {useCloud && passwordChangeRequired && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-lg"
+              style={{ width: '100%', justifyContent: 'center', marginTop: 'var(--sp-2)' }}
+              disabled={loading}
+              onClick={() => {
+                resetPasswordChangeState()
+                setError('')
+              }}
+            >
+              Back to sign in
+            </button>
+          )}
 
           <div style={{ display: 'flex', alignItems: 'center', margin: 'var(--sp-4) 0' }}>
             <div style={{ flex: 1, height: 1, background: 'var(--border)' }}></div>

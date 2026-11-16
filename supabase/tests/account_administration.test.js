@@ -820,6 +820,44 @@ test('CV-P4-5 Revision 5: cinevault-account-admin boundaries, caller-bound membe
                 (await db.query(`select count(*)::int n from auth.sessions where user_id = $1`, [memberB])).rows[0].n,
                 0
             );
+
+            // 4. Subsequent reset (reset2) completed by the browser flow WITHOUT supplying resetId:
+            // cp_claim_password_write resolves the active AWAITING_USER_CHANGE row's reset_id automatically.
+            const reset2 = uuid();
+            const reset2Res = await invokeHttp(
+                {
+                    operation: 'admin-reset-password',
+                    projectRef: PROJECT_REF,
+                    targetUserId: memberB,
+                    resetId: reset2,
+                    operationId: uuid(),
+                    temporaryPassword: 'Reset2TempPassword-B!'
+                },
+                adminSession.token
+            );
+            assert.equal(reset2Res.status, 200);
+            assert.equal(reset2Res.body.state, 'AWAITING_USER_CHANGE');
+            assert.equal(reset2Res.body.mustChangePassword, true);
+
+            const tempLoginSession2 = await createAuthSession(memberB);
+            const completeWithoutResetIdRes = await invokeHttp(
+                {
+                    operation: 'complete-password-change',
+                    projectRef: PROJECT_REF,
+                    operationId: uuid(),
+                    newPassword: 'BrowserFlowChosenPass-B!'
+                },
+                tempLoginSession2.token
+            );
+            assert.equal(completeWithoutResetIdRes.status, 200);
+            assert.equal(completeWithoutResetIdRes.body.state, 'COMPLETED');
+            assert.equal(completeWithoutResetIdRes.body.resetId, reset2);
+            assert.equal(completeWithoutResetIdRes.body.mustChangePassword, false);
+            assert.equal(authUsers.get(memberB).password, 'BrowserFlowChosenPass-B!');
+            assert.equal(
+                (await db.query(`select count(*)::int n from auth.sessions where user_id = $1`, [memberB])).rows[0].n,
+                0
+            );
         });
 
         // =========================================================================

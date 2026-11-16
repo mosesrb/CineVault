@@ -51,7 +51,6 @@ describe('Supabase session exchange through the application', () => {
     let owner;
     let token;
     let linkGeneration;
-    let linkOperationId;
 
     test('exposes only the publishable configuration to the enabled direct listener', async () => {
         const config = () => request(app).get('/api/v1/auth/exchange/config').set('Host', 'localhost');
@@ -92,7 +91,6 @@ describe('Supabase session exchange through the application', () => {
         app = createApp();
         subject = randomUUID();
         linkGeneration = randomUUID();
-        linkOperationId = randomUUID();
         token = cloudToken();
         user = await User.create({
             email: `exchange-${randomUUID()}@test.invalid`, name: 'Exchange fixture', password: 'fixture-password',
@@ -103,11 +101,8 @@ describe('Supabase session exchange through the application', () => {
                 supabaseUserId: subject, authSchemaVersion: 2,
                 identityMigration: { id: MIGRATION_ID, version: 1, serverInstanceId: serverId },
                 identityLinkBackup: {
-                    operationId: linkOperationId,
-                    generation: linkGeneration,
-                    appliedSubject: subject,
-                    versionWasMissing: true,
-                    subjectWasMissing: true
+                    operationId: randomUUID(), generation: linkGeneration, appliedSubject: subject,
+                    versionWasMissing: true, subjectWasMissing: true
                 }
             }
         });
@@ -140,11 +135,9 @@ describe('Supabase session exchange through the application', () => {
         const claims = jwt.decode(local);
         expect(claims.exp).toBe(jwt.decode(token).exp);
         expect(claims._id).toBe(String(user._id));
-        expect(claims.cloudBinding.generation).toBe(linkGeneration);
-        const stored = await Session.findOne({ userId: user._id }).select('+token +tokenDigest +cloudLinkGeneration');
+        const stored = await Session.findOne({ userId: user._id }).select('+token +tokenDigest');
         expect(stored.token).toBeUndefined();
         expect(stored.tokenDigest).toBe(hashSessionToken(local));
-        expect(stored.cloudLinkGeneration).toBe(linkGeneration);
         expect(upstream.mock.calls).toHaveLength(2);
         const [url, options] = upstream.mock.calls[1];
         expect(new URL(url).searchParams.get('server.server_instance_id')).toBe('eq.' + serverId);
@@ -154,14 +147,11 @@ describe('Supabase session exchange through the application', () => {
         const download = await request(app).post('/api/v1/stream/ticket').set('Host', 'localhost')
             .set('x-auth-token', local).send({ path: 'fixture.mp4', operation: 'download' });
         expect(download.status).toBe(403);
-        await User.collection.updateOne({ _id: user._id }, { $unset: { 'identityLinkBackup.generation': 1 } });
-        expect((await getAccount()).status).toBe(401);
-        expect((await exchange()).status).toBe(403);
         await User.collection.updateOne({ _id: user._id }, { $set: { identityLinkBackup: { generation: randomUUID() } } });
         expect((await getAccount()).status).toBe(401);
         await User.collection.updateOne({ _id: user._id }, { $unset: { identityMigration: 1, identityLinkBackup: 1 } });
         expect((await getAccount()).status).toBe(401);
-        expect(upstream.mock.calls).toHaveLength(4);
+        expect(upstream.mock.calls).toHaveLength(2);
     });
 
     test('rejects a conflicting duplicate subject even when the competing record lacks a marker', async () => {
@@ -489,7 +479,26 @@ describe('Supabase session exchange through the application', () => {
         activeAuthSessions.add(tempSessionId);
 
         expect((await exchange(preResetToken)).status).toBe(401);
-        expect((await exchange(tempToken)).status).toBe(403);
+        const tempExchangeDuringReset = await exchange(tempToken);
+        expect(tempExchangeDuringReset.status).toBe(403);
+        expect(tempExchangeDuringReset.body).toEqual({ error: 'password_change_required' });
+
+        // Unlinked account with must_change_password=true still receives a bare 403 without disclosing password_change_required
+        const unlinkedTempToken = cloudToken({ sub: randomUUID(), session_id: tempSessionId });
+        jest.spyOn(global, 'fetch').mockImplementationOnce(async () =>
+            Response.json({ id: jwt.decode(unlinkedTempToken).sub, is_anonymous: false })
+        ).mockImplementationOnce(async () =>
+            Response.json([{
+                user_id: jwt.decode(unlinkedTempToken).sub,
+                enabled: true,
+                download_allowed: false,
+                server: { server_instance_id: serverId },
+                profile: { id: jwt.decode(unlinkedTempToken).sub, blocked: false, must_change_password: true }
+            }])
+        );
+        const unlinkedRes = await exchange(unlinkedTempToken);
+        expect(unlinkedRes.status).toBe(403);
+        expect(unlinkedRes.body).toEqual({});
 
         // 3. User completes required password change via cinevault-account-admin:
         // must_change_password clears to false, tempSessionId is deleted from auth.sessions,

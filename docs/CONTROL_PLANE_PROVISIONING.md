@@ -103,13 +103,38 @@ Prepared SQL (`supabase/broker/account_administration.sql`) and the dedicated
 hosted Supabase account creation, installation membership management, and
 password reset administration without expanding `cv_control_broker`:
 
-1. **Dedicated Roles and Boundary**: `cv_account_admin_login` (`NOLOGIN` in
-   prepared SQL until secret provisioning, `NOINHERIT`, `NOBYPASSRLS`,
-   `CONNECTION LIMIT 2`) connects via Supavisor transaction mode (`6543`) and
-   executes `SET LOCAL ROLE cv_account_admin` inside bounded transactions. It
-   has `EXECUTE` only on the seven account-administration RPCs in
-   `cinevault_private` and zero access to enrollment, replacement, restoration,
-   or heartbeat functions/tables.
+1. **Dedicated Roles, Project-Wide Edge Function Secrets, and Trust Boundary**:
+   - **Primary Trust Boundary (PC / Client vs. Hosted Supabase)**: The CineVault
+     media server PC (`127.0.0.1:3000`) and client browsers/devices never hold
+     `CV_ACCOUNT_ADMIN_SERVICE_ROLE_KEY` or any PostgreSQL password.
+   - **Supabase Project-Wide Edge Function Secrets**: In Supabase, Edge Function
+     secrets configured via `supabase secrets set` (or Dashboard Edge Function
+     Secrets, alongside built-in `SUPABASE_*` variables) are **project-wide**
+     and exposed in `Deno.env` to every Edge Function deployed in project
+     `uouydbapluktfrylligo`; Supabase does not provide a separate per-function
+     secret store. Within the hosted Edge Runtime, isolation between
+     `cinevault-control-plane` and `cinevault-account-admin` is enforced by:
+     1. **Distinct Environment Variable Prefixes & Reviewed Entrypoints**:
+        `cinevault-control-plane` (`supabase/broker/runtime.mjs`) reads only
+        `CV_BROKER_*` variables and never reads `CV_ACCOUNT_ADMIN_*` or
+        `SUPABASE_SERVICE_ROLE_KEY`; `cinevault-account-admin`
+        (`supabase/account-admin/runtime.mjs`) reads only `CV_ACCOUNT_ADMIN_*`
+        variables (`CV_ACCOUNT_ADMIN_ENABLED`, `CV_ACCOUNT_ADMIN_PROJECT_REF`,
+        `CV_ACCOUNT_ADMIN_DATABASE_URL`, `CV_ACCOUNT_ADMIN_PUBLISHABLE_KEY`,
+        `CV_ACCOUNT_ADMIN_SERVICE_ROLE_KEY`,
+        `CV_ACCOUNT_ADMIN_ALLOWED_ORIGINS`).
+     2. **Distinct PostgreSQL Logins and Non-Overlapping `EXECUTE` Grants**:
+        `cv_account_admin_login` (`NOLOGIN` in prepared SQL until secret
+        provisioning, `NOINHERIT`, `NOBYPASSRLS`, `CONNECTION LIMIT 2`) connects
+        via Supavisor transaction mode (`6543`) and executes
+        `SET LOCAL ROLE cv_account_admin` inside bounded transactions. It has
+        `EXECUTE` only on the six account-administration RPCs in
+        `cinevault_private` and zero access to `cv_control_broker` enrollment,
+        replacement, restoration, or heartbeat functions/tables. Conversely,
+        `cv_control_broker_login` cannot `SET ROLE cv_account_admin` or invoke
+        any account-administration RPC.
+     3. **Repository-Governed Deployment**: Only reviewed Edge Functions in
+        `supabase/functions/` are deployed to project `uouydbapluktfrylligo`.
 2. **Project Administrator Provisioning**: A trusted schema operator provisions
    or disables project administrators in a bounded transaction via
    `cinevault_private.cp_provision_project_admin(p_project, p_admin_uuid,
@@ -144,6 +169,51 @@ password reset administration without expanding `cv_control_broker`:
      installation membership (`public.manage_server_member`), and re-link the
      local CineVault user (`npm run migrate:identity-link-write -- rollback ...`
      followed by `apply`).
+5. **Hosted Deployment Plan & Old-Token Rejection Verification**:
+   - **Step 1 (Database Migration)**: Apply the reviewed
+     `supabase/broker/account_administration.sql` migration to project
+     `uouydbapluktfrylligo` while `cv_account_admin_login` remains `NOLOGIN`
+     with `PASSWORD NULL` and `CV_ACCOUNT_ADMIN_ENABLED` is unset/`'false'`.
+   - **Step 2 (Dedicated Role Password & Project-Wide Secrets)**: Generate a
+     `>= 32`-character SCRAM-SHA-256 password for `cv_account_admin_login`,
+     enable `LOGIN`, and set the project-wide Edge Function secrets
+     `CV_ACCOUNT_ADMIN_PROJECT_REF='uouydbapluktfrylligo'`,
+     `CV_ACCOUNT_ADMIN_DATABASE_URL`, `CV_ACCOUNT_ADMIN_PUBLISHABLE_KEY`,
+     `CV_ACCOUNT_ADMIN_SERVICE_ROLE_KEY`, `CV_ACCOUNT_ADMIN_ALLOWED_ORIGINS`,
+     and `CV_ACCOUNT_ADMIN_ENABLED='false'`.
+   - **Step 3 (Edge Function Deployment & Activation)**: Deploy
+     `supabase/functions/cinevault-account-admin` (`--no-verify-jwt` so
+     `createOwnerVerifier` enforces fixed-project JWKS + fresh
+     `GET /auth/v1/user`), verify HTTP `503` while disabled, then set
+     `CV_ACCOUNT_ADMIN_ENABLED='true'` and seed the operator's project-admin row
+     via `cinevault_private.cp_provision_project_admin`.
+   - **Step 4 (Hosted Old-Token Rejection Verification)**: Using a disposable
+     Supabase user linked to a disposable local CineVault test account:
+     1. Sign in before reset (`POST /auth/v1/token?grant_type=password`) to
+        capture `T_before_reset` (`session_id = S_old`, `exp > now + 3000s`) and
+        confirm `GET /auth/v1/user` returns `200`.
+     2. Run `admin-reset-password` via `cinevault-account-admin`, sign in with
+        the temporary password to capture `T_temp_session` (`session_id =
+        S_temp`), confirm `POST /api/v1/auth/exchange` with `T_temp_session`
+        returns `403 { "error": "password_change_required" }`, and invoke
+        `complete-password-change` (without `logout` on `T_temp_session` so
+        revocation is tested purely from SQL `DELETE FROM auth.sessions`).
+     3. After `must_change_password` clears to `false` (and while both
+        `T_before_reset` and `T_temp_session` remain unexpired), verify that:
+        - `GET https://uouydbapluktfrylligo.supabase.co/auth/v1/user` with
+          `T_before_reset` returns `403` (`session_not_found`),
+        - `GET https://uouydbapluktfrylligo.supabase.co/auth/v1/user` with
+          `T_temp_session` returns `403` (`session_not_found`),
+        - `POST http://127.0.0.1:3000/api/v1/auth/exchange` with
+          `T_before_reset` returns `401 Unauthorized` (because
+          `verifyCloudMembership` calls `GET /auth/v1/user` before reading
+          `server_users`), and
+        - `POST http://127.0.0.1:3000/api/v1/auth/exchange` with
+          `T_temp_session` returns `401 Unauthorized`.
+     4. Sign in with the new permanent password (`T_after_change`, `session_id =
+        S_new`), confirm `GET /auth/v1/user` returns `200` and
+        `POST /api/v1/auth/exchange` returns `200`, then clean up the disposable
+        user and rows.
 
 References: [Supabase users](https://supabase.com/docs/guides/auth/users),
 [database roles](https://supabase.com/docs/guides/database/postgres/roles),
