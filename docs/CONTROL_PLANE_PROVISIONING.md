@@ -182,14 +182,17 @@ password reset administration without expanding `cv_control_broker`:
      The hosted root and `complete-password-change` route returned `503`
      `unavailable` with `Cache-Control: no-store` before credential provisioning.
    - **Step 3 (Dedicated Role Password, Project-Wide Secrets & Activation)**: Generate a
-     `>= 32`-character SCRAM-SHA-256 password for `cv_account_admin_login`,
-     enable `LOGIN`, and set the project-wide Edge Function secrets
+     `>= 32`-character SCRAM-SHA-256 password for `cv_account_admin_login`
+     and set the project-wide Edge Function secrets
      `CV_ACCOUNT_ADMIN_PROJECT_REF='uouydbapluktfrylligo'`,
      `CV_ACCOUNT_ADMIN_DATABASE_URL`, `CV_ACCOUNT_ADMIN_PUBLISHABLE_KEY`,
      `CV_ACCOUNT_ADMIN_SERVICE_ROLE_KEY`, `CV_ACCOUNT_ADMIN_ALLOWED_ORIGINS`,
      and `CV_ACCOUNT_ADMIN_ENABLED='false'`. For the direct Windows pilot set
      `CV_ACCOUNT_ADMIN_ALLOWED_ORIGINS='http://127.0.0.1:3000'`. Recheck HTTP `503` with the
-     credentials staged. During the approved activation, provision the operator's
+     credentials staged. After staging, migration `20261116093600_account_admin_login_activation.sql`
+     enabled only the dedicated database login. Verify an authenticated connection
+     to the transaction pooler and `SET LOCAL ROLE cv_account_admin` while the
+     function remains disabled. During the approved activation, provision the operator's
      project-admin row via `cinevault_private.cp_provision_project_admin` and set
      `CV_ACCOUNT_ADMIN_ENABLED='true'`.
    - **Step 4 (Hosted Old-Token Rejection Verification)**: Using a disposable
