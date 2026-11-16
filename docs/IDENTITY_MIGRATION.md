@@ -89,6 +89,23 @@ endpoint and reads current membership under the same user's row-level
 permissions. Membership must match the installation and an approved,
 unbanned local user with exactly one stored link for that subject.
 
+### Opt-in HTTPS browser pilot
+
+Set `CV_AUTH_EXCHANGE_ENABLED=true` and `CV_AUTH_EXCHANGE_HTTPS_ORIGIN` to the
+exact HTTPS origin browser clients will visit. Set `CV_AUTH_EXCHANGE_TLS_CERT_FILE`
+and `CV_AUTH_EXCHANGE_TLS_KEY_FILE` to the local PEM certificate chain and key.
+The certificate must be trusted by the browsers and valid for the hostname.
+The HTTPS origin's port must differ from the existing HTTP listener port.
+Use the HTTPS listener directly. Forwarding headers are rejected for exchange
+and cloud-bound sessions. The ordinary HTTP listener still serves local account
+sign-in. To restore the direct loopback pilot, unset the HTTPS origin and TLS
+file settings and restart. To disable all cloud sign-in, turn off the pilot flag.
+
+On the HTTPS browser pilot, the sign-in selector appears after the same-origin
+capability check succeeds. Completing a required password change also needs this
+exact HTTPS origin on the hosted Account Admin allowlist. Native Android support
+is a separate rollout step.
+
 The response supplies a revocable CineVault access token and an
 `expiresAt` Unix timestamp in seconds. The local token expires within
 five minutes or at the upstream expiry, whichever comes first. CineVault

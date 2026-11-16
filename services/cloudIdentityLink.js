@@ -27,12 +27,36 @@ async function matchesCloudLinkedUser(userId, binding) {
         linkedUser.identityLinkBackup.generation === binding.generation;
 }
 
+function hasForwardedHeaders(req) {
+    return Object.keys(req.headers).some(name => name === 'forwarded' || name.startsWith('x-forwarded-'));
+}
+
 function isLocalExchangeRequest(req) {
     const loopback = ['127.0.0.1', '::1', '::ffff:127.0.0.1'];
     return process.env.CV_AUTH_EXCHANGE_ENABLED === 'true' &&
         loopback.includes(req.socket.remoteAddress) && loopback.includes(req.socket.localAddress) &&
         /^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d{1,5})?$/i.test(req.get('host') || '') &&
-        !Object.keys(req.headers).some(name => name === 'forwarded' || name.startsWith('x-forwarded-'));
+        !hasForwardedHeaders(req);
 }
 
-module.exports = { findCloudLinkedUser, matchesCloudLinkedUser, isLocalExchangeRequest };
+function cloudExchangeHttpsOrigin(env = process.env) {
+    const origin = env.CV_AUTH_EXCHANGE_HTTPS_ORIGIN;
+    if (env.CV_AUTH_EXCHANGE_ENABLED !== 'true' || !origin) return null;
+    try {
+        const url = new URL(origin);
+        if (url.protocol === 'https:' && url.origin === origin) return url;
+    } catch { /* An invalid operator setting must not enable wider exchange. */ }
+    return null;
+}
+
+function isCloudExchangeRequest(req) {
+    if (req.socket.encrypted !== true) {
+        return !process.env.CV_AUTH_EXCHANGE_HTTPS_ORIGIN && isLocalExchangeRequest(req);
+    }
+    const httpsOrigin = cloudExchangeHttpsOrigin();
+    if (!httpsOrigin || hasForwardedHeaders(req)) return false;
+    const origin = req.get('origin');
+    return req.get('host') === httpsOrigin.host && (origin === undefined || origin === httpsOrigin.origin);
+}
+
+module.exports = { findCloudLinkedUser, matchesCloudLinkedUser, isCloudExchangeRequest, cloudExchangeHttpsOrigin };

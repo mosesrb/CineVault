@@ -7,6 +7,7 @@ const { PROJECT_REF } = require('../../services/controlPlane/protocol');
 const { MIGRATION_ID } = require('../../services/identityMigrationPlan');
 const { createApp } = require('../../app');
 const { ensureServerIdentity } = require('../../services/serverIdentityService');
+const { isCloudExchangeRequest } = require('../../services/cloudIdentityLink');
 const { Movie } = require('../../models/movie');
 const mongoose = require('mongoose');
 
@@ -16,6 +17,7 @@ let serverId;
 const { privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
 const settings = {
     CV_AUTH_EXCHANGE_ENABLED: 'true',
+    CV_AUTH_EXCHANGE_HTTPS_ORIGIN: '',
     CV_CONTROL_PLANE_ENABLED: 'true',
     CV_CONTROL_PLANE_PROJECT_REF: PROJECT_REF,
     CV_CONTROL_PLANE_PROJECT_URL: base,
@@ -60,6 +62,24 @@ describe('Supabase session exchange through the application', () => {
         expect((await config().set('X-Forwarded-Host', 'localhost')).status).toBe(404);
         delete process.env.CV_AUTH_EXCHANGE_ENABLED;
         expect((await config()).status).toBe(404);
+    });
+
+    test('requires actual TLS, exact host and same origin for the wider browser mode', () => {
+        process.env.CV_AUTH_EXCHANGE_HTTPS_ORIGIN = 'https://cinevault.example:9443';
+        const request = (headers, encrypted = true) => ({
+            socket: { encrypted, remoteAddress: '127.0.0.1', localAddress: '127.0.0.1' },
+            headers, get: name => headers[name]
+        });
+        const host = 'cinevault.example:9443';
+        expect(isCloudExchangeRequest(request({ host }))).toBe(true);
+        expect(isCloudExchangeRequest(request({ host, origin: 'https://' + host }))).toBe(true);
+        expect(isCloudExchangeRequest(request({ host, origin: 'https://other.example' }))).toBe(false);
+        expect(isCloudExchangeRequest(request({ host: 'localhost' }))).toBe(false);
+        expect(isCloudExchangeRequest(request({ host: 'localhost', 'x-forwarded-proto': 'https' }, false))).toBe(false);
+        expect(isCloudExchangeRequest(request({ host: 'localhost' }, false))).toBe(false);
+        expect(isCloudExchangeRequest(request({ host, forwarded: 'proto=https' }))).toBe(false);
+        process.env.CV_AUTH_EXCHANGE_ENABLED = 'false';
+        expect(isCloudExchangeRequest(request({ host }))).toBe(false);
     });
 
     test('signs out only the current cloud-backed local session', async () => {

@@ -5,7 +5,7 @@ const { randomUUID } = require('node:crypto');
 const { configuration } = require('../services/controlPlane/configuration');
 const { readServerIdentity } = require('../services/serverIdentityService');
 const { verifyCloudMembership, ExchangeFailure } = require('../services/supabaseExchangeAuthority');
-const { findCloudLinkedUser, matchesCloudLinkedUser, isLocalExchangeRequest } = require('../services/cloudIdentityLink');
+const { findCloudLinkedUser, matchesCloudLinkedUser, isCloudExchangeRequest } = require('../services/cloudIdentityLink');
 const { createSessionForRequest } = require('../services/sessionService');
 const auth = require('../middleware/auth');
 const { loadAuthoritativeUser } = auth;
@@ -17,11 +17,14 @@ const sessionLifetimeSeconds = 300;
 router.get('/config', (req, res) => {
     res.set('Cache-Control', 'no-store');
     const settings = configuration();
-    if (!isLocalExchangeRequest(req) || settings.mode !== 'ready') return res.sendStatus(404);
+    if (!isCloudExchangeRequest(req) || settings.mode !== 'ready') return res.sendStatus(404);
     return res.json({ publishableKey: settings.publishableKey });
 });
 
-router.post('/logout', auth, async (req, res) => {
+router.post('/logout', (req, res, next) => {
+    res.set('Cache-Control', 'no-store');
+    return isCloudExchangeRequest(req) ? next() : res.sendStatus(404);
+}, auth, async (req, res) => {
     res.set('Cache-Control', 'no-store');
     if (!req.auth?.cloudBinding) return res.sendStatus(403);
     try {
@@ -34,7 +37,7 @@ router.post('/logout', auth, async (req, res) => {
 
 router.post('/', async (req, res) => {
     res.set('Cache-Control', 'no-store');
-    if (!isLocalExchangeRequest(req)) return res.sendStatus(404);
+    if (!isCloudExchangeRequest(req)) return res.sendStatus(404);
     if (Object.keys(req.query).length || req.get('transfer-encoding') ||
         (req.get('content-length') && req.get('content-length') !== '0')) {
         return res.sendStatus(400);

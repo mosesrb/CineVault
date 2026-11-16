@@ -4,7 +4,7 @@ const winston = require('winston');
 const { Session, hashSessionToken } = require('../models/session');
 const { User } = require('../models/user');
 const { hashVaultPath } = require('../services/contentPolicyService');
-const { matchesCloudLinkedUser, isLocalExchangeRequest } = require('../services/cloudIdentityLink');
+const { matchesCloudLinkedUser, isCloudExchangeRequest } = require('../services/cloudIdentityLink');
 
 function isPlaybackEndpoint(req) {
     const isStreamRouter = req.baseUrl === '/api/v1/stream' || req.baseUrl === '/api/stream';
@@ -79,7 +79,7 @@ module.exports = async function (req, res, next) {
 
         try {
             if (decoded.cloudBinding !== undefined &&
-                (!isLocalExchangeRequest(req) ||
+                (!isCloudExchangeRequest(req) ||
                     !/^[a-f0-9]{24}$/.test(decoded.parentSessionId || '') ||
                     !await Session.exists({ _id: decoded.parentSessionId, userId: decoded._id }) ||
                     !await matchesCloudLinkedUser(decoded._id, decoded.cloudBinding))) {
@@ -121,7 +121,7 @@ module.exports = async function (req, res, next) {
             return res.status(401).send('Session has been revoked or expired.');
         }
         if (decoded.cloudBinding !== undefined &&
-            (!isLocalExchangeRequest(req) || !await matchesCloudLinkedUser(decoded._id, decoded.cloudBinding))) {
+            (!isCloudExchangeRequest(req) || !await matchesCloudLinkedUser(decoded._id, decoded.cloudBinding))) {
             return res.status(401).send('Session has been revoked or expired.');
         }
         if (decoded.cloudBinding !== undefined && decoded.cloudBinding.downloadAllowed !== true &&

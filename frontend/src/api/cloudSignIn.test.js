@@ -18,6 +18,20 @@ test('a custom server connection hides cloud sign-in and receives no credentials
   expect(fetch).not.toHaveBeenCalled()
 })
 
+test('a separate HTTPS browser asks only its same origin whether cloud sign-in is available', async () => {
+  vi.stubGlobal('window', { location: { protocol: 'https:', hostname: 'cinevault.example' } })
+  fetch.mockResolvedValueOnce(new Response(null, { status: 404 }))
+    .mockResolvedValueOnce(Response.json({ publishableKey: key }))
+  expect(await getCloudSignInConfig()).toBeNull()
+  expect(await getCloudSignInConfig()).toBe(key)
+  expect(fetch.mock.calls.map(([url]) => url)).toEqual([
+    '/api/v1/auth/exchange/config', '/api/v1/auth/exchange/config',
+  ])
+  vi.stubGlobal('window', { location: { protocol: 'http:', hostname: 'cinevault.example' } })
+  expect(await getCloudSignInConfig()).toBeNull()
+  expect(fetch).toHaveBeenCalledTimes(2)
+})
+
 test('exchanges a cloud token for a local session and scopes logout to the cloud session', async () => {
   const expiresAt = Math.floor(Date.now() / 1000) + 120
   fetch.mockResolvedValueOnce(Response.json({ publishableKey: key }))

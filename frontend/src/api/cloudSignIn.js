@@ -13,7 +13,7 @@ const messages = {
 }
 
 export function canUseCloudSignIn() {
-  return ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname) &&
+  return (window.location.protocol === 'https:' || ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname)) &&
     !window.Capacitor?.isNativePlatform?.() && !localStorage.getItem('cv_server_url') &&
     !import.meta.env.VITE_API_URL
 }
