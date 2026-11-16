@@ -27,6 +27,35 @@ const SERVICE_ROLE_KEY = 'sb_secret_account_admin_service_role_fixture_123456789
 const ALLOWED_ORIGIN = 'https://cinevault-owner-approval.pages.dev';
 const ISSUER = `https://${PROJECT_REF}.supabase.co/auth/v1`;
 
+test('Account Admin startup diagnostics identify invalid settings without logging values', async t => {
+    const { createAccountAdminRuntime } = await import('../account-admin/runtime.mjs');
+    const log = t.mock.method(console, 'error', () => {});
+    const configuration = {
+        enabled: 'true', projectRef: PROJECT_REF, allowedOrigins: 'http://127.0.0.1:3000',
+        publishableKey: PUBLISHABLE_KEY, serviceRoleKey: SERVICE_ROLE_KEY,
+        databaseUrl: `postgresql://cv_account_admin_login.${PROJECT_REF}:${'x'.repeat(32)}@aws-0-ap-southeast-2.pooler.supabase.com:6543/postgres`
+    };
+    const postgres = () => ({ begin: async () => {}, end: async () => {} });
+    const runtime = createAccountAdminRuntime({ configuration, postgres });
+    assert.equal(runtime.configured, true);
+    await runtime.close();
+    const cases = {
+        projectRef: 'project_ref', allowedOrigins: 'allowed_origins',
+        publishableKey: 'publishable_key', serviceRoleKey: 'service_role_key'
+    };
+    for (const [variable, diagnostic] of Object.entries(cases)) {
+        const failed = createAccountAdminRuntime({
+            configuration: { ...configuration, [variable]: 'synthetic invalid value' }, postgres
+        });
+        assert.equal(failed.configured, false);
+        assert.equal((await failed.handle(new Request('https://example.invalid'))).status, 503);
+        assert.deepEqual(log.mock.calls.at(-1).arguments, [
+            'CineVault account-admin startup rejected', `account_admin_${diagnostic}_invalid`
+        ]);
+    }
+    assert.equal(log.mock.callCount(), Object.keys(cases).length);
+});
+
 test('Account Admin permits the configured direct loopback pilot origin', async () => {
     const { createAccountAdminHandler } = await import('../account-admin/service.mjs');
     const loopback = 'http://127.0.0.1:3000';
