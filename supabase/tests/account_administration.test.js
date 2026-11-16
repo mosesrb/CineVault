@@ -26,6 +26,27 @@ const PUBLISHABLE_KEY = 'sb_publishable_account_admin_fixture_1234567890';
 const SERVICE_ROLE_KEY = 'sb_secret_account_admin_service_role_fixture_1234567890';
 const ALLOWED_ORIGIN = 'https://cinevault-owner-approval.pages.dev';
 const ISSUER = `https://${PROJECT_REF}.supabase.co/auth/v1`;
+
+test('Account Admin permits the configured direct loopback pilot origin', async () => {
+    const { createAccountAdminHandler } = await import('../account-admin/service.mjs');
+    const loopback = 'http://127.0.0.1:3000';
+    const request = origin => new Request(`${ISSUER.replace('/auth/v1', '')}/functions/v1/cinevault-account-admin`, {
+        method: 'OPTIONS', headers: { origin }
+    });
+    const service = { execute: () => assert.fail('Preflight must not execute an account operation') };
+    const handler = createAccountAdminHandler({ service, allowedOrigins: [loopback, ALLOWED_ORIGIN] });
+    for (const origin of [loopback, ALLOWED_ORIGIN]) {
+        const response = await handler(request(origin));
+        assert.equal(response.status, 200);
+        assert.equal(response.headers.get('access-control-allow-origin'), origin);
+    }
+    const otherHttpOrigin = 'http://localhost:5180';
+    const denied = await handler(request(otherHttpOrigin));
+    assert.equal(denied.status, 403);
+    assert.equal(denied.headers.has('access-control-allow-origin'), false);
+    assert.throws(() => createAccountAdminHandler({ service, allowedOrigins: [otherHttpOrigin] }),
+        /account_admin_configuration_invalid/);
+});
 const ADMIN_USERS_URL = `${ISSUER}/admin/users`;
 
 function signUserJwt({ sub, sessionId, expSeconds, nowMs }) {

@@ -364,7 +364,8 @@ export function createAccountAdminHandler({
   if (
     !Array.isArray(allowedOrigins) ||
     !allowedOrigins.length ||
-    !allowedOrigins.every(o => typeof o === 'string' && /^https:\/\/[^/@?#\s]+$/.test(o)) ||
+    !allowedOrigins.every(origin => origin === 'http://127.0.0.1:3000' ||
+      (typeof origin === 'string' && /^https:\/\/[^/@?#\s]+$/.test(origin))) ||
     typeof service?.execute !== 'function' ||
     !Number.isSafeInteger(bodyTimeoutMs) ||
     bodyTimeoutMs < 1 ||

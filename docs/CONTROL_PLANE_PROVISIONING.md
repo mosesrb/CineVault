@@ -187,7 +187,8 @@ password reset administration without expanding `cv_control_broker`:
      `CV_ACCOUNT_ADMIN_PROJECT_REF='uouydbapluktfrylligo'`,
      `CV_ACCOUNT_ADMIN_DATABASE_URL`, `CV_ACCOUNT_ADMIN_PUBLISHABLE_KEY`,
      `CV_ACCOUNT_ADMIN_SERVICE_ROLE_KEY`, `CV_ACCOUNT_ADMIN_ALLOWED_ORIGINS`,
-     and `CV_ACCOUNT_ADMIN_ENABLED='false'`. Recheck HTTP `503` with the
+     and `CV_ACCOUNT_ADMIN_ENABLED='false'`. For the direct Windows pilot set
+     `CV_ACCOUNT_ADMIN_ALLOWED_ORIGINS='http://127.0.0.1:3000'`. Recheck HTTP `503` with the
      credentials staged. During the approved activation, provision the operator's
      project-admin row via `cinevault_private.cp_provision_project_admin` and set
      `CV_ACCOUNT_ADMIN_ENABLED='true'`.
