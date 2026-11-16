@@ -129,7 +129,7 @@ password reset administration without expanding `cv_control_broker`:
         provisioning, `NOINHERIT`, `NOBYPASSRLS`, `CONNECTION LIMIT 2`) connects
         via Supavisor transaction mode (`6543`) and executes
         `SET LOCAL ROLE cv_account_admin` inside bounded transactions. It has
-        `EXECUTE` only on the six account-administration RPCs in
+        `EXECUTE` only on the seven account-administration RPCs in
         `cinevault_private` and zero access to `cv_control_broker` enrollment,
         replacement, restoration, or heartbeat functions/tables. Conversely,
         `cv_control_broker_login` cannot `SET ROLE cv_account_admin` or invoke
@@ -171,10 +171,11 @@ password reset administration without expanding `cv_control_broker`:
      local CineVault user (`npm run migrate:identity-link-write -- rollback ...`
      followed by `apply`).
 5. **Hosted Deployment Plan & Old-Token Rejection Verification**:
-   - **Step 1 (Database Migration)**: Apply the reviewed
-     `supabase/broker/account_administration.sql` migration to project
-     `uouydbapluktfrylligo` while `cv_account_admin_login` remains `NOLOGIN`
-     with `PASSWORD NULL` and `CV_ACCOUNT_ADMIN_ENABLED` is unset/`'false'`.
+   - **Step 1 (Database Migration)**: Supabase recorded the approved
+     database-only deployment to `uouydbapluktfrylligo` as
+     `20261116083625_hosted_account_administration.sql`. The tracked migration
+     matches the reviewed source and the hosted history byte for byte. The
+     dedicated role was created `NOLOGIN` with `PASSWORD NULL`.
    - **Step 2 (Dedicated Role Password & Project-Wide Secrets)**: Generate a
      `>= 32`-character SCRAM-SHA-256 password for `cv_account_admin_login`,
      enable `LOGIN`, and set the project-wide Edge Function secrets
