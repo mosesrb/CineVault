@@ -176,19 +176,21 @@ password reset administration without expanding `cv_control_broker`:
      `20261116083625_hosted_account_administration.sql`. The tracked migration
      matches the reviewed source and the hosted history byte for byte. The
      dedicated role was created `NOLOGIN` with `PASSWORD NULL`.
-   - **Step 2 (Dedicated Role Password & Project-Wide Secrets)**: Generate a
+   - **Step 2 (Disabled Edge Function Deployment)**: Supabase recorded
+     `cinevault-account-admin` version 1 with its pinned import map and the
+     function's own fixed-project JWKS and fresh `GET /auth/v1/user` verification.
+     The hosted root and `complete-password-change` route returned `503`
+     `unavailable` with `Cache-Control: no-store` before credential provisioning.
+   - **Step 3 (Dedicated Role Password, Project-Wide Secrets & Activation)**: Generate a
      `>= 32`-character SCRAM-SHA-256 password for `cv_account_admin_login`,
      enable `LOGIN`, and set the project-wide Edge Function secrets
      `CV_ACCOUNT_ADMIN_PROJECT_REF='uouydbapluktfrylligo'`,
      `CV_ACCOUNT_ADMIN_DATABASE_URL`, `CV_ACCOUNT_ADMIN_PUBLISHABLE_KEY`,
      `CV_ACCOUNT_ADMIN_SERVICE_ROLE_KEY`, `CV_ACCOUNT_ADMIN_ALLOWED_ORIGINS`,
-     and `CV_ACCOUNT_ADMIN_ENABLED='false'`.
-   - **Step 3 (Edge Function Deployment & Activation)**: Deploy
-     `supabase/functions/cinevault-account-admin` (`--no-verify-jwt` so
-     `createOwnerVerifier` enforces fixed-project JWKS + fresh
-     `GET /auth/v1/user`), verify HTTP `503` while disabled, then set
-     `CV_ACCOUNT_ADMIN_ENABLED='true'` and seed the operator's project-admin row
-     via `cinevault_private.cp_provision_project_admin`.
+     and `CV_ACCOUNT_ADMIN_ENABLED='false'`. Recheck HTTP `503` with the
+     credentials staged. During the approved activation, provision the operator's
+     project-admin row via `cinevault_private.cp_provision_project_admin` and set
+     `CV_ACCOUNT_ADMIN_ENABLED='true'`.
    - **Step 4 (Hosted Old-Token Rejection Verification)**: Using a disposable
      Supabase user linked to a disposable local CineVault test account:
      1. Sign in before reset (`POST /auth/v1/token?grant_type=password`) to
