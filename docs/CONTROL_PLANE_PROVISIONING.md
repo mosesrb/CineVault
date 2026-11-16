@@ -227,10 +227,10 @@ password reset administration without expanding `cv_control_broker`:
         API access. A `401`, `403`, or `200` with zero rows shows denial for this
         request. Treat other responses as inconclusive. The initial hosted test
         returned the disposable ID for both revoked tokens while Auth returned
-        `403`. The prepared `supabase/broker/data_api_live_session.sql` adds a
-        restrictive live-session policy to profiles, memberships, servers, and
-        endpoints. Apply it after review and repeat the old- and fresh-token
-        controls before claiming immediate Data API revocation.
+        `403`. Hosted migration `20261116133636_data_api_live_session.sql` adds
+        a restrictive live-session policy to profiles, memberships, servers,
+        and endpoints. Repeat the old- and fresh-token controls before claiming
+        immediate Data API revocation.
      4. Sign in with the new permanent password (`T_after_change`, `session_id =
         S_new`), confirm `GET /auth/v1/user` and `POST /api/v1/auth/exchange`
         return `200`, and require the Data API to return the same disposable ID
