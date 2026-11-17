@@ -42,3 +42,17 @@
 
 .cloud-status-check { display: flex; align-items: baseline; gap: var(--sp-2); }
 .cloud-status .input { min-width: 0; }
+
+.server-check-list { margin: 0; }
+.server-check {
+  display: grid;
+  grid-template-columns: minmax(7rem, 1fr) minmax(0, 3fr);
+  gap: var(--sp-2) var(--sp-4);
+  padding: var(--sp-3) 0;
+  border-top: 1px solid var(--border);
+}
+.server-check dt { font-weight: 600; }
+.server-check dd { margin: 0; min-width: 0; }
+.server-check dd p { margin: var(--sp-1) 0 0; }
+.server-check a { overflow-wrap: anywhere; }
+@media (max-width: 34rem) { .server-check { grid-template-columns: minmax(0, 1fr); } }

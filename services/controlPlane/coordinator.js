@@ -13,6 +13,7 @@ function createCoordinator({ config, serverInstanceId, store, transport, now = D
     let mode = config.mode === 'ready' ? 'not_enrolled' : config.mode;
     let tail = Promise.resolve(), stopped = false, timer = null, lastReport = -INTERVAL;
     let attempts = 0, activity = null, controller = null, lastClock = -1;
+    let lastHeartbeatAt = null, credentialExpiresAt = null;
     const serialized = action => {
         const result = tail.then(action); tail = result.catch(()=>{}); return result;
     };
@@ -21,8 +22,15 @@ function createCoordinator({ config, serverInstanceId, store, transport, now = D
         lastClock=value;return value;
     }
     async function read() {
-        const state = await store.read();
-        return state === null ? null : validateState(state,config.projectRef,serverInstanceId);
+        credentialExpiresAt = null;
+        const stored = await store.read();
+        const state = stored === null ? null : validateState(stored,config.projectRef,serverInstanceId);
+        credentialExpiresAt = state?.status === 'active' ? state.mapping.credentialExpiresAt : null;
+        return state;
+    }
+    async function writeActive(state, mapping) {
+        await store.writeAtomic({...state,status:'active',mapping,sequence:0,pending:null});
+        credentialExpiresAt = mapping.credentialExpiresAt;
     }
     function classify(error) {
         mode = error instanceof CloudFailure ? error.kind : 'recovery_required';
@@ -57,6 +65,7 @@ function createCoordinator({ config, serverInstanceId, store, transport, now = D
             if(stopped || controller.signal.aborted) return; // Retain uncertain operation.
             await store.writeAtomic({...state,sequence:state.pending.sequence,pending:null});
             lastReport=clock(); attempts=0;activity=null;mode='connected';
+            lastHeartbeatAt = lastReport;
         } catch(error) {
             classify(error);
             if(error instanceof CloudFailure && ['unavailable','paused','rate_limited'].includes(error.kind) && attempts<MAX_ATTEMPTS) {
@@ -67,6 +76,7 @@ function createCoordinator({ config, serverInstanceId, store, transport, now = D
         } finally {controller=null;}
     }
     return Object.freeze({
+        diagnostics: () => ({lastHeartbeatAt, credentialExpiresAt}),
         status() {
             return Object.freeze({mode,enabled:config.mode==='ready',
                 guidance: mode==='paused'?'Resume the existing project in the Supabase dashboard, then retry.':
@@ -117,7 +127,7 @@ function createCoordinator({ config, serverInstanceId, store, transport, now = D
                         if(mapping===null){mode='awaiting_restore_owner';return {enrolled:false};}
                         validateMapping(mapping,state.candidate);
                         if(mapping.cloudServerId!==state.cloudServerId || mapping.credentialExpiresAt<=clock() || state.candidate.expiresAt<=clock())throw Error();
-                        await store.writeAtomic({...state.candidate,status:'active',mapping,sequence:0,pending:null});
+                        await writeActive(state.candidate,mapping);
                         lastReport=-INTERVAL;mode='connected';return {enrolled:true};
                     }
                     if(state.status==='replacing'){
@@ -129,7 +139,7 @@ function createCoordinator({ config, serverInstanceId, store, transport, now = D
                         validateMapping(mapping,state.candidate);
                         if(mapping.cloudServerId!==state.previous.mapping.cloudServerId || mapping.epoch!==state.previous.mapping.epoch+1 ||
                             mapping.credentialExpiresAt<=clock() || state.candidate.expiresAt<=clock())throw Error();
-                        await store.writeAtomic({...state.candidate,status:'active',mapping,sequence:0,pending:null});
+                        await writeActive(state.candidate,mapping);
                         lastReport=-INTERVAL;mode='connected';return {enrolled:true};
                     }
                     if(state.status==='active'){mode='enrolled';return {enrolled:true};}
@@ -140,7 +150,7 @@ function createCoordinator({ config, serverInstanceId, store, transport, now = D
                     if(mapping===null){mode='awaiting_owner';return {enrolled:false};}
                     validateMapping(mapping,state);
                     if(state.expiresAt<=clock() || mapping.credentialExpiresAt<=clock())throw Error();
-                    await store.writeAtomic({...state,status:'active',mapping,sequence:0,pending:null});
+                    await writeActive(state,mapping);
                     mode='connected';return {enrolled:true};
                 } catch(error){if(mode!=='pairing_expired')classify(error);throw Error('control_plane_registration_unavailable');}
                 finally{controller=null;}
@@ -165,6 +175,7 @@ function createCoordinator({ config, serverInstanceId, store, transport, now = D
                         state=renewPairing(current,clock());
                     }else throw Error(); // Missing/corrupt/unmapped state is NOT adopted/reset.
                     await store.writeAtomic(state);if(stopped)throw Error();
+                    credentialExpiresAt = null;
                     if(state.status==='pairing'){
                         mode='awaiting_owner';
                         return {...pairingRequest(state),expiresAt:state.expiresAt,alreadyEnrolled:false};
@@ -191,6 +202,7 @@ function createCoordinator({ config, serverInstanceId, store, transport, now = D
                     const state={version:3,status:'recovering',projectRef:config.projectRef,serverInstanceId,cloudServerId,
                         candidate:initialState(config.projectRef,serverInstanceId,clock())};
                     await store.writeRecoveryAtomic(state);if(stopped)throw Error();
+                    credentialExpiresAt = null;
                     mode='awaiting_restore_owner';return {...recoveryRequest(state),expiresAt:state.candidate.expiresAt,alreadyEnrolled:false};
                 }catch(error){classify(error);throw Error('control_plane_recovery_required');}
             });

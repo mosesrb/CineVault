@@ -1,6 +1,9 @@
 const mongoose=require('mongoose');
 const request=require('supertest');
+const https = require('node:https');
+const { EventEmitter } = require('node:events');
 const cloud=require('../../services/controlPlaneService');
+const diagnostics=require('../../services/serverSetupDiagnostics');
 const {createApp}=require('../../app');
 const {User}=require('../../models/user');
 const {Session}=require('../../models/session');
@@ -42,6 +45,54 @@ describe('control-plane local administrator boundary',()=>{
     it('returns safe live no-store status without credential material',async()=>{
         const r=await request(app).get(url).set('x-auth-token',token);
         expect(r.status).toBe(200);expect(r.headers['cache-control']).toBe('no-store');expect(Object.keys(r.body).sort()).toEqual(['enabled','guidance','mode']);
+    });
+    it('restricts diagnostic probes to administrators and sanitizes failures', async () => {
+        const probe = jest.spyOn(diagnostics, 'readDiagnostics').mockResolvedValue({ checkedAt: 123, server: { status: 'ready' } });
+        const route = url + '/diagnostics';
+        expect((await request(app).get(route)).status).toBe(401);
+        await User.updateOne({ _id: user._id }, { $set: { isAdmin: false } });
+        expect((await request(app).get(route).set('x-auth-token', token)).status).toBe(403);
+        expect(probe).not.toHaveBeenCalled();
+        await User.updateOne({ _id: user._id }, { $set: { isAdmin: true } });
+        const result = await request(app).get(route).set('x-auth-token', token);
+        expect(result.status).toBe(200);
+        expect(result.headers['cache-control']).toBe('no-store');
+        expect(result.body).toEqual({ checkedAt: 123, server: { status: 'ready', port: expect.any(Number) } });
+        expect(probe).toHaveBeenCalledWith(false);
+        expect(cloud.retry).not.toHaveBeenCalled();
+        probe.mockRejectedValueOnce(Error('private credential details'));
+        const denied = await request(app).get(route).set('x-auth-token', token);
+        expect(denied.status).toBe(503);
+        expect(denied.text).not.toContain('private credential details');
+    });
+    it('reports independent Auth, DNS and TLS outcomes without disclosing provider credentials', async () => {
+        const original = { enabled: process.env.CV_AUTH_EXCHANGE_ENABLED, origin: process.env.CV_AUTH_EXCHANGE_HTTPS_ORIGIN };
+        process.env.CV_AUTH_EXCHANGE_ENABLED = 'true';
+        process.env.CV_AUTH_EXCHANGE_HTTPS_ORIGIN = 'https://192.0.2.42:8443';
+        const fetchAuth = jest.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', {
+            status: 503, headers: { 'content-type': 'application/json' }
+        }));
+        const tlsProbe = jest.spyOn(https, 'request').mockImplementation(() => {
+            const probe = new EventEmitter();
+            probe.end = () => queueMicrotask(() => probe.emit('error', { code: 'CERT_HAS_EXPIRED' }));
+            return probe;
+        });
+        try {
+            const result = await diagnostics.readDiagnostics(true);
+            expect(result.server.dependencies.database).toBe('ready');
+            expect(result.supabase).toMatchObject({ status: 'unavailable', lastHeartbeatAt: null });
+            expect(result.network).toEqual({ origin: 'https://192.0.2.42:8443', dnsStatus: 'address_mismatch',
+                tls: { status: 'expired', expiresAt: null }, otherDevice: 'not_tested' });
+            expect(fetchAuth).toHaveBeenCalledWith(`https://${PROJECT_REF}.supabase.co/auth/v1/health`,
+                expect.objectContaining({ redirect: 'error' }));
+            expect(tlsProbe).toHaveBeenCalledWith(expect.objectContaining({ host: '127.0.0.1', port: 8443 }), expect.any(Function));
+            expect(JSON.stringify(result)).not.toContain(process.env.CV_CONTROL_PLANE_PUBLISHABLE_KEY);
+        } finally {
+            for (const [key, value] of Object.entries({ CV_AUTH_EXCHANGE_ENABLED: original.enabled, CV_AUTH_EXCHANGE_HTTPS_ORIGIN: original.origin })) {
+                if (value === undefined) delete process.env[key];
+                else process.env[key] = value;
+            }
+        }
     });
     it.each(['prepare','redeem','retry','recover'])('requires current session-bound CSRF for %s',async operation=>{
         expect((await post('/'+operation)).status).toBe(403);

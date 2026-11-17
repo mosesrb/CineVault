@@ -2,6 +2,27 @@ const express = require('express');
 const mongoose = require('mongoose');
 const { getRedisStatus } = require('../middleware/cache');
 
+async function readReadiness() {
+    const redis = getRedisStatus();
+    let databaseReady = false;
+    if (mongoose.connection.readyState === 1) {
+        try {
+            await mongoose.connection.db.command({ ping: 1 });
+            databaseReady = true;
+        } catch (_) {
+            databaseReady = false;
+        }
+    }
+    const ready = databaseReady && (!redis.configured || redis.ready);
+    return {
+        status: ready ? 'ready' : 'not_ready',
+        dependencies: {
+            database: databaseReady ? 'ready' : 'not_ready',
+            redis: redis.configured ? (redis.ready ? 'ready' : 'not_ready') : 'disabled'
+        }
+    };
+}
+
 function createHealthRouter() {
     const router = express.Router();
 
@@ -14,31 +35,11 @@ function createHealthRouter() {
     });
 
     router.get('/ready', async (_req, res) => {
-        const redis = getRedisStatus();
-        const databaseConnected = mongoose.connection.readyState === 1;
-        let databaseReady = false;
-
-        if (databaseConnected) {
-            try {
-                await mongoose.connection.db.command({ ping: 1 });
-                databaseReady = true;
-            } catch (_) {
-                databaseReady = false;
-            }
-        }
-
-        const redisReady = !redis.configured || redis.ready;
-        const ready = databaseReady && redisReady;
-        res.status(ready ? 200 : 503).json({
-            status: ready ? 'ready' : 'not_ready',
-            dependencies: {
-                database: databaseReady ? 'ready' : 'not_ready',
-                redis: redis.configured ? (redis.ready ? 'ready' : 'not_ready') : 'disabled'
-            }
-        });
+        const result = await readReadiness();
+        res.status(result.status === 'ready' ? 200 : 503).json(result);
     });
 
     return router;
 }
 
-module.exports = { createHealthRouter };
+module.exports = { createHealthRouter, readReadiness };

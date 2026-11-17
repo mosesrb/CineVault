@@ -31,6 +31,7 @@ async function stopControlPlane() {
     await current?.stop();
 }
 module.exports={initializeControlPlane,stopControlPlane,controlPlaneStatus,
+    diagnostics:()=>({ ...controlPlaneStatus(), ...coordinator?.diagnostics() }),
     prepare:()=>action('prepare'),redeem:()=>action('redeem'),retry:()=>action('retry'),recover:()=>action('recover'),
     restore:value=>action('restore',value),
     noteActivity:kind=>{try{coordinator?.noteActivity(kind);}catch{ /* No cloud failure may deny local service. */ }} };

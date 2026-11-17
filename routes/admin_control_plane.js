@@ -6,6 +6,7 @@ const admin = require('../middleware/admin');
 const cloud = require('../services/controlPlaneService');
 const { configuration } = require('../services/controlPlane/configuration');
 const { exact, HEX, matches } = require('../services/controlPlane/protocol');
+const diagnostics = require('../services/serverSetupDiagnostics');
 const router = express.Router();
 const csrfKey = crypto.randomBytes(32);
 const CSRF_TTL = 120000;
@@ -37,6 +38,12 @@ function validateCsrf(req) {
 router.use((req,res,next)=>{res.set('Cache-Control','no-store');next();});
 router.use(auth,admin);
 router.get('/',(req,res)=>res.json(cloud.controlPlaneStatus()));
+router.get('/diagnostics', async (req, res) => {
+    try {
+        const result = await diagnostics.readDiagnostics(req.app.locals.cloudHttpsListening === true);
+        res.json({ ...result, server: { ...result.server, port: req.socket.localPort } });
+    } catch { res.status(503).json({ error: 'Unable to run setup checks.' }); }
+});
 router.post('/csrf',(req,res)=>{
     try {
         exact(req.body,[]);

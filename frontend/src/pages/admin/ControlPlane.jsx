@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react'
+import ServerDiagnostics from './ServerDiagnostics'
 import './ControlPlane.css'
 
 const statusLabels = {
   connected: 'Connected', disabled: 'Disabled', not_enrolled: 'Not enrolled', awaiting_owner: 'Awaiting owner approval',
+  enrolled: 'Enrolled', paused: 'Project paused', unavailable: 'Unavailable', blocked: 'Invalid setup',
+  authorization: 'Authorization required', rate_limited: 'Rate limited', awaiting_replacement_owner: 'Awaiting replacement approval',
   pairing_expired: 'Setup request expired', recovery_required: 'Recovery required', conflict: 'Connection conflict',
   awaiting_restore_owner: 'Awaiting restore approval', credential_expired: 'Credential expired',
 }
@@ -62,10 +65,11 @@ export default function ControlPlane() {
   const disabled = busy || !status?.enabled
   const statusText = status?.mode ? statusLabels[status.mode] || status.mode.replaceAll('_', ' ') : error ? 'Unavailable' : 'Loading…'
   return <section className="cloud-status" aria-labelledby="cloud-status-title">
-    <h1 id="cloud-status-title" className="section-heading">Cloud status</h1>
+    <h1 id="cloud-status-title" className="section-heading">Server Setup</h1>
+    <ServerDiagnostics request={request} enrollmentLabels={statusLabels} />
     <div className="card cloud-status-card">
       <div className="cloud-status-summary">
-        <h2>Connection</h2>
+        <h2>Supabase connection</h2>
         <span role="status" className={`badge ${status?.mode === 'connected' ? 'badge-success' : 'badge-muted'}`}>{statusText}</span>
       </div>
       {status?.guidance && <p>{status.guidance}</p>}

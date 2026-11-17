@@ -70,6 +70,7 @@ async function startServer() {
                     readFile(process.env.CV_AUTH_EXCHANGE_TLS_KEY_FILE)
                 ]);
                 httpsServer = await listen(https.createServer({ cert, key, minVersion: 'TLSv1.2' }, app), httpsPort);
+                app.locals.cloudHttpsListening = true;
                 winston.info(`  > Cloud sign-in HTTPS: ${httpsOrigin.origin}`);
             } catch {
                 winston.error('Cloud sign-in HTTPS did not start. Check the configured origin, certificate, key, and port.');

@@ -13,7 +13,28 @@ describe('cloud administration page', () => {
   })
   it('keeps all mutation buttons disabled while cloud is disabled', async () => {
     fetch.mockResolvedValue(response({ mode: 'disabled', enabled: false })); render(<ControlPlane />)
-    await screen.findByText('Disabled'); for (const button of screen.getAllByRole('button')) expect(button).toBeDisabled()
+    await screen.findByText('Disabled')
+    expect(screen.getByRole('button', { name: 'Run checks' })).toBeEnabled()
+    for (const button of screen.getAllByRole('button').filter(button => button.textContent !== 'Run checks')) expect(button).toBeDisabled()
+  })
+  it('shows a fresh diagnostic mismatch and clears the old result when a recheck fails', async () => {
+    const report = {
+      checkedAt: Date.now(), server: { dependencies: { database: 'ready' }, port: 3000 },
+      supabase: { status: 'unavailable', enrollment: 'paused' },
+      network: { dnsStatus: 'address_mismatch', tls: { status: 'not_listening' }, origin: 'https://pilot.example' },
+    }
+    fetch.mockResolvedValueOnce(response(status)).mockResolvedValueOnce(response(report)).mockRejectedValueOnce(Error('private error'))
+    render(<ControlPlane />)
+    await screen.findByRole('heading', { name: 'Server Setup' })
+    fireEvent.click(screen.getByRole('button', { name: 'Run checks' }))
+    expect(await screen.findByText('Points elsewhere')).toBeInTheDocument()
+    expect(screen.getByText('Not tested')).toBeInTheDocument()
+    expect(screen.getByText('Enrollment: Project paused')).toBeInTheDocument()
+    expect(fetch.mock.calls[1]).toEqual(['/api/v1/admin/control-plane/diagnostics', expect.objectContaining({ method: 'GET', cache: 'no-store' })])
+    fireEvent.click(screen.getByRole('button', { name: 'Run checks' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not get live results')
+    expect(screen.queryByText('Points elsewhere')).toBeNull()
+    expect(screen.queryByText('private error')).toBeNull()
   })
   it('requires explicit replacement confirmation and sends only same-origin CSRF action', async () => {
     const setup={alreadyEnrolled:false,request:{replacement:{epoch:1}},approvalProof:'replacement-proof',expiresAt:Date.now()+10000}
