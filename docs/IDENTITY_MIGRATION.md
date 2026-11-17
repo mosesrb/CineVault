@@ -106,9 +106,10 @@ capability check succeeds. Completing a required password change also needs this
 exact HTTPS origin on the hosted Account Admin allowlist. Native Android support
 is a separate rollout step.
 
-The response supplies a revocable CineVault access token and an
-`expiresAt` Unix timestamp in seconds. The local token expires within
-five minutes or at the upstream expiry, whichever comes first. CineVault
+The response supplies a revocable CineVault access token with `issuedAt` and
+`expiresAt` as Unix timestamps in seconds. The browser measures elapsed time
+using that server-issued lifetime. The local token expires within five minutes
+or at the upstream expiry, whichever comes first. CineVault
 checks the current link and local account on each authenticated request.
 Existing cloud-backed sessions carry the membership download grant
 until expiry. Stream tickets share the parent session's expiry and

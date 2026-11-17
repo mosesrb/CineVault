@@ -87,7 +87,7 @@ router.post('/', async (req, res) => {
             if (!issueSession) await Session.deleteOne({ _id: session._id, userId: link._id,
                 cloudLinkGeneration: cloudBinding.generation });
         }
-        return issueSession ? res.json({ token, expiresAt }) : res.sendStatus(401);
+        return issueSession ? res.json({ token, issuedAt: now, expiresAt }) : res.sendStatus(401);
     } catch (error) {
         return res.sendStatus(error instanceof ExchangeFailure ? error.status : 503);
     }

@@ -225,6 +225,8 @@ describe('Supabase session exchange through the application', () => {
         expect(second.status).toBe(200);
         expect(first.body.token).not.toBe(second.body.token);
         const claims = jwt.decode(first.body.token);
+        expect(first.body.issuedAt).toBe(claims.iat);
+        expect(first.body.expiresAt).toBe(claims.exp);
         expect(claims.exp - claims.iat).toBe(300);
         expect(await Session.countDocuments({ userId: user._id })).toBe(2);
     });

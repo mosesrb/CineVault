@@ -17,7 +17,7 @@ export function AuthProvider({ children }) {
       setCloud(null)
       setUser(null)
     }
-    const timer = setTimeout(endSession, Math.max(0, cloud.expiresAt * 1000 - Date.now()))
+    const timer = setTimeout(endSession, Math.max(0, cloud.deadline - performance.now()))
     window.addEventListener('cv_cloud_session_revoked', endSession)
     return () => {
       clearTimeout(timer)
@@ -60,8 +60,8 @@ export function AuthProvider({ children }) {
   function loginCloudUser(session) {
     localStorage.removeItem('cv_token')
     localStorage.removeItem('cv_user')
-    setCloudSession(session.token, session.expiresAt)
-    setCloud({ token: session.token, expiresAt: session.expiresAt })
+    setCloudSession(session.token, session.deadline)
+    setCloud({ token: session.token, deadline: session.deadline })
     setUser(session.user)
   }
 

@@ -61,6 +61,7 @@ export async function signInWithCloud(email, password, publishableKey) {
 
   let localToken
   try {
+    const exchangeStartedAt = performance.now()
     const exchange = await request(exchangePath, {
       method: 'POST', headers: { Authorization: 'Bearer ' + upstream },
     })
@@ -83,17 +84,21 @@ export async function signInWithCloud(email, password, publishableKey) {
       }
       throw new Error(messages.unavailable)
     }
-    const { token, expiresAt } = await exchange.json()
+    const { token, issuedAt, expiresAt } = await exchange.json()
     if (typeof token === 'string' && token) localToken = token
-    if (typeof token !== 'string' || !token || !Number.isSafeInteger(expiresAt) ||
-        expiresAt * 1000 <= Date.now() || expiresAt * 1000 > Date.now() + 300000) {
+    // Older same-origin servers supply their clock through the HTTP Date header.
+    const serverTime = issuedAt ?? Math.floor(Date.parse(exchange.headers.get('date')) / 1000)
+    const lifetime = expiresAt - serverTime
+    const deadline = exchangeStartedAt + lifetime * 1000
+    if (!localToken || !Number.isSafeInteger(expiresAt) || !Number.isSafeInteger(serverTime) ||
+        serverTime <= 0 || lifetime <= 0 || lifetime > 300 || deadline <= performance.now()) {
       throw new Error(messages.unavailable)
     }
     const profile = await request('/api/v1/users/me', { headers: { 'x-auth-token': token } })
-    if (!profile.ok || expiresAt * 1000 <= Date.now()) throw new Error(messages.unavailable)
+    if (!profile.ok) throw new Error(messages.unavailable)
     const user = await profile.json()
-    if (typeof user?._id !== 'string') throw new Error(messages.unavailable)
-    return { token, expiresAt, user: { ...user, isAdmin: false } }
+    if (typeof user?._id !== 'string' || deadline <= performance.now()) throw new Error(messages.unavailable)
+    return { token, deadline, user: { ...user, isAdmin: false } }
   } catch (error) {
     if (localToken) void revokeCloudSession(localToken).catch(() => {})
     throw error

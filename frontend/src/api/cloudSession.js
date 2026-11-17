@@ -2,8 +2,8 @@ import { canUseCloudSignIn } from './cloudSignIn'
 
 let session = null
 
-export function setCloudSession(token, expiresAt) {
-  session = { token, expiresAt }
+export function setCloudSession(token, deadline) {
+  session = { token, deadline }
 }
 
 export function clearCloudSession(token) {
@@ -13,6 +13,6 @@ export function clearCloudSession(token) {
 }
 
 export function getCloudSession() {
-  if (!session || !canUseCloudSignIn() || session.expiresAt * 1000 <= Date.now()) return null
+  if (!session || !canUseCloudSignIn() || session.deadline <= performance.now()) return null
   return session
 }
