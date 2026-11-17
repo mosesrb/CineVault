@@ -106,6 +106,10 @@ capability check succeeds. Completing a required password change also needs this
 exact HTTPS origin on the hosted Account Admin allowlist.
 
 For Android phones and Android TV, also set `CV_AUTH_EXCHANGE_ANDROID_ENABLED=true`.
+For internal device testing, build `:app:assembleQaHttps` after syncing Capacitor.
+It installs alongside the regular app as `com.cinevault.app.qa` and uses the
+release WebView origin and HTTPS network policy. The existing `assembleDebug`
+build remains available for cleartext local development.
 Configure the app's server address as the exact HTTPS origin, including its port
 when applicable. The app shows Supabase sign-in after that server advertises the
 capability and sends local session requests only to the selected HTTPS origin.
