@@ -6,30 +6,82 @@ import {
   signInWithCloud,
 } from './cloudSignIn'
 import { clearCloudSession, getCloudSession, setCloudSession } from './cloudSession'
+import api from './index'
 
 const key = 'sb_publishable_fixture_only_abcdefghijkl'
+const config = () => ({ origin: window.location.origin, publishableKey: key })
 beforeEach(() => { localStorage.clear(); vi.stubGlobal('fetch', vi.fn()) })
 afterEach(() => { clearCloudSession(); localStorage.clear(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 test('a custom server connection hides cloud sign-in and receives no credentials', async () => {
   localStorage.setItem('cv_server_url', 'https://elsewhere.example')
   expect(await getCloudSignInConfig()).toBeNull()
-  await expect(signInWithCloud('person@example.test', 'fixture-password', key)).rejects.toThrow('unavailable')
+  await expect(signInWithCloud('person@example.test', 'fixture-password', config())).rejects.toThrow('unavailable')
   expect(fetch).not.toHaveBeenCalled()
 })
 
 test('a separate HTTPS browser asks only its same origin whether cloud sign-in is available', async () => {
-  vi.stubGlobal('window', { location: { protocol: 'https:', hostname: 'cinevault.example' } })
+  vi.stubGlobal('window', { location: { protocol: 'https:', hostname: 'cinevault.example', origin: 'https://cinevault.example' } })
   fetch.mockResolvedValueOnce(new Response(null, { status: 404 }))
     .mockResolvedValueOnce(Response.json({ publishableKey: key }))
   expect(await getCloudSignInConfig()).toBeNull()
-  expect(await getCloudSignInConfig()).toBe(key)
+  expect(await getCloudSignInConfig()).toEqual(config())
   expect(fetch.mock.calls.map(([url]) => url)).toEqual([
     '/api/v1/auth/exchange/config', '/api/v1/auth/exchange/config',
   ])
-  vi.stubGlobal('window', { location: { protocol: 'http:', hostname: 'cinevault.example' } })
+  vi.stubGlobal('window', { location: { protocol: 'http:', hostname: 'cinevault.example', origin: 'https://cinevault.example' } })
   expect(await getCloudSignInConfig()).toBeNull()
   expect(fetch).toHaveBeenCalledTimes(2)
+})
+
+function selectAndroidServer(origin) {
+  vi.stubGlobal('window', {
+    location: { origin: 'https://localhost', hostname: 'localhost', protocol: 'https:', href: 'https://localhost/login' },
+    Capacitor: { isNativePlatform: () => true, getPlatform: () => 'android' },
+  })
+  localStorage.setItem('cv_server_url', origin)
+}
+
+test('Android exchanges only at the selected HTTPS server and expires access on server change', async () => {
+  const origin = 'https://cinevault.example:8443'
+  selectAndroidServer(origin)
+  const issuedAt = Math.floor(Date.now() / 1000)
+  fetch.mockResolvedValueOnce(Response.json({ publishableKey: key }))
+    .mockResolvedValueOnce(Response.json({ access_token: 'cloud-token' }))
+    .mockResolvedValueOnce(Response.json({ token: 'local-token', issuedAt, expiresAt: issuedAt + 120 }))
+    .mockResolvedValueOnce(Response.json({ _id: 'viewer' }))
+    .mockResolvedValueOnce(new Response(null, { status: 204 }))
+  const configured = await getCloudSignInConfig()
+  expect(configured).toEqual({ origin, publishableKey: key })
+  const session = await signInWithCloud('person@example.test', 'fixture-password', configured)
+  expect(fetch.mock.calls[2][0]).toBe(origin + '/api/v1/auth/exchange')
+  expect(fetch.mock.calls[3][0]).toBe(origin + '/api/v1/users/me')
+  expect(fetch.mock.calls.every(([, options]) => options.redirect === 'error')).toBe(true)
+  setCloudSession(session)
+  const interceptor = api.interceptors.request.handlers[0].fulfilled
+  expect(interceptor({ url: '/users/me', headers: {} })).toMatchObject({
+    baseURL: origin + '/api/v1', adapter: 'fetch', fetchOptions: { redirect: 'error' },
+    headers: { 'x-auth-token': 'local-token' },
+  })
+  expect(() => interceptor({ url: 'https://elsewhere.example/api/v1/users/me', headers: {} })).toThrow('signed-in CineVault server')
+  localStorage.setItem('cv_server_url', 'https://elsewhere.example')
+  expect(getCloudSession()).toBeNull()
+  await expect(signInWithCloud('person@example.test', 'fixture-password', configured)).rejects.toThrow('unavailable')
+  expect(fetch).toHaveBeenCalledTimes(5)
+})
+
+test('Android does not offer cloud authentication over HTTP or send its token after a server switch', async () => {
+  selectAndroidServer('http://cinevault.example:8443')
+  expect(await getCloudSignInConfig()).toBeNull()
+  expect(fetch).not.toHaveBeenCalled()
+  const origin = 'https://cinevault.example:8443'
+  localStorage.setItem('cv_server_url', origin)
+  fetch.mockImplementationOnce(async () => {
+    localStorage.setItem('cv_server_url', 'https://elsewhere.example')
+    return Response.json({ access_token: 'cloud-token' })
+  }).mockResolvedValueOnce(new Response(null, { status: 204 }))
+  await expect(signInWithCloud('person@example.test', 'fixture-password', { origin, publishableKey: key })).rejects.toThrow('unavailable')
+  expect(fetch.mock.calls.map(([url]) => new URL(url).hostname)).toEqual(Array(2).fill('uouydbapluktfrylligo.supabase.co'))
 })
 
 test('exchanges a cloud token for a local session and scopes logout to the cloud session', async () => {
@@ -39,9 +91,9 @@ test('exchanges a cloud token for a local session and scopes logout to the cloud
     .mockResolvedValueOnce(Response.json({ token: 'local-token', issuedAt, expiresAt: issuedAt + 120 }))
     .mockResolvedValueOnce(Response.json({ _id: 'home', isAdmin: true }))
     .mockResolvedValueOnce(new Response(null, { status: 204 }))
-  expect(await getCloudSignInConfig()).toBe(key)
-  const session = await signInWithCloud('person@example.test', 'fixture-password', key)
-  expect(session).toEqual({ token: 'local-token', deadline: expect.any(Number), user: { _id: 'home', isAdmin: false } })
+  expect(await getCloudSignInConfig()).toEqual(config())
+  const session = await signInWithCloud('person@example.test', 'fixture-password', config())
+  expect(session).toEqual({ token: 'local-token', deadline: expect.any(Number), origin: window.location.origin, user: { _id: 'home', isAdmin: false } })
   expect(fetch.mock.calls[1][0]).toBe('https://uouydbapluktfrylligo.supabase.co/auth/v1/token?grant_type=password')
   expect(fetch.mock.calls[2]).toEqual(['/api/v1/auth/exchange', expect.objectContaining({
     headers: { Authorization: 'Bearer cloud-token' }, redirect: 'error'
@@ -49,7 +101,7 @@ test('exchanges a cloud token for a local session and scopes logout to the cloud
   expect(fetch.mock.calls[3][1].headers).toEqual({ 'x-auth-token': 'local-token' })
   expect(fetch.mock.calls[4][0]).toMatch(/logout\?scope=local$/)
   expect(localStorage.length).toBe(0)
-  setCloudSession(session.token, session.deadline)
+  setCloudSession(session)
   expect(getCloudSession()?.token).toBe('local-token')
   expect(clearCloudSession('old-token')).toBe(false)
   localStorage.setItem('cv_server_url', 'https://elsewhere.example')
@@ -64,9 +116,9 @@ test('a slow phone clock accepts the server lifetime and expires using elapsed t
     .mockResolvedValueOnce(Response.json({ token: 'local-token', issuedAt, expiresAt: issuedAt + 300 }))
     .mockResolvedValueOnce(Response.json({ _id: 'viewer' }))
     .mockResolvedValueOnce(new Response(null, { status: 204 }))
-  const session = await signInWithCloud('person@example.test', 'fixture-password', key)
+  const session = await signInWithCloud('person@example.test', 'fixture-password', config())
   expect(session.deadline).toBe(301000)
-  setCloudSession(session.token, session.deadline)
+  setCloudSession(session)
   elapsed.mockReturnValue(300999)
   expect(getCloudSession()?.token).toBe('local-token')
   elapsed.mockReturnValue(301000)
@@ -80,7 +132,7 @@ test('older servers use their Date header and oversized lifetimes are rejected',
     .mockResolvedValueOnce(Response.json({ token: 'local-token', expiresAt: issuedAt + 301 }, { headers }))
     .mockResolvedValueOnce(new Response(null, { status: 204 }))
     .mockResolvedValueOnce(new Response(null, { status: 204 }))
-  await expect(signInWithCloud('person@example.test', 'fixture-password', key)).rejects.toThrow('unavailable')
+  await expect(signInWithCloud('person@example.test', 'fixture-password', config())).rejects.toThrow('unavailable')
   expect(fetch.mock.calls[2][0]).toMatch(/exchange\/logout$/)
 })
 
@@ -88,7 +140,7 @@ test('an unlinked cloud account gets a specific error and still signs out upstre
   fetch.mockResolvedValueOnce(Response.json({ access_token: 'cloud-token' }))
     .mockResolvedValueOnce(new Response(null, { status: 403 }))
     .mockResolvedValueOnce(new Response(null, { status: 204 }))
-  await expect(signInWithCloud('person@example.test', 'fixture-password', key)).rejects.toThrow('approved CineVault link')
+  await expect(signInWithCloud('person@example.test', 'fixture-password', config())).rejects.toThrow('approved CineVault link')
   expect(fetch.mock.calls[2][0]).toMatch(/logout\?scope=local$/)
   expect(getCloudSession()).toBeNull()
 })
@@ -97,7 +149,7 @@ test('a cloud account with must_change_password gets password_change_required an
   fetch.mockResolvedValueOnce(Response.json({ access_token: 'temp-cloud-token' }))
     .mockResolvedValueOnce(Response.json({ error: 'password_change_required' }, { status: 403 }))
     .mockResolvedValueOnce(new Response(null, { status: 204 }))
-  await expect(signInWithCloud('person@example.test', 'TempPassword-123!', key)).rejects.toMatchObject({
+  await expect(signInWithCloud('person@example.test', 'TempPassword-123!', config())).rejects.toMatchObject({
     code: 'password_change_required',
     message: 'You must change your temporary password before signing in.',
   })
@@ -107,10 +159,10 @@ test('a cloud account with must_change_password gets password_change_required an
 
 test('completeCloudPasswordChange validates new password locally and completes change + fresh exchange', async () => {
   await expect(
-    completeCloudPasswordChange('person@example.test', 'TempPassword-123!', 'short', key)
+    completeCloudPasswordChange('person@example.test', 'TempPassword-123!', 'short', config())
   ).rejects.toThrow('New password must be 12 to 72 characters without control characters.')
   await expect(
-    completeCloudPasswordChange('person@example.test', 'TempPassword-123!', 'TempPassword-123!', key)
+    completeCloudPasswordChange('person@example.test', 'TempPassword-123!', 'TempPassword-123!', config())
   ).rejects.toThrow('New password must be different from your temporary password.')
   expect(fetch).not.toHaveBeenCalled()
 
@@ -137,11 +189,11 @@ test('completeCloudPasswordChange validates new password locally and completes c
     'person@example.test',
     'TempPassword-123!',
     'UpdatedViewerPass-456!',
-    key
+    config()
   )
   expect(session).toEqual({
     token: 'local-after-change-token',
-    deadline: expect.any(Number),
+    deadline: expect.any(Number), origin: window.location.origin,
     user: { _id: 'home', name: 'Home', isAdmin: false },
   })
   expect(fetch.mock.calls[0][0]).toBe('https://uouydbapluktfrylligo.supabase.co/auth/v1/token?grant_type=password')
@@ -181,7 +233,7 @@ test('completeCloudPasswordChange surfaces unresolved password reset block and s
       'person@example.test',
       'TempPassword-123!',
       'UpdatedViewerPass-456!',
-      key
+      config()
     )
   } catch (err) {
     caught = err

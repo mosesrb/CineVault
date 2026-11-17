@@ -31,9 +31,10 @@ test('an unavailable server leaves CineVault login as the available option', asy
 })
 
 test('the Supabase login form starts a memory-only session and signs out', async () => {
+  const issuedAt = Math.floor(Date.now() / 1000)
   fetch.mockResolvedValueOnce(Response.json({ publishableKey: key }))
     .mockResolvedValueOnce(Response.json({ access_token: 'cloud-token' }))
-    .mockResolvedValueOnce(Response.json({ token: 'local-token', expiresAt: Math.floor(Date.now() / 1000) + 120 }))
+    .mockResolvedValueOnce(Response.json({ token: 'local-token', issuedAt, expiresAt: issuedAt + 120 }))
     .mockResolvedValueOnce(Response.json({ _id: 'home', name: 'Home' }))
     .mockResolvedValue(new Response(null, { status: 204 }))
   screenForSignIn()
@@ -51,7 +52,7 @@ test('the Supabase login form starts a memory-only session and signs out', async
 })
 
 test('a Supabase account requiring a password change completes the password update and signs in', async () => {
-  const expiresAt = Math.floor(Date.now() / 1000) + 120
+  const issuedAt = Math.floor(Date.now() / 1000)
   fetch
     // 1. Config check
     .mockResolvedValueOnce(Response.json({ publishableKey: key }))
@@ -70,7 +71,7 @@ test('a Supabase account requiring a password change completes the password upda
     // 8. Sign in with new password
     .mockResolvedValueOnce(Response.json({ access_token: 'fresh-token-3' }))
     // 9. Exchange succeeds
-    .mockResolvedValueOnce(Response.json({ token: 'local-token-after-change', expiresAt }))
+    .mockResolvedValueOnce(Response.json({ token: 'local-token-after-change', issuedAt, expiresAt: issuedAt + 120 }))
     // 10. Load /api/v1/users/me
     .mockResolvedValueOnce(Response.json({ _id: 'home', name: 'Home' }))
     // 11. Logout fresh-token-3

@@ -12,10 +12,28 @@ const messages = {
   passwordResetUnresolved: 'Password change is temporarily blocked for this account. Contact your administrator.',
 }
 
-export function canUseCloudSignIn() {
-  return (window.location.protocol === 'https:' || ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname)) &&
-    !window.Capacitor?.isNativePlatform?.() && !localStorage.getItem('cv_server_url') &&
-    !import.meta.env.VITE_API_URL
+export function getCloudServerOrigin() {
+  if (import.meta.env.VITE_API_URL) return null
+  const saved = localStorage.getItem('cv_server_url')
+  if (window.Capacitor?.isNativePlatform?.()) {
+    if (window.Capacitor.getPlatform?.() !== 'android' || window.location.origin !== 'https://localhost' || !saved) return null
+    try {
+      const url = new URL(saved)
+      return url.protocol === 'https:' && url.origin === saved && saved !== window.location.origin ? saved : null
+    } catch { return null }
+  }
+  const { protocol, hostname, origin } = window.location
+  return !saved && (protocol === 'https:' || ['localhost', '127.0.0.1', '[::1]'].includes(hostname)) ? origin : null
+}
+
+const localUrl = (origin, route) => (origin === window.location.origin ? '' : origin) + route
+const validKey = key => typeof key === 'string' && /^sb_publishable_[\w-]{16,256}$/.test(key)
+
+function requireConfig(config) {
+  if (!config?.origin || config.origin !== getCloudServerOrigin() || !validKey(config.publishableKey)) {
+    throw new Error(messages.unavailable)
+  }
+  return config
 }
 
 function request(url, options) {
@@ -34,21 +52,20 @@ function isValidNewPassword(password) {
 }
 
 export async function getCloudSignInConfig() {
-  if (!canUseCloudSignIn()) return null
+  const origin = getCloudServerOrigin()
+  if (!origin) return null
   try {
-    const response = await request(exchangePath + '/config')
+    const response = await request(localUrl(origin, exchangePath + '/config'))
     if (!response.ok) return null
     const { publishableKey } = await response.json()
-    return /^sb_publishable_[\w-]{16,256}$/.test(publishableKey) ? publishableKey : null
+    return origin === getCloudServerOrigin() && validKey(publishableKey) ? { origin, publishableKey } : null
   } catch {
     return null
   }
 }
 
-export async function signInWithCloud(email, password, publishableKey) {
-  if (!canUseCloudSignIn() || !/^sb_publishable_[\w-]{16,256}$/.test(publishableKey)) {
-    throw new Error(messages.unavailable)
-  }
+export async function signInWithCloud(email, password, config) {
+  const { origin, publishableKey } = requireConfig(config)
   const headers = { apikey: publishableKey }
   const response = await request(authUrl + '/token?grant_type=password', {
     method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
@@ -61,8 +78,9 @@ export async function signInWithCloud(email, password, publishableKey) {
 
   let localToken
   try {
+    requireConfig(config)
     const exchangeStartedAt = performance.now()
-    const exchange = await request(exchangePath, {
+    const exchange = await request(localUrl(origin, exchangePath), {
       method: 'POST', headers: { Authorization: 'Bearer ' + upstream },
     })
     if (!exchange.ok) {
@@ -94,13 +112,15 @@ export async function signInWithCloud(email, password, publishableKey) {
         serverTime <= 0 || lifetime <= 0 || lifetime > 300 || deadline <= performance.now()) {
       throw new Error(messages.unavailable)
     }
-    const profile = await request('/api/v1/users/me', { headers: { 'x-auth-token': token } })
+    requireConfig(config)
+    const profile = await request(localUrl(origin, '/api/v1/users/me'), { headers: { 'x-auth-token': token } })
     if (!profile.ok) throw new Error(messages.unavailable)
     const user = await profile.json()
     if (typeof user?._id !== 'string' || deadline <= performance.now()) throw new Error(messages.unavailable)
-    return { token, deadline, user: { ...user, isAdmin: false } }
+    requireConfig(config)
+    return { token, deadline, origin, user: { ...user, isAdmin: false } }
   } catch (error) {
-    if (localToken) void revokeCloudSession(localToken).catch(() => {})
+    if (localToken) void revokeCloudSession(localToken, origin).catch(() => {})
     throw error
   } finally {
     // Supabase is only needed at exchange time. End this specific cloud session.
@@ -110,10 +130,8 @@ export async function signInWithCloud(email, password, publishableKey) {
   }
 }
 
-export async function completeCloudPasswordChange(email, currentPassword, newPassword, publishableKey) {
-  if (!canUseCloudSignIn() || !/^sb_publishable_[\w-]{16,256}$/.test(publishableKey)) {
-    throw new Error(messages.unavailable)
-  }
+export async function completeCloudPasswordChange(email, currentPassword, newPassword, config) {
+  const { publishableKey } = requireConfig(config)
   if (typeof currentPassword !== 'string' || !currentPassword) {
     throw new Error(messages.rejected)
   }
@@ -139,6 +157,7 @@ export async function completeCloudPasswordChange(email, currentPassword, newPas
   }
 
   try {
+    requireConfig(config)
     const changeResponse = await request(accountAdminUrl, {
       method: 'POST',
       headers: {
@@ -177,13 +196,13 @@ export async function completeCloudPasswordChange(email, currentPassword, newPas
     }).catch(() => {})
   }
 
-  return await signInWithCloud(email, newPassword, publishableKey)
+  return await signInWithCloud(email, newPassword, config)
 }
 
 export function cloudSignInError(error) {
   return Object.values(messages).includes(error?.message) ? error.message : messages.unavailable
 }
 
-export function revokeCloudSession(token) {
-  return request(exchangePath + '/logout', { method: 'POST', headers: { 'x-auth-token': token } })
+export function revokeCloudSession(token, origin) {
+  return request(localUrl(origin, exchangePath + '/logout'), { method: 'POST', headers: { 'x-auth-token': token } })
 }

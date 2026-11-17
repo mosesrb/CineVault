@@ -38,8 +38,17 @@ api.interceptors.request.use(config => {
   config.baseURL = getBaseURL()
   const cloud = getCloudSession()
   if (cloud && config.legacySyncOnly) throw new Error('Offline sync requires a CineVault account session.')
+  if (cloud) {
+    const destination = new URL(axios.getUri(config), window.location.href)
+    if (destination.origin !== cloud.origin || !destination.pathname.startsWith('/api/v1/')) {
+      throw new Error('Cloud requests require the signed-in CineVault server.')
+    }
+    config.adapter = 'fetch'
+    config.fetchOptions = { redirect: 'error', cache: 'no-store' }
+    config.withCredentials = false
+    config.cloudSession = true
+  }
   const token = cloud?.token || localStorage.getItem('cv_token')
-  if (cloud) config.cloudSession = true
   if (token) {
     config.headers['x-auth-token'] = token
     config.headers['Authorization'] = `Bearer ${token}`
@@ -67,6 +76,7 @@ api.interceptors.response.use(
   },
   async err => {
     const config = err.config;
+    if (!config) return Promise.reject(err)
     if (config?.cloudSession) {
       if (err.response?.status === 401 && clearCloudSession(config.headers['x-auth-token'])) {
         window.dispatchEvent(new Event('cv_cloud_session_revoked'))

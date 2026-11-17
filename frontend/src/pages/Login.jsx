@@ -22,7 +22,7 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const [cloudKey, setCloudKey] = useState(null)
+  const [cloudConfig, setCloudConfig] = useState(null)
   const [useCloud, setUseCloud] = useState(false)
   const [passwordChangeRequired, setPasswordChangeRequired] = useState(false)
   const [currentTempPassword, setCurrentTempPassword] = useState('')
@@ -31,7 +31,7 @@ export default function Login() {
 
   useEffect(() => {
     let active = true
-    getCloudSignInConfig().then(key => { if (active) setCloudKey(key) })
+    getCloudSignInConfig().then(config => { if (active) setCloudConfig(config) })
     return () => { active = false }
   }, [])
 
@@ -63,12 +63,12 @@ export default function Login() {
           email,
           currentTempPassword,
           newPassword,
-          cloudKey
+          cloudConfig
         )
         resetPasswordChangeState()
         loginCloudUser(session)
       } else if (useCloud) {
-        loginCloudUser(await signInWithCloud(email, submittedPassword, cloudKey))
+        loginCloudUser(await signInWithCloud(email, submittedPassword, cloudConfig))
       } else {
         const { data } = await login(email, submittedPassword)
         loginUser(data.token, data.user)
@@ -308,7 +308,7 @@ export default function Login() {
 
         <form className="login-form" onSubmit={handleSubmit}>
           {error && <div className="alert alert-error" role="alert">{error}</div>}
-          {cloudKey && <div className="field">
+          {cloudConfig && <div className="field">
             <label htmlFor="sign-in-method">Sign-in method</label>
             <select id="sign-in-method" className="input" value={useCloud ? 'cloud' : 'local'}
               disabled={loading} onChange={event => {
@@ -321,6 +321,7 @@ export default function Login() {
               <option value="local">CineVault account</option>
               <option value="cloud">Supabase account</option>
             </select>
+            {useCloud && cloudConfig.origin !== window.location.origin && <small>Server: {cloudConfig.origin}</small>}
           </div>}
 
           <div className="field">

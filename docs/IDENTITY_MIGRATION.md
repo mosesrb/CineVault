@@ -103,8 +103,16 @@ file settings and restart. To disable all cloud sign-in, turn off the pilot flag
 
 On the HTTPS browser pilot, the sign-in selector appears after the same-origin
 capability check succeeds. Completing a required password change also needs this
-exact HTTPS origin on the hosted Account Admin allowlist. Native Android support
-is a separate rollout step.
+exact HTTPS origin on the hosted Account Admin allowlist.
+
+For Android phones and Android TV, also set `CV_AUTH_EXCHANGE_ANDROID_ENABLED=true`.
+Configure the app's server address as the exact HTTPS origin, including its port
+when applicable. The app shows Supabase sign-in after that server advertises the
+capability and sends local session requests only to the selected HTTPS origin.
+The server accepts the Android app's `https://localhost` WebView origin only on
+the configured direct TLS listener. Android temporary-password changes in the
+app require `https://localhost` on the hosted Account Admin allowlist. Users can
+also finish the password change in an approved browser before signing in on Android.
 
 The response supplies a revocable CineVault access token with `issuedAt` and
 `expiresAt` as Unix timestamps in seconds. The browser measures elapsed time

@@ -1,9 +1,9 @@
-import { canUseCloudSignIn } from './cloudSignIn'
+import { getCloudServerOrigin } from './cloudSignIn'
 
 let session = null
 
-export function setCloudSession(token, deadline) {
-  session = { token, deadline }
+export function setCloudSession({ token, deadline, origin }) {
+  session = { token, deadline, origin }
 }
 
 export function clearCloudSession(token) {
@@ -13,6 +13,6 @@ export function clearCloudSession(token) {
 }
 
 export function getCloudSession() {
-  if (!session || !canUseCloudSignIn() || session.deadline <= performance.now()) return null
+  if (!session || session.origin !== getCloudServerOrigin() || session.deadline <= performance.now()) return null
   return session
 }

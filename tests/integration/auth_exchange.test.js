@@ -18,6 +18,7 @@ const { privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
 const settings = {
     CV_AUTH_EXCHANGE_ENABLED: 'true',
     CV_AUTH_EXCHANGE_HTTPS_ORIGIN: '',
+    CV_AUTH_EXCHANGE_ANDROID_ENABLED: '',
     CV_CONTROL_PLANE_ENABLED: 'true',
     CV_CONTROL_PLANE_PROJECT_REF: PROJECT_REF,
     CV_CONTROL_PLANE_PROJECT_URL: base,
@@ -74,10 +75,18 @@ describe('Supabase session exchange through the application', () => {
         expect(isCloudExchangeRequest(request({ host }))).toBe(true);
         expect(isCloudExchangeRequest(request({ host, origin: 'https://' + host }))).toBe(true);
         expect(isCloudExchangeRequest(request({ host, origin: 'https://other.example' }))).toBe(false);
+        expect(isCloudExchangeRequest(request({ host, origin: 'https://localhost' }))).toBe(false);
         expect(isCloudExchangeRequest(request({ host: 'localhost' }))).toBe(false);
         expect(isCloudExchangeRequest(request({ host: 'localhost', 'x-forwarded-proto': 'https' }, false))).toBe(false);
         expect(isCloudExchangeRequest(request({ host: 'localhost' }, false))).toBe(false);
         expect(isCloudExchangeRequest(request({ host, forwarded: 'proto=https' }))).toBe(false);
+        process.env.CV_AUTH_EXCHANGE_ANDROID_ENABLED = 'true';
+        expect(isCloudExchangeRequest(request({ host, origin: 'https://localhost' }))).toBe(true);
+        expect(isCloudExchangeRequest(request({ host, origin: 'https://localhost:8080' }))).toBe(false);
+        expect(isCloudExchangeRequest(request({ host, origin: 'http://localhost' }))).toBe(false);
+        expect(isCloudExchangeRequest(request({ host, origin: 'https://localhost' }, false))).toBe(false);
+        expect(isCloudExchangeRequest(request({ host: 'other.example', origin: 'https://localhost' }))).toBe(false);
+        expect(isCloudExchangeRequest(request({ host, origin: 'https://localhost', forwarded: 'proto=https' }))).toBe(false);
         process.env.CV_AUTH_EXCHANGE_ENABLED = 'false';
         expect(isCloudExchangeRequest(request({ host }))).toBe(false);
     });

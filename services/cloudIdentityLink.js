@@ -56,7 +56,8 @@ function isCloudExchangeRequest(req) {
     const httpsOrigin = cloudExchangeHttpsOrigin();
     if (!httpsOrigin || hasForwardedHeaders(req)) return false;
     const origin = req.get('origin');
-    return req.get('host') === httpsOrigin.host && (origin === undefined || origin === httpsOrigin.origin);
+    const androidOrigin = process.env.CV_AUTH_EXCHANGE_ANDROID_ENABLED === 'true' && origin === 'https://localhost';
+    return req.get('host') === httpsOrigin.host && (origin === undefined || origin === httpsOrigin.origin || androidOrigin);
 }
 
 module.exports = { findCloudLinkedUser, matchesCloudLinkedUser, isCloudExchangeRequest, cloudExchangeHttpsOrigin };

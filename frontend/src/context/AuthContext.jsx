@@ -49,7 +49,7 @@ export function AuthProvider({ children }) {
 
   function logoutUser() {
     const active = getCloudSession()
-    if (active) void revokeCloudSession(active.token).catch(() => {})
+    if (active) void revokeCloudSession(active.token, active.origin).catch(() => {})
     clearCloudSession()
     setCloud(null)
     localStorage.removeItem('cv_token')
@@ -60,7 +60,7 @@ export function AuthProvider({ children }) {
   function loginCloudUser(session) {
     localStorage.removeItem('cv_token')
     localStorage.removeItem('cv_user')
-    setCloudSession(session.token, session.deadline)
+    setCloudSession(session)
     setCloud({ token: session.token, deadline: session.deadline })
     setUser(session.user)
   }
